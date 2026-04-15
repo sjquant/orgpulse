@@ -38,5 +38,16 @@ Most engineering analytics tools are heavier than needed for an initial rollout.
 ## Usage
 
 ```bash
-orgpulse run --org your-org --period month
+uv sync
+uv run orgpulse run --org your-org --period month
 ```
+
+## Current CLI Contract
+
+- `orgpulse run` requires a target GitHub organization slug from `--org <org>` or `ORGPULSE_ORG`.
+- `RunConfig` is backed by `pydantic-settings`, with `ORGPULSE_*` environment variables available as defaults when a CLI option is omitted.
+- `--period` supports `week` and `month`; default is `month`.
+- `--mode` supports `full`, `incremental`, and `backfill`; default is `incremental`.
+- `--repo` and `--exclude-repo` may be repeated and cannot overlap.
+- `--output-dir` defaults to `output`.
+- `--backfill-start` and `--backfill-end` accept ISO dates and are required together when `--mode backfill` is used.

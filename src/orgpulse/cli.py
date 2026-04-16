@@ -7,7 +7,9 @@ from typing import Annotated
 from pydantic import ValidationError
 import typer
 
-from orgpulse.config import PeriodGrain, RunConfig, RunMode
+from orgpulse.errors import AuthResolutionError, OrgTargetingError
+from orgpulse.github_auth import GitHubAuthService
+from orgpulse.models import PeriodGrain, RunConfig, RunMode
 
 app = typer.Typer(
     add_completion=False,
@@ -19,6 +21,11 @@ app = typer.Typer(
 @app.callback()
 def callback() -> None:
     """Org-wide GitHub metrics reporting CLI."""
+
+
+def build_github_auth_service() -> GitHubAuthService:
+    """Build the GitHub auth boundary used by the CLI command."""
+    return GitHubAuthService()
 
 
 def build_run_config(
@@ -101,8 +108,25 @@ def run_command(
     except ValidationError as exc:
         typer.echo(f"orgpulse: invalid configuration\n{exc}", err=True)
         raise typer.Exit(code=2) from exc
+    try:
+        github_context = build_github_auth_service().validate_access(config)
+    except AuthResolutionError as exc:
+        typer.echo(f"orgpulse: GitHub authentication failed\n{exc}", err=True)
+        raise typer.Exit(code=1) from exc
+    except OrgTargetingError as exc:
+        typer.echo(f"orgpulse: GitHub access validation failed\n{exc}", err=True)
+        raise typer.Exit(code=1) from exc
 
-    typer.echo(json.dumps(config.model_dump(mode="json"), indent=2, sort_keys=True))
+    typer.echo(
+        json.dumps(
+            {
+                "config": config.model_dump(mode="json"),
+                "github": github_context.model_dump(mode="json"),
+            },
+            indent=2,
+            sort_keys=True,
+        )
+    )
 
 
 def main() -> None:

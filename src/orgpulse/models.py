@@ -5,7 +5,16 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Annotated, Any
 
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator, model_validator
+from pydantic import (
+    AliasChoices,
+    BaseModel,
+    ConfigDict,
+    Field,
+    SecretStr,
+    StringConstraints,
+    field_validator,
+    model_validator,
+)
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 ORG_PATTERN = r"^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38}[A-Za-z0-9])?$"
@@ -36,9 +45,16 @@ class RunConfig(BaseSettings):
         env_prefix="ORGPULSE_",
         frozen=True,
         extra="ignore",
+        populate_by_name=True,
     )
 
     org: OrgSlug
+    github_token: SecretStr | None = Field(
+        default=None,
+        exclude=True,
+        repr=False,
+        validation_alias=AliasChoices("GH_TOKEN"),
+    )
     period: PeriodGrain = PeriodGrain.MONTH
     mode: RunMode = RunMode.INCREMENTAL
     output_dir: Path = Field(default_factory=lambda: Path("output"))

@@ -11,7 +11,7 @@ from orgpulse.cli import app, build_run_config
 from orgpulse.config import get_settings
 from orgpulse.errors import AuthResolutionError, GitHubApiError
 from orgpulse.github_auth import GitHubAuthService
-from orgpulse.models import AuthSource, GitHubTargetContext, PeriodGrain, RunMode
+from orgpulse.models import AuthSource, GitHubTargetContext, PeriodGrain, ResolvedToken, RunMode
 
 
 @pytest.fixture(scope="module")
@@ -40,7 +40,10 @@ def stub_github_auth_service(monkeypatch: pytest.MonkeyPatch) -> None:
         )
     )
 
-    monkeypatch.setattr("orgpulse.cli.GitHubAuthService", lambda: github_auth_service)
+    monkeypatch.setattr("orgpulse.cli.resolve_auth_token", lambda config: ResolvedToken(source=AuthSource.GH_TOKEN, token="env-token"))
+    monkeypatch.setattr("orgpulse.cli.Github", lambda auth: object())
+    monkeypatch.setattr("orgpulse.cli.Auth.Token", lambda token: object())
+    monkeypatch.setattr("orgpulse.cli.GitHubAuthService", lambda github_client, auth_source: github_auth_service)
 
 
 class TestRunConfigParsing:
@@ -199,7 +202,10 @@ class TestRunConfigParsing:
         # Given
         github_auth_service = create_autospec(GitHubAuthService, instance=True, spec_set=True)
         github_auth_service.validate_access.side_effect = AuthResolutionError("token rejected")
-        monkeypatch.setattr("orgpulse.cli.GitHubAuthService", lambda: github_auth_service)
+        monkeypatch.setattr("orgpulse.cli.resolve_auth_token", lambda config: ResolvedToken(source=AuthSource.GH_TOKEN, token="env-token"))
+        monkeypatch.setattr("orgpulse.cli.Github", lambda auth: object())
+        monkeypatch.setattr("orgpulse.cli.Auth.Token", lambda token: object())
+        monkeypatch.setattr("orgpulse.cli.GitHubAuthService", lambda github_client, auth_source: github_auth_service)
 
         # When
         result = runner.invoke(app, ["run", "--org", "acme"])
@@ -219,7 +225,10 @@ class TestRunConfigParsing:
         # Given
         github_auth_service = create_autospec(GitHubAuthService, instance=True, spec_set=True)
         github_auth_service.validate_access.side_effect = GitHubApiError("rate limited")
-        monkeypatch.setattr("orgpulse.cli.GitHubAuthService", lambda: github_auth_service)
+        monkeypatch.setattr("orgpulse.cli.resolve_auth_token", lambda config: ResolvedToken(source=AuthSource.GH_TOKEN, token="env-token"))
+        monkeypatch.setattr("orgpulse.cli.Github", lambda auth: object())
+        monkeypatch.setattr("orgpulse.cli.Auth.Token", lambda token: object())
+        monkeypatch.setattr("orgpulse.cli.GitHubAuthService", lambda github_client, auth_source: github_auth_service)
 
         # When
         result = runner.invoke(app, ["run", "--org", "acme"])

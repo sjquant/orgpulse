@@ -4,12 +4,13 @@ import json
 from pathlib import Path
 from typing import Annotated
 
+from github import Auth, Github
 from pydantic import ValidationError
 import typer
 
 from orgpulse.config import get_settings
 from orgpulse.errors import AuthResolutionError, GitHubApiError, OrgTargetingError
-from orgpulse.github_auth import GitHubAuthService
+from orgpulse.github_auth import GitHubAuthService, resolve_auth_token
 from orgpulse.models import PeriodGrain, RunConfig, RunMode
 
 app = typer.Typer(
@@ -104,7 +105,9 @@ def run_command(
         typer.echo(f"orgpulse: invalid configuration\n{exc}", err=True)
         raise typer.Exit(code=2) from exc
     try:
-        github_context = GitHubAuthService().validate_access(config)
+        resolved_token = resolve_auth_token(config)
+        github_client = Github(auth=Auth.Token(resolved_token.token))
+        github_context = GitHubAuthService(github_client, resolved_token.source).validate_access(config)
     except AuthResolutionError as exc:
         typer.echo(f"orgpulse: GitHub authentication failed\n{exc}", err=True)
         raise typer.Exit(code=1) from exc

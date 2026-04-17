@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import subprocess
-from typing import Callable
 
 from github import Auth, Github, GithubException
 
@@ -14,43 +13,21 @@ AUTH_REQUIRED_MESSAGE = (
 
 
 class GitHubAuthService:
-    """Resolve GitHub credentials and validate org access for a run configuration."""
+    """Validate GitHub access for a run configuration using a prepared GitHub client."""
 
-    def __init__(
-        self,
-        github_client_factory: Callable[[str], Github] | None = None,
-    ) -> None:
-        self._github_client_factory = (
-            self._build_github_client if github_client_factory is None else github_client_factory
-        )
+    def __init__(self, github_client: Github, auth_source: AuthSource) -> None:
+        self._github_client = github_client
+        self._auth_source = auth_source
 
     def validate_access(self, config: RunConfig) -> GitHubTargetContext:
-        """Validate the current GitHub credentials and configured target organization."""
-        resolved_token = self._resolve_auth_token(config)
-        client = self._github_client_factory(resolved_token.token)
-        viewer_login = self._get_viewer_login(client)
-        organization_login = self._get_organization_login(client, config.org)
+        """Validate the configured target organization using the prepared GitHub client."""
+        viewer_login = self._get_viewer_login(self._github_client)
+        organization_login = self._get_organization_login(self._github_client, config.org)
         return GitHubTargetContext(
-            auth_source=resolved_token.source,
+            auth_source=self._auth_source,
             viewer_login=viewer_login,
             organization_login=organization_login,
         )
-
-    def _resolve_auth_token(self, config: RunConfig) -> ResolvedToken:
-        """Resolve GitHub auth from RunConfig first, then fall back to GitHub CLI auth."""
-        if config.github_token is not None:
-            github_token = config.github_token.get_secret_value().strip()
-            if github_token:
-                return ResolvedToken(source=AuthSource.GH_TOKEN, token=github_token)
-
-        gh_cli_token = self._read_gh_auth_token().strip()
-        if not gh_cli_token:
-            raise AuthResolutionError(AUTH_REQUIRED_MESSAGE)
-        return ResolvedToken(source=AuthSource.GH_CLI, token=gh_cli_token)
-
-    def _build_github_client(self, token: str) -> Github:
-        """Create a PyGithub client from a resolved token."""
-        return Github(auth=Auth.Token(token))
 
     def _get_viewer_login(self, client: Github) -> str:
         """Read the authenticated user login and normalize auth failures."""
@@ -82,26 +59,39 @@ class GitHubAuthService:
             )
         return OrgTargetingError(f"Failed to validate target organization '{org}': {exc.data}")
 
-    def _read_gh_auth_token(self) -> str:
-        """Read the active GitHub CLI token for the current host."""
-        try:
-            result = subprocess.run(
-                ["gh", "auth", "token"],
-                capture_output=True,
-                text=True,
-                check=False,
-            )
-        except FileNotFoundError as exc:
-            raise AuthResolutionError(AUTH_REQUIRED_MESSAGE) from exc
+def read_gh_auth_token() -> str:
+    """Read the active GitHub CLI token for the current host."""
+    try:
+        result = subprocess.run(
+            ["gh", "auth", "token"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except FileNotFoundError as exc:
+        raise AuthResolutionError(AUTH_REQUIRED_MESSAGE) from exc
 
-        if result.returncode != 0:
-            detail = result.stderr.strip() or result.stdout.strip()
-            message = AUTH_REQUIRED_MESSAGE
-            if detail:
-                message = f"{message}\n{detail}"
-            raise AuthResolutionError(message)
+    if result.returncode != 0:
+        detail = result.stderr.strip() or result.stdout.strip()
+        message = AUTH_REQUIRED_MESSAGE
+        if detail:
+            message = f"{message}\n{detail}"
+        raise AuthResolutionError(message)
 
-        token = result.stdout.strip()
-        if not token:
-            raise AuthResolutionError(AUTH_REQUIRED_MESSAGE)
-        return token
+    token = result.stdout.strip()
+    if not token:
+        raise AuthResolutionError(AUTH_REQUIRED_MESSAGE)
+    return token
+
+
+def resolve_auth_token(config: RunConfig) -> ResolvedToken:
+    """Resolve GitHub auth from RunConfig first, then fall back to GitHub CLI auth."""
+    if config.github_token is not None:
+        github_token = config.github_token.get_secret_value().strip()
+        if github_token:
+            return ResolvedToken(source=AuthSource.GH_TOKEN, token=github_token)
+
+    gh_cli_token = read_gh_auth_token().strip()
+    if not gh_cli_token:
+        raise AuthResolutionError(AUTH_REQUIRED_MESSAGE)
+    return ResolvedToken(source=AuthSource.GH_CLI, token=gh_cli_token)

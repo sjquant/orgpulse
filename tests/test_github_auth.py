@@ -8,7 +8,7 @@ import pytest
 from github import Github, GithubException
 
 from orgpulse.errors import AuthResolutionError, GitHubApiError, OrgTargetingError
-from orgpulse.github_auth import AUTH_REQUIRED_MESSAGE, GitHubAuthService
+from orgpulse.github_auth import AUTH_REQUIRED_MESSAGE, GitHubAuthService, resolve_auth_token
 from orgpulse.models import AuthSource, RunConfig, RunMode
 
 
@@ -18,7 +18,7 @@ class TestGitHubAuthService:
         # Given
         client = self.build_github_client()
         config = self.build_run_config(github_token="env-token")
-        service = GitHubAuthService(self.build_github_client_factory(client, expected_token="env-token"))
+        service = GitHubAuthService(client, AuthSource.GH_TOKEN)
 
         def fail_if_called(*args, **kwargs) -> subprocess.CompletedProcess[str]:
             raise AssertionError("expected config.github_token to take precedence")
@@ -26,9 +26,11 @@ class TestGitHubAuthService:
         monkeypatch.setattr("orgpulse.github_auth.subprocess.run", fail_if_called)
 
         # When
+        resolved = resolve_auth_token(config)
         context = service.validate_access(config)
 
         # Then
+        assert resolved.source == AuthSource.GH_TOKEN
         assert context.auth_source == AuthSource.GH_TOKEN
         assert context.viewer_login == "maintainer"
         assert context.organization_login == "acme"
@@ -41,7 +43,7 @@ class TestGitHubAuthService:
         # Given
         client = self.build_github_client()
         config = self.build_run_config()
-        service = GitHubAuthService(self.build_github_client_factory(client, expected_token="gh-token"))
+        service = GitHubAuthService(client, AuthSource.GH_CLI)
         monkeypatch.setattr(
             "orgpulse.github_auth.subprocess.run",
             lambda *args, **kwargs: subprocess.CompletedProcess(
@@ -53,9 +55,11 @@ class TestGitHubAuthService:
         )
 
         # When
+        resolved = resolve_auth_token(config)
         context = service.validate_access(config)
 
         # Then
+        assert resolved.source == AuthSource.GH_CLI
         assert context.auth_source == AuthSource.GH_CLI
         assert context.viewer_login == "maintainer"
         assert context.organization_login == "acme"
@@ -64,7 +68,6 @@ class TestGitHubAuthService:
         """Reject authentication when neither RunConfig nor GitHub CLI provides a token."""
         # Given
         config = self.build_run_config()
-        service = GitHubAuthService(self.build_github_client_factory(self.build_github_client()))
         monkeypatch.setattr(
             "orgpulse.github_auth.subprocess.run",
             lambda *args, **kwargs: subprocess.CompletedProcess(
@@ -77,7 +80,7 @@ class TestGitHubAuthService:
 
         # When
         with pytest.raises(AuthResolutionError, match="GitHub authentication is required"):
-            service.validate_access(config)
+            resolve_auth_token(config)
 
         # Then
 
@@ -86,7 +89,7 @@ class TestGitHubAuthService:
         # Given
         client = self.build_github_client()
         config = self.build_run_config(github_token="env-token")
-        service = GitHubAuthService(self.build_github_client_factory(client, expected_token="env-token"))
+        service = GitHubAuthService(client, AuthSource.GH_TOKEN)
 
         # When
         context = service.validate_access(config)
@@ -102,7 +105,7 @@ class TestGitHubAuthService:
         client = self.build_github_client()
         client.get_organization.side_effect = GithubException(404, {"message": "Not Found"}, None)
         config = self.build_run_config(github_token="env-token")
-        service = GitHubAuthService(self.build_github_client_factory(client, expected_token="env-token"))
+        service = GitHubAuthService(client, AuthSource.GH_TOKEN)
 
         # When
         with pytest.raises(OrgTargetingError, match="Target organization 'acme' was not found"):
@@ -116,7 +119,7 @@ class TestGitHubAuthService:
         client = self.build_github_client()
         client.get_user.side_effect = GithubException(401, {"message": "Bad credentials"}, None)
         config = self.build_run_config(github_token="env-token")
-        service = GitHubAuthService(self.build_github_client_factory(client, expected_token="env-token"))
+        service = GitHubAuthService(client, AuthSource.GH_TOKEN)
 
         # When
         with pytest.raises(AuthResolutionError, match="resolved credentials were rejected"):
@@ -130,7 +133,7 @@ class TestGitHubAuthService:
         client = self.build_github_client()
         client.get_user.side_effect = GithubException(500, {"message": "Server Error"}, None)
         config = self.build_run_config(github_token="env-token")
-        service = GitHubAuthService(self.build_github_client_factory(client, expected_token="env-token"))
+        service = GitHubAuthService(client, AuthSource.GH_TOKEN)
 
         # When
         with pytest.raises(GitHubApiError, match="GitHub API request failed"):
@@ -144,7 +147,7 @@ class TestGitHubAuthService:
         client = self.build_github_client()
         client.get_organization.side_effect = GithubException(403, {"message": "Forbidden"}, None)
         config = self.build_run_config(github_token="env-token")
-        service = GitHubAuthService(self.build_github_client_factory(client, expected_token="env-token"))
+        service = GitHubAuthService(client, AuthSource.GH_TOKEN)
 
         # When
         with pytest.raises(OrgTargetingError, match="is not accessible"):
@@ -156,7 +159,6 @@ class TestGitHubAuthService:
         """Reject GitHub CLI auth resolution when the gh binary is not installed."""
         # Given
         config = self.build_run_config()
-        service = GitHubAuthService(self.build_github_client_factory(self.build_github_client()))
 
         def raise_file_not_found(*args, **kwargs) -> subprocess.CompletedProcess[str]:
             raise FileNotFoundError()
@@ -165,7 +167,7 @@ class TestGitHubAuthService:
 
         # When
         with pytest.raises(AuthResolutionError, match=AUTH_REQUIRED_MESSAGE):
-            service.validate_access(config)
+            resolve_auth_token(config)
 
         # Then
 
@@ -176,7 +178,6 @@ class TestGitHubAuthService:
         """Reject GitHub CLI auth resolution when `gh auth token` returns an error."""
         # Given
         config = self.build_run_config()
-        service = GitHubAuthService(self.build_github_client_factory(self.build_github_client()))
         monkeypatch.setattr(
             "orgpulse.github_auth.subprocess.run",
             lambda *args, **kwargs: subprocess.CompletedProcess(
@@ -189,7 +190,7 @@ class TestGitHubAuthService:
 
         # When
         with pytest.raises(AuthResolutionError, match="authentication required"):
-            service.validate_access(config)
+            resolve_auth_token(config)
 
         # Then
 
@@ -199,16 +200,6 @@ class TestGitHubAuthService:
         client.get_user.return_value = SimpleNamespace(login="maintainer")
         client.get_organization.return_value = SimpleNamespace(login="acme")
         return client
-
-    def build_github_client_factory(self, client: Github, *, expected_token: str | None = None):
-        """Build a deterministic GitHub client factory for auth service tests."""
-
-        def github_client_factory(token: str) -> Github:
-            if expected_token is not None:
-                assert token == expected_token
-            return client
-
-        return github_client_factory
 
     def build_run_config(self, **overrides: object) -> RunConfig:
         """Build the minimal run configuration needed for auth validation tests."""

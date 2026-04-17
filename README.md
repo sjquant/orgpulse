@@ -45,7 +45,9 @@ uv run orgpulse run --org your-org --period month
 ## Current CLI Contract
 
 - `orgpulse run` requires a target GitHub organization slug from `--org <org>` or `ORGPULSE_ORG`.
-- `RunConfig` is backed by `pydantic-settings`, with `ORGPULSE_*` environment variables available as defaults when a CLI option is omitted.
+- Environment-backed defaults are loaded through cached settings in `config.py`, then merged into `RunConfig` when a CLI option is omitted.
+- GitHub authentication resolves from `GH_TOKEN` first and falls back to `gh auth token` when GitHub CLI auth is already present.
+- `orgpulse run` validates that the resolved GitHub credentials can access the target organization before continuing.
 - `--period` supports `week` and `month`; default is `month`.
 - `--mode` supports `full`, `incremental`, and `backfill`; default is `incremental`.
 - `--repo` and `--exclude-repo` may be repeated and cannot overlap.

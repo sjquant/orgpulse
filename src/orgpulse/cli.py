@@ -4,10 +4,14 @@ import json
 from pathlib import Path
 from typing import Annotated
 
+from github import Auth, Github
 from pydantic import ValidationError
 import typer
 
-from orgpulse.config import PeriodGrain, RunConfig, RunMode
+from orgpulse.config import get_settings
+from orgpulse.errors import AuthResolutionError, GitHubApiError, OrgTargetingError
+from orgpulse.github_auth import GitHubAuthService, resolve_auth_token
+from orgpulse.models import PeriodGrain, RunConfig, RunMode
 
 app = typer.Typer(
     add_completion=False,
@@ -32,19 +36,18 @@ def build_run_config(
     backfill_start: str | None = None,
     backfill_end: str | None = None,
 ) -> RunConfig:
-    payload: dict[str, object] = {}
-    if org is not None:
-        payload["org"] = org
-    if period is not None:
-        payload["period"] = period
-    if mode is not None:
-        payload["mode"] = mode
+    settings = get_settings()
+    payload: dict[str, object] = {
+        "org": settings.org if org is None else org,
+        "github_token": settings.github_token,
+        "period": settings.period if period is None else period,
+        "mode": settings.mode if mode is None else mode,
+        "output_dir": settings.output_dir if output_dir is None else output_dir,
+    }
     if include_repos is not None:
         payload["include_repos"] = include_repos
     if exclude_repos is not None:
         payload["exclude_repos"] = exclude_repos
-    if output_dir is not None:
-        payload["output_dir"] = output_dir
     if backfill_start is not None:
         payload["backfill_start"] = backfill_start
     if backfill_end is not None:
@@ -101,8 +104,30 @@ def run_command(
     except ValidationError as exc:
         typer.echo(f"orgpulse: invalid configuration\n{exc}", err=True)
         raise typer.Exit(code=2) from exc
+    try:
+        resolved_token = resolve_auth_token(config)
+        github_client = Github(auth=Auth.Token(resolved_token.token))
+        github_context = GitHubAuthService(github_client, resolved_token.source).validate_access(config)
+    except AuthResolutionError as exc:
+        typer.echo(f"orgpulse: GitHub authentication failed\n{exc}", err=True)
+        raise typer.Exit(code=1) from exc
+    except GitHubApiError as exc:
+        typer.echo(f"orgpulse: GitHub API request failed\n{exc}", err=True)
+        raise typer.Exit(code=1) from exc
+    except OrgTargetingError as exc:
+        typer.echo(f"orgpulse: GitHub access validation failed\n{exc}", err=True)
+        raise typer.Exit(code=1) from exc
 
-    typer.echo(json.dumps(config.model_dump(mode="json"), indent=2, sort_keys=True))
+    typer.echo(
+        json.dumps(
+            {
+                "config": config.model_dump(mode="json"),
+                "github": github_context.model_dump(mode="json"),
+            },
+            indent=2,
+            sort_keys=True,
+        )
+    )
 
 
 def main() -> None:

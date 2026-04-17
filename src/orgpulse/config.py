@@ -1,87 +1,37 @@
 from __future__ import annotations
 
-from datetime import date
-from enum import StrEnum
+from functools import cache
 from pathlib import Path
-from typing import Annotated, Any
 
-from pydantic import Field, StringConstraints, field_validator, model_validator
+from pydantic import AliasChoices, Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-ORG_PATTERN = r"^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38}[A-Za-z0-9])?$"
-REPO_PATTERN = r"^(?:[A-Za-z0-9_.-]+/)?[A-Za-z0-9_.-]+$"
-
-OrgSlug = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, pattern=ORG_PATTERN)]
-RepoSlug = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, pattern=REPO_PATTERN)]
+from orgpulse.models import OrgSlug, PeriodGrain, RunMode
 
 
-class PeriodGrain(StrEnum):
-    WEEK = "week"
-    MONTH = "month"
-
-
-class RunMode(StrEnum):
-    FULL = "full"
-    INCREMENTAL = "incremental"
-    BACKFILL = "backfill"
-
-
-class RunConfig(BaseSettings):
+class AppSettings(BaseSettings):
     model_config = SettingsConfigDict(
         env_prefix="ORGPULSE_",
-        frozen=True,
         extra="ignore",
+        frozen=True,
     )
 
-    org: OrgSlug
+    org: OrgSlug | None = None
+    github_token: SecretStr | None = Field(
+        default=None,
+        exclude=True,
+        repr=False,
+        validation_alias=AliasChoices("GH_TOKEN"),
+    )
     period: PeriodGrain = PeriodGrain.MONTH
     mode: RunMode = RunMode.INCREMENTAL
     output_dir: Path = Field(default_factory=lambda: Path("output"))
-    include_repos: tuple[RepoSlug, ...] = ()
-    exclude_repos: tuple[RepoSlug, ...] = ()
-    backfill_start: date | None = None
-    backfill_end: date | None = None
 
-    @field_validator("include_repos", "exclude_repos", mode="before")
-    @classmethod
-    def normalize_repo_filters(cls, value: Any) -> tuple[str, ...]:
-        if value is None:
-            return ()
-        if isinstance(value, str):
-            items = [value]
-        else:
-            items = list(value)
 
-        deduped: list[str] = []
-        seen: set[str] = set()
-        for item in items:
-            cleaned = item.strip()
-            if cleaned and cleaned not in seen:
-                deduped.append(cleaned)
-                seen.add(cleaned)
-        return tuple(deduped)
+@cache
+def get_settings() -> AppSettings:
+    """Return cached application settings resolved from the environment."""
+    return AppSettings()
 
-    @field_validator("output_dir", mode="before")
-    @classmethod
-    def normalize_output_dir(cls, value: Any) -> Path:
-        if value is None:
-            return Path("output")
-        return Path(value).expanduser()
 
-    @model_validator(mode="after")
-    def validate_cross_field_constraints(self) -> "RunConfig":
-        overlapping = set(self.include_repos) & set(self.exclude_repos)
-        if overlapping:
-            overlap = ", ".join(sorted(overlapping))
-            raise ValueError(f"repo filters overlap across include and exclude lists: {overlap}")
-
-        has_backfill_bounds = self.backfill_start is not None or self.backfill_end is not None
-        if self.mode is RunMode.BACKFILL:
-            if self.backfill_start is None or self.backfill_end is None:
-                raise ValueError("backfill mode requires both --backfill-start and --backfill-end")
-            if self.backfill_start > self.backfill_end:
-                raise ValueError("--backfill-start must be on or before --backfill-end")
-        elif has_backfill_bounds:
-            raise ValueError("backfill date bounds are only valid when --mode backfill is selected")
-
-        return self
+__all__ = ["AppSettings", "get_settings"]

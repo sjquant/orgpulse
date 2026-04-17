@@ -1,18 +1,40 @@
 from __future__ import annotations
 
 import json
+from unittest.mock import create_autospec
 
 import pytest
+from pydantic import ValidationError
 from typer.testing import CliRunner
 
 from orgpulse.cli import app, build_run_config
-from orgpulse.config import PeriodGrain, RunMode
+from orgpulse.errors import AuthResolutionError, GitHubApiError
+from orgpulse.github_auth import GitHubAuthService
+from orgpulse.models import AuthSource, GitHubTargetContext, PeriodGrain, ResolvedToken, RunMode
 
 
 @pytest.fixture(scope="module")
 def runner() -> CliRunner:
     """Provide a reusable Typer CLI runner for pytest-based tests."""
     return CliRunner()
+
+
+@pytest.fixture
+def github_auth_service(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Stub the GitHub auth boundary for CLI tests that focus on config behavior."""
+    github_auth_service = create_autospec(GitHubAuthService, instance=True, spec_set=True)
+    github_auth_service.validate_access.side_effect = (
+        lambda config: GitHubTargetContext(
+            auth_source=AuthSource.GH_TOKEN,
+            viewer_login="test-user",
+            organization_login=config.org,
+        )
+    )
+
+    monkeypatch.setattr("orgpulse.cli.resolve_auth_token", lambda config: ResolvedToken(source=AuthSource.GH_TOKEN, token="env-token"))
+    monkeypatch.setattr("orgpulse.cli.Github", lambda auth: object())
+    monkeypatch.setattr("orgpulse.cli.Auth.Token", lambda token: object())
+    monkeypatch.setattr("orgpulse.cli.GitHubAuthService", lambda github_client, auth_source: github_auth_service)
 
 
 class TestRunConfigParsing:
@@ -31,7 +53,11 @@ class TestRunConfigParsing:
         assert config.include_repos == ()
         assert config.exclude_repos == ()
 
-    def test_loads_settings_from_environment(self, runner: CliRunner) -> None:
+    def test_loads_settings_from_environment(
+        self,
+        runner: CliRunner,
+        github_auth_service: None,
+    ) -> None:
         """Load run configuration defaults from ORGPULSE-prefixed environment variables."""
         # Given
         env = {
@@ -46,9 +72,32 @@ class TestRunConfigParsing:
         # Then
         payload = json.loads(result.stdout)
         assert result.exit_code == 0
-        assert payload["org"] == "env-acme"
-        assert payload["period"] == "week"
-        assert payload["output_dir"] == "env-output"
+        assert payload["config"]["org"] == "env-acme"
+        assert payload["config"]["period"] == "week"
+        assert payload["config"]["output_dir"] == "env-output"
+        assert payload["github"]["organization_login"] == "env-acme"
+
+    def test_cli_options_override_environment_defaults(
+        self,
+        runner: CliRunner,
+        github_auth_service: None,
+    ) -> None:
+        """Prefer explicit CLI values over ORGPULSE environment defaults."""
+        # Given
+        env = {
+            "ORGPULSE_ORG": "env-acme",
+            "ORGPULSE_PERIOD": "month",
+        }
+
+        # When
+        result = runner.invoke(app, ["run", "--org", "cli-acme", "--period", "week"], env=env)
+
+        # Then
+        payload = json.loads(result.stdout)
+        assert result.exit_code == 0
+        assert payload["config"]["org"] == "cli-acme"
+        assert payload["config"]["period"] == "week"
+        assert payload["github"]["organization_login"] == "cli-acme"
 
     def test_parses_backfill_bounds(self) -> None:
         """Parse backfill mode when both inclusive date bounds are provided."""
@@ -71,7 +120,21 @@ class TestRunConfigParsing:
         assert config.include_repos == ("api",)
         assert config.exclude_repos == ("legacy",)
 
-    def test_rejects_backfill_without_bounds(self, runner: CliRunner) -> None:
+    def test_rejects_repo_filters_for_another_org(self) -> None:
+        """Reject fully qualified repo filters that target a different organization."""
+        # Given
+
+        # When
+        with pytest.raises(ValidationError, match="repo filter owner must match target org 'acme'"):
+            build_run_config(org="acme", include_repos=["other-org/api"])
+
+        # Then
+
+    def test_rejects_backfill_without_bounds(
+        self,
+        runner: CliRunner,
+        github_auth_service: None,
+    ) -> None:
         """Reject backfill mode when one or both required date bounds are missing."""
         # Given
 
@@ -82,7 +145,11 @@ class TestRunConfigParsing:
         assert result.exit_code == 2
         assert "backfill mode requires both --backfill-start and --backfill-end" in result.stderr
 
-    def test_rejects_overlapping_repo_filters(self, runner: CliRunner) -> None:
+    def test_rejects_overlapping_repo_filters(
+        self,
+        runner: CliRunner,
+        github_auth_service: None,
+    ) -> None:
         """Reject configurations where the same repo is both included and excluded."""
         # Given
 
@@ -96,7 +163,11 @@ class TestRunConfigParsing:
         assert result.exit_code == 2
         assert "repo filters overlap across include and exclude lists: platform" in result.stderr
 
-    def test_rejects_backfill_dates_for_non_backfill_mode(self, runner: CliRunner) -> None:
+    def test_rejects_backfill_dates_for_non_backfill_mode(
+        self,
+        runner: CliRunner,
+        github_auth_service: None,
+    ) -> None:
         """Reject backfill date options when the run mode is not backfill."""
         # Given
 
@@ -106,3 +177,47 @@ class TestRunConfigParsing:
         # Then
         assert result.exit_code == 2
         assert "backfill date bounds are only valid when --mode backfill is selected" in result.stderr
+
+    def test_surfaces_github_auth_failures_separately(
+        self,
+        runner: CliRunner,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Surface GitHub auth failures separately from invalid configuration errors."""
+        # Given
+        github_auth_service = create_autospec(GitHubAuthService, instance=True, spec_set=True)
+        github_auth_service.validate_access.side_effect = AuthResolutionError("token rejected")
+        monkeypatch.setattr("orgpulse.cli.resolve_auth_token", lambda config: ResolvedToken(source=AuthSource.GH_TOKEN, token="env-token"))
+        monkeypatch.setattr("orgpulse.cli.Github", lambda auth: object())
+        monkeypatch.setattr("orgpulse.cli.Auth.Token", lambda token: object())
+        monkeypatch.setattr("orgpulse.cli.GitHubAuthService", lambda github_client, auth_source: github_auth_service)
+
+        # When
+        result = runner.invoke(app, ["run", "--org", "acme"])
+
+        # Then
+        assert result.exit_code == 1
+        assert "orgpulse: GitHub authentication failed" in result.stderr
+        assert "invalid configuration" not in result.stderr
+
+    def test_surfaces_github_api_failures_separately(
+        self,
+        runner: CliRunner,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Surface non-auth GitHub API failures separately from auth errors."""
+        # Given
+        github_auth_service = create_autospec(GitHubAuthService, instance=True, spec_set=True)
+        github_auth_service.validate_access.side_effect = GitHubApiError("rate limited")
+        monkeypatch.setattr("orgpulse.cli.resolve_auth_token", lambda config: ResolvedToken(source=AuthSource.GH_TOKEN, token="env-token"))
+        monkeypatch.setattr("orgpulse.cli.Github", lambda auth: object())
+        monkeypatch.setattr("orgpulse.cli.Auth.Token", lambda token: object())
+        monkeypatch.setattr("orgpulse.cli.GitHubAuthService", lambda github_client, auth_source: github_auth_service)
+
+        # When
+        result = runner.invoke(app, ["run", "--org", "acme"])
+
+        # Then
+        assert result.exit_code == 1
+        assert "orgpulse: GitHub API request failed" in result.stderr
+        assert "GitHub authentication failed" not in result.stderr

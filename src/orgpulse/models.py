@@ -84,6 +84,14 @@ class PeriodRange(BaseModel):
     period_count: int
 
 
+class CollectionWindow(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    scope: RunScope
+    start_date: date | None
+    end_date: date
+
+
 class CheckpointPolicy(BaseModel):
     model_config = ConfigDict(frozen=True)
 
@@ -209,6 +217,27 @@ class RunConfig(BaseModel):
             start_date=self.backfill_start,
             end_date=self.backfill_end,
             period_count=self.period.count_periods(self.backfill_start, self.backfill_end),
+        )
+
+    @computed_field(return_type=CollectionWindow)
+    @property
+    def collection_window(self) -> CollectionWindow:
+        if self.mode is RunMode.FULL:
+            return CollectionWindow(
+                scope=self.refresh_scope,
+                start_date=None,
+                end_date=self.as_of,
+            )
+        if self.mode is RunMode.BACKFILL:
+            return CollectionWindow(
+                scope=self.refresh_scope,
+                start_date=self.backfill_start,
+                end_date=self.backfill_end,
+            )
+        return CollectionWindow(
+            scope=self.refresh_scope,
+            start_date=self.active_period.start_date,
+            end_date=self.as_of,
         )
 
     @computed_field(return_type=CheckpointPolicy)

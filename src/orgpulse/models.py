@@ -140,9 +140,10 @@ class RunConfig(BaseModel):
         seen: set[str] = set()
         for item in items:
             cleaned = item.strip()
-            if cleaned and cleaned not in seen:
+            canonical = _canonical_repo_filter(cleaned)
+            if cleaned and canonical not in seen:
                 deduped.append(cleaned)
-                seen.add(cleaned)
+                seen.add(canonical)
         return tuple(deduped)
 
     @field_validator("output_dir", mode="before")
@@ -154,7 +155,10 @@ class RunConfig(BaseModel):
 
     @model_validator(mode="after")
     def validate_cross_field_constraints(self) -> "RunConfig":
-        overlapping = set(self.include_repos) & set(self.exclude_repos)
+        overlapping = _find_overlapping_repo_filters(
+            include_repos=self.include_repos,
+            exclude_repos=self.exclude_repos,
+        )
         if overlapping:
             overlap = ", ".join(sorted(overlapping))
             raise ValueError(f"repo filters overlap across include and exclude lists: {overlap}")
@@ -307,6 +311,30 @@ def _count_periods(start_date: date, end_date: date, next_period_start: Callable
         count += 1
         current = next_period_start(current)
     return count
+
+
+def _find_overlapping_repo_filters(
+    *,
+    include_repos: tuple[str, ...],
+    exclude_repos: tuple[str, ...],
+) -> tuple[str, ...]:
+    include_index = {
+        _canonical_repo_filter(repo_filter): repo_filter
+        for repo_filter in include_repos
+    }
+    overlapping: list[str] = []
+    seen: set[str] = set()
+    for repo_filter in exclude_repos:
+        canonical = _canonical_repo_filter(repo_filter)
+        if canonical not in include_index or canonical in seen:
+            continue
+        overlapping.append(include_index[canonical])
+        seen.add(canonical)
+    return tuple(overlapping)
+
+
+def _canonical_repo_filter(value: str) -> str:
+    return value.lower()
 
 
 class ResolvedToken(BaseModel):

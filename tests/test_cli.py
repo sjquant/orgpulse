@@ -269,6 +269,24 @@ class TestRunConfigParsing:
         assert result.exit_code == 2
         assert "repo filters overlap across include and exclude lists: platform" in result.stderr
 
+    def test_rejects_case_insensitive_overlapping_repo_filters(
+        self,
+        runner: CliRunner,
+        github_auth_service: None,
+    ) -> None:
+        """Reject repo filters that overlap after case-insensitive normalization."""
+        # Given
+
+        # When
+        result = runner.invoke(
+            app,
+            ["run", "--org", "acme", "--repo", "Platform", "--exclude-repo", "platform"],
+        )
+
+        # Then
+        assert result.exit_code == 2
+        assert "repo filters overlap across include and exclude lists: Platform" in result.stderr
+
     def test_rejects_backfill_dates_for_non_backfill_mode(
         self,
         runner: CliRunner,

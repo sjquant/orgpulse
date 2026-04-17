@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import date
 import json
 from pathlib import Path
 from typing import Annotated
@@ -25,41 +26,15 @@ def callback() -> None:
     """Org-wide GitHub metrics reporting CLI."""
 
 
-def build_run_config(
-    *,
-    org: str | None = None,
-    period: PeriodGrain | None = None,
-    mode: RunMode | None = None,
-    include_repos: list[str] | None = None,
-    exclude_repos: list[str] | None = None,
-    output_dir: Path | None = None,
-    backfill_start: str | None = None,
-    backfill_end: str | None = None,
-) -> RunConfig:
-    settings = get_settings()
-    payload: dict[str, object] = {
-        "org": settings.org if org is None else org,
-        "github_token": settings.github_token,
-        "period": settings.period if period is None else period,
-        "mode": settings.mode if mode is None else mode,
-        "output_dir": settings.output_dir if output_dir is None else output_dir,
-    }
-    if include_repos is not None:
-        payload["include_repos"] = include_repos
-    if exclude_repos is not None:
-        payload["exclude_repos"] = exclude_repos
-    if backfill_start is not None:
-        payload["backfill_start"] = backfill_start
-    if backfill_end is not None:
-        payload["backfill_end"] = backfill_end
-    return RunConfig(**payload)
-
-
 @app.command("run")
 def run_command(
     org: Annotated[
         str | None,
         typer.Option("--org", help="GitHub organization to collect. Falls back to ORGPULSE_ORG."),
+    ] = None,
+    as_of: Annotated[
+        str | None,
+        typer.Option("--as-of", help="Anchor date used to resolve the current open reporting period. Falls back to ORGPULSE_AS_OF or today."),
     ] = None,
     period: Annotated[
         PeriodGrain | None,
@@ -67,7 +42,7 @@ def run_command(
     ] = None,
     mode: Annotated[
         RunMode | None,
-        typer.Option("--mode", help="Run strategy for historical refresh behavior. Falls back to ORGPULSE_MODE."),
+        typer.Option("--mode", help="Run strategy: full rebuild ignores locks, incremental refreshes the current open period, and backfill refreshes an explicit closed-period range. Falls back to ORGPULSE_MODE."),
     ] = None,
     include_repos: Annotated[
         list[str] | None,
@@ -93,6 +68,7 @@ def run_command(
     try:
         config = build_run_config(
             org=org,
+            as_of=as_of,
             period=period,
             mode=mode,
             include_repos=include_repos,
@@ -128,6 +104,38 @@ def run_command(
             sort_keys=True,
         )
     )
+
+
+def build_run_config(
+    *,
+    org: str | None = None,
+    as_of: date | str | None = None,
+    period: PeriodGrain | None = None,
+    mode: RunMode | None = None,
+    include_repos: list[str] | None = None,
+    exclude_repos: list[str] | None = None,
+    output_dir: Path | None = None,
+    backfill_start: str | None = None,
+    backfill_end: str | None = None,
+) -> RunConfig:
+    settings = get_settings()
+    payload: dict[str, object] = {
+        "org": settings.org if org is None else org,
+        "github_token": settings.github_token,
+        "as_of": settings.as_of if as_of is None else as_of,
+        "period": settings.period if period is None else period,
+        "mode": settings.mode if mode is None else mode,
+        "output_dir": settings.output_dir if output_dir is None else output_dir,
+    }
+    if include_repos is not None:
+        payload["include_repos"] = include_repos
+    if exclude_repos is not None:
+        payload["exclude_repos"] = exclude_repos
+    if backfill_start is not None:
+        payload["backfill_start"] = backfill_start
+    if backfill_end is not None:
+        payload["backfill_end"] = backfill_end
+    return RunConfig(**payload)
 
 
 def main() -> None:

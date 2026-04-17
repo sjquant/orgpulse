@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import date
 from functools import cache
 from pathlib import Path
 
@@ -16,6 +17,7 @@ class AppSettings(BaseSettings):
         frozen=True,
     )
 
+    as_of: date = Field(default_factory=date.today)
     org: OrgSlug | None = None
     github_token: SecretStr | None = Field(
         default=None,

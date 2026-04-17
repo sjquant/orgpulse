@@ -8,7 +8,6 @@ from pydantic import ValidationError
 from typer.testing import CliRunner
 
 from orgpulse.cli import app, build_run_config
-from orgpulse.config import get_settings
 from orgpulse.errors import AuthResolutionError, GitHubApiError
 from orgpulse.github_auth import GitHubAuthService
 from orgpulse.models import AuthSource, GitHubTargetContext, PeriodGrain, ResolvedToken, RunMode
@@ -21,15 +20,7 @@ def runner() -> CliRunner:
 
 
 @pytest.fixture
-def reset_settings_cache() -> None:
-    """Clear cached settings around each test so env overrides remain deterministic."""
-    get_settings.cache_clear()
-    yield
-    get_settings.cache_clear()
-
-
-@pytest.fixture
-def stub_github_auth_service(monkeypatch: pytest.MonkeyPatch) -> None:
+def github_auth_service(monkeypatch: pytest.MonkeyPatch) -> None:
     """Stub the GitHub auth boundary for CLI tests that focus on config behavior."""
     github_auth_service = create_autospec(GitHubAuthService, instance=True, spec_set=True)
     github_auth_service.validate_access.side_effect = (
@@ -47,7 +38,7 @@ def stub_github_auth_service(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 class TestRunConfigParsing:
-    def test_parses_incremental_run_defaults(self, reset_settings_cache: None) -> None:
+    def test_parses_incremental_run_defaults(self) -> None:
         """Parse the default incremental run configuration from explicit input."""
         # Given
 
@@ -65,8 +56,7 @@ class TestRunConfigParsing:
     def test_loads_settings_from_environment(
         self,
         runner: CliRunner,
-        reset_settings_cache: None,
-        stub_github_auth_service: None,
+        github_auth_service: None,
     ) -> None:
         """Load run configuration defaults from ORGPULSE-prefixed environment variables."""
         # Given
@@ -90,8 +80,7 @@ class TestRunConfigParsing:
     def test_cli_options_override_environment_defaults(
         self,
         runner: CliRunner,
-        reset_settings_cache: None,
-        stub_github_auth_service: None,
+        github_auth_service: None,
     ) -> None:
         """Prefer explicit CLI values over ORGPULSE environment defaults."""
         # Given
@@ -110,7 +99,7 @@ class TestRunConfigParsing:
         assert payload["config"]["period"] == "week"
         assert payload["github"]["organization_login"] == "cli-acme"
 
-    def test_parses_backfill_bounds(self, reset_settings_cache: None) -> None:
+    def test_parses_backfill_bounds(self) -> None:
         """Parse backfill mode when both inclusive date bounds are provided."""
         # Given
 
@@ -131,7 +120,7 @@ class TestRunConfigParsing:
         assert config.include_repos == ("api",)
         assert config.exclude_repos == ("legacy",)
 
-    def test_rejects_repo_filters_for_another_org(self, reset_settings_cache: None) -> None:
+    def test_rejects_repo_filters_for_another_org(self) -> None:
         """Reject fully qualified repo filters that target a different organization."""
         # Given
 
@@ -144,8 +133,7 @@ class TestRunConfigParsing:
     def test_rejects_backfill_without_bounds(
         self,
         runner: CliRunner,
-        reset_settings_cache: None,
-        stub_github_auth_service: None,
+        github_auth_service: None,
     ) -> None:
         """Reject backfill mode when one or both required date bounds are missing."""
         # Given
@@ -160,8 +148,7 @@ class TestRunConfigParsing:
     def test_rejects_overlapping_repo_filters(
         self,
         runner: CliRunner,
-        reset_settings_cache: None,
-        stub_github_auth_service: None,
+        github_auth_service: None,
     ) -> None:
         """Reject configurations where the same repo is both included and excluded."""
         # Given
@@ -179,8 +166,7 @@ class TestRunConfigParsing:
     def test_rejects_backfill_dates_for_non_backfill_mode(
         self,
         runner: CliRunner,
-        reset_settings_cache: None,
-        stub_github_auth_service: None,
+        github_auth_service: None,
     ) -> None:
         """Reject backfill date options when the run mode is not backfill."""
         # Given
@@ -195,7 +181,6 @@ class TestRunConfigParsing:
     def test_surfaces_github_auth_failures_separately(
         self,
         runner: CliRunner,
-        reset_settings_cache: None,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """Surface GitHub auth failures separately from invalid configuration errors."""
@@ -218,7 +203,6 @@ class TestRunConfigParsing:
     def test_surfaces_github_api_failures_separately(
         self,
         runner: CliRunner,
-        reset_settings_cache: None,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """Surface non-auth GitHub API failures separately from auth errors."""

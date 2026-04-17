@@ -5,7 +5,7 @@ from typing import Callable
 
 from github import Auth, Github, GithubException
 
-from orgpulse.errors import AuthResolutionError, OrgTargetingError
+from orgpulse.errors import AuthResolutionError, GitHubApiError, OrgTargetingError
 from orgpulse.models import AuthSource, GitHubTargetContext, ResolvedToken, RunConfig
 
 AUTH_REQUIRED_MESSAGE = (
@@ -61,7 +61,7 @@ class GitHubAuthService:
                 raise AuthResolutionError(
                     "GitHub authentication failed. The resolved credentials were rejected by the GitHub API."
                 ) from exc
-            raise AuthResolutionError(f"GitHub authentication failed: {exc.data}") from exc
+            raise GitHubApiError(f"GitHub API request failed while resolving the authenticated user: {exc.data}") from exc
 
     def _get_organization_login(self, client: Github, org: str) -> str:
         """Validate that the target organization is reachable with the current credentials."""

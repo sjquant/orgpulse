@@ -8,7 +8,7 @@ from pydantic import ValidationError
 import typer
 
 from orgpulse.config import get_settings
-from orgpulse.errors import AuthResolutionError, OrgTargetingError
+from orgpulse.errors import AuthResolutionError, GitHubApiError, OrgTargetingError
 from orgpulse.github_auth import GitHubAuthService
 from orgpulse.models import PeriodGrain, RunConfig, RunMode
 
@@ -107,6 +107,9 @@ def run_command(
         github_context = GitHubAuthService().validate_access(config)
     except AuthResolutionError as exc:
         typer.echo(f"orgpulse: GitHub authentication failed\n{exc}", err=True)
+        raise typer.Exit(code=1) from exc
+    except GitHubApiError as exc:
+        typer.echo(f"orgpulse: GitHub API request failed\n{exc}", err=True)
         raise typer.Exit(code=1) from exc
     except OrgTargetingError as exc:
         typer.echo(f"orgpulse: GitHub access validation failed\n{exc}", err=True)

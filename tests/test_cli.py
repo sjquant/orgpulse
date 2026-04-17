@@ -9,7 +9,7 @@ from typer.testing import CliRunner
 
 from orgpulse.cli import app, build_run_config
 from orgpulse.config import get_settings
-from orgpulse.errors import AuthResolutionError
+from orgpulse.errors import AuthResolutionError, GitHubApiError
 from orgpulse.github_auth import GitHubAuthService
 from orgpulse.models import AuthSource, GitHubTargetContext, PeriodGrain, RunMode
 
@@ -208,3 +208,23 @@ class TestRunConfigParsing:
         assert result.exit_code == 1
         assert "orgpulse: GitHub authentication failed" in result.stderr
         assert "invalid configuration" not in result.stderr
+
+    def test_surfaces_github_api_failures_separately(
+        self,
+        runner: CliRunner,
+        reset_settings_cache: None,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Surface non-auth GitHub API failures separately from auth errors."""
+        # Given
+        github_auth_service = create_autospec(GitHubAuthService, instance=True, spec_set=True)
+        github_auth_service.validate_access.side_effect = GitHubApiError("rate limited")
+        monkeypatch.setattr("orgpulse.cli.GitHubAuthService", lambda: github_auth_service)
+
+        # When
+        result = runner.invoke(app, ["run", "--org", "acme"])
+
+        # Then
+        assert result.exit_code == 1
+        assert "orgpulse: GitHub API request failed" in result.stderr
+        assert "GitHub authentication failed" not in result.stderr

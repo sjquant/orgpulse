@@ -7,7 +7,7 @@ from unittest.mock import create_autospec
 import pytest
 from github import Github, GithubException
 
-from orgpulse.errors import AuthResolutionError, OrgTargetingError
+from orgpulse.errors import AuthResolutionError, GitHubApiError, OrgTargetingError
 from orgpulse.github_auth import AUTH_REQUIRED_MESSAGE, GitHubAuthService
 from orgpulse.models import AuthSource, RunConfig, RunMode
 
@@ -120,6 +120,20 @@ class TestGitHubAuthService:
 
         # When
         with pytest.raises(AuthResolutionError, match="resolved credentials were rejected"):
+            service.validate_access(config)
+
+        # Then
+
+    def test_surfaces_non_auth_viewer_lookup_failures_as_github_api_errors(self) -> None:
+        """Surface non-401 viewer lookup failures as generic GitHub API errors."""
+        # Given
+        client = self.build_github_client()
+        client.get_user.side_effect = GithubException(500, {"message": "Server Error"}, None)
+        config = self.build_run_config(github_token="env-token")
+        service = GitHubAuthService(self.build_github_client_factory(client, expected_token="env-token"))
+
+        # When
+        with pytest.raises(GitHubApiError, match="GitHub API request failed"):
             service.validate_access(config)
 
         # Then

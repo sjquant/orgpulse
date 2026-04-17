@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+from calendar import monthrange
 from datetime import date
+from datetime import timedelta
 from enum import StrEnum
 from pathlib import Path
-from typing import Annotated, Any
+from typing import Annotated, Any, Callable
 
-from pydantic import BaseModel, ConfigDict, Field, SecretStr, StringConstraints, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, StringConstraints, computed_field, field_validator, model_validator
 
 ORG_PATTERN = r"^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38}[A-Za-z0-9])?$"
 REPO_PATTERN = r"^(?:[A-Za-z0-9_.-]+/)?[A-Za-z0-9_.-]+$"
@@ -18,6 +20,33 @@ class PeriodGrain(StrEnum):
     WEEK = "week"
     MONTH = "month"
 
+    def start_for(self, value: date) -> date:
+        if self is PeriodGrain.MONTH:
+            return value.replace(day=1)
+        return value - timedelta(days=value.weekday())
+
+    def end_for(self, value: date) -> date:
+        start_date = self.start_for(value)
+        if self is PeriodGrain.MONTH:
+            return _month_end(start_date)
+        return start_date + timedelta(days=6)
+
+    def is_period_start(self, value: date) -> bool:
+        return value == self.start_for(value)
+
+    def is_period_end(self, value: date) -> bool:
+        return value == self.end_for(value)
+
+    def key_for(self, value: date) -> str:
+        if self is PeriodGrain.MONTH:
+            return _period_key_for_month(value)
+        return _period_key_for_week(value)
+
+    def count_periods(self, start_date: date, end_date: date) -> int:
+        if self is PeriodGrain.MONTH:
+            return _count_periods(start_date, end_date, _next_month_start)
+        return _count_periods(start_date, end_date, _next_week_start)
+
 
 class RunMode(StrEnum):
     FULL = "full"
@@ -25,9 +54,50 @@ class RunMode(StrEnum):
     BACKFILL = "backfill"
 
 
+class RunScope(StrEnum):
+    FULL_HISTORY = "full_history"
+    OPEN_PERIOD = "open_period"
+    BOUNDED_BACKFILL = "bounded_backfill"
+
+
 class AuthSource(StrEnum):
     GH_TOKEN = "GH_TOKEN"
     GH_CLI = "gh"
+
+
+class ReportingPeriod(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    grain: PeriodGrain
+    start_date: date
+    end_date: date
+    key: str
+    closed: bool
+
+
+class PeriodRange(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    grain: PeriodGrain
+    start_date: date
+    end_date: date
+    period_count: int
+
+
+class CheckpointPolicy(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    resume_from_checkpoint: bool
+    persist_checkpoint: bool
+    overwrite_checkpoint: bool
+
+
+class LockPolicy(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    skip_locked_periods: bool
+    refresh_locked_periods: bool
+    lock_closed_periods_on_success: bool
 
 
 class RunConfig(BaseModel):
@@ -39,6 +109,7 @@ class RunConfig(BaseModel):
         exclude=True,
         repr=False,
     )
+    as_of: date = Field(default_factory=date.today)
     period: PeriodGrain = PeriodGrain.MONTH
     mode: RunMode = RunMode.INCREMENTAL
     output_dir: Path = Field(default_factory=lambda: Path("output"))
@@ -95,10 +166,118 @@ class RunConfig(BaseModel):
                 raise ValueError("backfill mode requires both --backfill-start and --backfill-end")
             if self.backfill_start > self.backfill_end:
                 raise ValueError("--backfill-start must be on or before --backfill-end")
+            if not self.period.is_period_start(self.backfill_start):
+                raise ValueError("backfill start must align to the selected period boundary")
+            if not self.period.is_period_end(self.backfill_end):
+                raise ValueError("backfill end must align to the selected period boundary")
+            if self.backfill_end >= self.active_period.start_date:
+                raise ValueError("backfill range must end before the current open period begins")
         elif has_backfill_bounds:
             raise ValueError("backfill date bounds are only valid when --mode backfill is selected")
 
         return self
+
+    @computed_field(return_type=RunScope)
+    @property
+    def refresh_scope(self) -> RunScope:
+        if self.mode is RunMode.FULL:
+            return RunScope.FULL_HISTORY
+        if self.mode is RunMode.BACKFILL:
+            return RunScope.BOUNDED_BACKFILL
+        return RunScope.OPEN_PERIOD
+
+    @computed_field(return_type=ReportingPeriod)
+    @property
+    def active_period(self) -> ReportingPeriod:
+        start_date = self.period.start_for(self.as_of)
+        end_date = self.period.end_for(self.as_of)
+        return ReportingPeriod(
+            grain=self.period,
+            start_date=start_date,
+            end_date=end_date,
+            key=self.period.key_for(start_date),
+            closed=False,
+        )
+
+    @computed_field(return_type=PeriodRange | None)
+    @property
+    def requested_range(self) -> PeriodRange | None:
+        if self.mode is not RunMode.BACKFILL:
+            return None
+        return PeriodRange(
+            grain=self.period,
+            start_date=self.backfill_start,
+            end_date=self.backfill_end,
+            period_count=self.period.count_periods(self.backfill_start, self.backfill_end),
+        )
+
+    @computed_field(return_type=CheckpointPolicy)
+    @property
+    def checkpoint_policy(self) -> CheckpointPolicy:
+        if self.mode is RunMode.FULL:
+            return CheckpointPolicy(
+                resume_from_checkpoint=False,
+                persist_checkpoint=True,
+                overwrite_checkpoint=True,
+            )
+        if self.mode is RunMode.BACKFILL:
+            return CheckpointPolicy(
+                resume_from_checkpoint=False,
+                persist_checkpoint=False,
+                overwrite_checkpoint=False,
+            )
+        return CheckpointPolicy(
+            resume_from_checkpoint=True,
+            persist_checkpoint=True,
+            overwrite_checkpoint=False,
+        )
+
+    @computed_field(return_type=LockPolicy)
+    @property
+    def lock_policy(self) -> LockPolicy:
+        if self.mode is RunMode.INCREMENTAL:
+            return LockPolicy(
+                skip_locked_periods=True,
+                refresh_locked_periods=False,
+                lock_closed_periods_on_success=True,
+            )
+        return LockPolicy(
+            skip_locked_periods=False,
+            refresh_locked_periods=True,
+            lock_closed_periods_on_success=True,
+        )
+
+
+def _period_key_for_month(value: date) -> str:
+    return value.strftime("%Y-%m")
+
+
+def _period_key_for_week(value: date) -> str:
+    iso_year, iso_week, _ = value.isocalendar()
+    return f"{iso_year}-W{iso_week:02d}"
+
+
+def _month_end(value: date) -> date:
+    return value.replace(day=monthrange(value.year, value.month)[1])
+
+
+def _next_month_start(value: date) -> date:
+    year = value.year + (value.month // 12)
+    month = 1 if value.month == 12 else value.month + 1
+    return date(year, month, 1)
+
+
+def _next_week_start(value: date) -> date:
+    return value + timedelta(days=7)
+
+
+def _count_periods(start_date: date, end_date: date, next_period_start: Callable[[date], date]) -> int:
+    count = 0
+    current = start_date
+    while current <= end_date:
+        count += 1
+        current = next_period_start(current)
+    return count
 
 
 class ResolvedToken(BaseModel):

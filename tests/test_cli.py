@@ -10,7 +10,7 @@ from typer.testing import CliRunner
 from orgpulse.cli import app, build_run_config
 from orgpulse.errors import AuthResolutionError, GitHubApiError
 from orgpulse.github_auth import GitHubAuthService
-from orgpulse.models import AuthSource, GitHubTargetContext, PeriodGrain, ResolvedToken, RunMode
+from orgpulse.models import AuthSource, GitHubTargetContext, PeriodGrain, ResolvedToken, RunMode, RunScope
 
 
 @pytest.fixture(scope="module")
@@ -49,9 +49,16 @@ class TestRunConfigParsing:
         assert config.org == "acme"
         assert config.period == PeriodGrain.MONTH
         assert config.mode == RunMode.INCREMENTAL
+        assert config.refresh_scope == RunScope.OPEN_PERIOD
         assert config.output_dir.as_posix() == "output"
         assert config.include_repos == ()
         assert config.exclude_repos == ()
+        assert config.checkpoint_policy.resume_from_checkpoint is True
+        assert config.checkpoint_policy.persist_checkpoint is True
+        assert config.checkpoint_policy.overwrite_checkpoint is False
+        assert config.lock_policy.skip_locked_periods is True
+        assert config.lock_policy.refresh_locked_periods is False
+        assert config.lock_policy.lock_closed_periods_on_success is True
 
     def test_loads_settings_from_environment(
         self,
@@ -61,6 +68,7 @@ class TestRunConfigParsing:
         """Load run configuration defaults from ORGPULSE-prefixed environment variables."""
         # Given
         env = {
+            "ORGPULSE_AS_OF": "2026-04-18",
             "ORGPULSE_ORG": "env-acme",
             "ORGPULSE_PERIOD": "week",
             "ORGPULSE_OUTPUT_DIR": "env-output",
@@ -72,9 +80,13 @@ class TestRunConfigParsing:
         # Then
         payload = json.loads(result.stdout)
         assert result.exit_code == 0
+        assert payload["config"]["as_of"] == "2026-04-18"
         assert payload["config"]["org"] == "env-acme"
         assert payload["config"]["period"] == "week"
         assert payload["config"]["output_dir"] == "env-output"
+        assert payload["config"]["active_period"]["start_date"] == "2026-04-13"
+        assert payload["config"]["active_period"]["end_date"] == "2026-04-19"
+        assert payload["config"]["refresh_scope"] == "open_period"
         assert payload["github"]["organization_login"] == "env-acme"
 
     def test_cli_options_override_environment_defaults(
@@ -99,6 +111,31 @@ class TestRunConfigParsing:
         assert payload["config"]["period"] == "week"
         assert payload["github"]["organization_login"] == "cli-acme"
 
+    def test_resolves_month_period_boundaries_from_as_of(self) -> None:
+        """Resolve the current monthly reporting period from an explicit as-of date."""
+        # Given
+
+        # When
+        config = build_run_config(org="acme", as_of="2026-04-18")
+
+        # Then
+        assert str(config.as_of) == "2026-04-18"
+        assert str(config.active_period.start_date) == "2026-04-01"
+        assert str(config.active_period.end_date) == "2026-04-30"
+        assert config.active_period.key == "2026-04"
+
+    def test_resolves_week_period_boundaries_from_as_of(self) -> None:
+        """Resolve ISO-week reporting boundaries from an explicit as-of date."""
+        # Given
+
+        # When
+        config = build_run_config(org="acme", as_of="2026-04-18", period=PeriodGrain.WEEK)
+
+        # Then
+        assert str(config.active_period.start_date) == "2026-04-13"
+        assert str(config.active_period.end_date) == "2026-04-19"
+        assert config.active_period.key == "2026-W16"
+
     def test_parses_backfill_bounds(self) -> None:
         """Parse backfill mode when both inclusive date bounds are provided."""
         # Given
@@ -106,6 +143,7 @@ class TestRunConfigParsing:
         # When
         config = build_run_config(
             org="acme",
+            as_of="2026-04-18",
             mode=RunMode.BACKFILL,
             backfill_start="2026-01-01",
             backfill_end="2026-01-31",
@@ -117,8 +155,16 @@ class TestRunConfigParsing:
         assert config.mode == RunMode.BACKFILL
         assert str(config.backfill_start) == "2026-01-01"
         assert str(config.backfill_end) == "2026-01-31"
+        assert config.refresh_scope == RunScope.BOUNDED_BACKFILL
         assert config.include_repos == ("api",)
         assert config.exclude_repos == ("legacy",)
+        assert config.requested_range is not None
+        assert config.requested_range.period_count == 1
+        assert config.checkpoint_policy.resume_from_checkpoint is False
+        assert config.checkpoint_policy.persist_checkpoint is False
+        assert config.checkpoint_policy.overwrite_checkpoint is False
+        assert config.lock_policy.skip_locked_periods is False
+        assert config.lock_policy.refresh_locked_periods is True
 
     def test_rejects_repo_filters_for_another_org(self) -> None:
         """Reject fully qualified repo filters that target a different organization."""
@@ -144,6 +190,66 @@ class TestRunConfigParsing:
         # Then
         assert result.exit_code == 2
         assert "backfill mode requires both --backfill-start and --backfill-end" in result.stderr
+
+    def test_rejects_backfill_start_outside_period_boundary(
+        self,
+        runner: CliRunner,
+        github_auth_service: None,
+    ) -> None:
+        """Reject backfill ranges that do not start on a period boundary."""
+        # Given
+
+        # When
+        result = runner.invoke(
+            app,
+            [
+                "run",
+                "--org",
+                "acme",
+                "--as-of",
+                "2026-04-18",
+                "--mode",
+                "backfill",
+                "--backfill-start",
+                "2026-01-02",
+                "--backfill-end",
+                "2026-01-31",
+            ],
+        )
+
+        # Then
+        assert result.exit_code == 2
+        assert "backfill start must align to the selected period boundary" in result.stderr
+
+    def test_rejects_backfill_end_in_current_open_period(
+        self,
+        runner: CliRunner,
+        github_auth_service: None,
+    ) -> None:
+        """Reject backfill ranges that bleed into the current open period."""
+        # Given
+
+        # When
+        result = runner.invoke(
+            app,
+            [
+                "run",
+                "--org",
+                "acme",
+                "--as-of",
+                "2026-04-18",
+                "--mode",
+                "backfill",
+                "--backfill-start",
+                "2026-03-01",
+                "--backfill-end",
+                "2026-04-30",
+            ],
+        )
+
+        # Then
+        assert result.exit_code == 2
+        assert "backfill range must end before the current open period begins" in result.stderr
 
     def test_rejects_overlapping_repo_filters(
         self,
@@ -177,6 +283,27 @@ class TestRunConfigParsing:
         # Then
         assert result.exit_code == 2
         assert "backfill date bounds are only valid when --mode backfill is selected" in result.stderr
+
+    def test_serializes_full_mode_policy_in_cli_output(
+        self,
+        runner: CliRunner,
+        github_auth_service: None,
+    ) -> None:
+        """Serialize full-run checkpoint and lock semantics through the CLI contract."""
+        # Given
+
+        # When
+        result = runner.invoke(app, ["run", "--org", "acme", "--as-of", "2026-04-18", "--mode", "full"])
+
+        # Then
+        payload = json.loads(result.stdout)
+        assert result.exit_code == 0
+        assert payload["config"]["refresh_scope"] == "full_history"
+        assert payload["config"]["checkpoint_policy"]["resume_from_checkpoint"] is False
+        assert payload["config"]["checkpoint_policy"]["persist_checkpoint"] is True
+        assert payload["config"]["checkpoint_policy"]["overwrite_checkpoint"] is True
+        assert payload["config"]["lock_policy"]["skip_locked_periods"] is False
+        assert payload["config"]["lock_policy"]["refresh_locked_periods"] is True
 
     def test_surfaces_github_auth_failures_separately(
         self,

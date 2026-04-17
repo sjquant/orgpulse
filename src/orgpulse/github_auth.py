@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import subprocess
+from typing import Callable
 
 from github import Auth, Github, GithubException
 
@@ -15,10 +16,18 @@ AUTH_REQUIRED_MESSAGE = (
 class GitHubAuthService:
     """Resolve GitHub credentials and validate org access for a run configuration."""
 
+    def __init__(
+        self,
+        github_client_factory: Callable[[str], Github] | None = None,
+    ) -> None:
+        self._github_client_factory = (
+            self._build_github_client if github_client_factory is None else github_client_factory
+        )
+
     def validate_access(self, config: RunConfig) -> GitHubTargetContext:
         """Validate the current GitHub credentials and configured target organization."""
         resolved_token = self._resolve_auth_token(config)
-        client = self._create_github_client(resolved_token.token)
+        client = self._github_client_factory(resolved_token.token)
         viewer_login = self._get_viewer_login(client)
         organization_login = self._get_organization_login(client, config.org)
         return GitHubTargetContext(
@@ -39,7 +48,7 @@ class GitHubAuthService:
             raise AuthResolutionError(AUTH_REQUIRED_MESSAGE)
         return ResolvedToken(source=AuthSource.GH_CLI, token=gh_cli_token)
 
-    def _create_github_client(self, token: str) -> Github:
+    def _build_github_client(self, token: str) -> Github:
         """Create a PyGithub client from a resolved token."""
         return Github(auth=Auth.Token(token))
 

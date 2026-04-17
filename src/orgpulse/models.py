@@ -5,17 +5,7 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Annotated, Any
 
-from pydantic import (
-    AliasChoices,
-    BaseModel,
-    ConfigDict,
-    Field,
-    SecretStr,
-    StringConstraints,
-    field_validator,
-    model_validator,
-)
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, StringConstraints, field_validator, model_validator
 
 ORG_PATTERN = r"^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38}[A-Za-z0-9])?$"
 REPO_PATTERN = r"^(?:[A-Za-z0-9_.-]+/)?[A-Za-z0-9_.-]+$"
@@ -40,20 +30,14 @@ class AuthSource(StrEnum):
     GH_CLI = "gh"
 
 
-class RunConfig(BaseSettings):
-    model_config = SettingsConfigDict(
-        env_prefix="ORGPULSE_",
-        frozen=True,
-        extra="ignore",
-        populate_by_name=True,
-    )
+class RunConfig(BaseModel):
+    model_config = ConfigDict(frozen=True)
 
     org: OrgSlug
     github_token: SecretStr | None = Field(
         default=None,
         exclude=True,
         repr=False,
-        validation_alias=AliasChoices("GH_TOKEN"),
     )
     period: PeriodGrain = PeriodGrain.MONTH
     mode: RunMode = RunMode.INCREMENTAL

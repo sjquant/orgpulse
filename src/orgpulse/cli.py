@@ -7,6 +7,7 @@ from typing import Annotated
 from pydantic import ValidationError
 import typer
 
+from orgpulse.config import get_settings
 from orgpulse.errors import AuthResolutionError, OrgTargetingError
 from orgpulse.github_auth import GitHubAuthService
 from orgpulse.models import PeriodGrain, RunConfig, RunMode
@@ -23,11 +24,6 @@ def callback() -> None:
     """Org-wide GitHub metrics reporting CLI."""
 
 
-def build_github_auth_service() -> GitHubAuthService:
-    """Build the GitHub auth boundary used by the CLI command."""
-    return GitHubAuthService()
-
-
 def build_run_config(
     *,
     org: str | None = None,
@@ -39,19 +35,18 @@ def build_run_config(
     backfill_start: str | None = None,
     backfill_end: str | None = None,
 ) -> RunConfig:
-    payload: dict[str, object] = {}
-    if org is not None:
-        payload["org"] = org
-    if period is not None:
-        payload["period"] = period
-    if mode is not None:
-        payload["mode"] = mode
+    settings = get_settings()
+    payload: dict[str, object] = {
+        "org": settings.org if org is None else org,
+        "github_token": settings.github_token,
+        "period": settings.period if period is None else period,
+        "mode": settings.mode if mode is None else mode,
+        "output_dir": settings.output_dir if output_dir is None else output_dir,
+    }
     if include_repos is not None:
         payload["include_repos"] = include_repos
     if exclude_repos is not None:
         payload["exclude_repos"] = exclude_repos
-    if output_dir is not None:
-        payload["output_dir"] = output_dir
     if backfill_start is not None:
         payload["backfill_start"] = backfill_start
     if backfill_end is not None:
@@ -109,7 +104,7 @@ def run_command(
         typer.echo(f"orgpulse: invalid configuration\n{exc}", err=True)
         raise typer.Exit(code=2) from exc
     try:
-        github_context = build_github_auth_service().validate_access(config)
+        github_context = GitHubAuthService().validate_access(config)
     except AuthResolutionError as exc:
         typer.echo(f"orgpulse: GitHub authentication failed\n{exc}", err=True)
         raise typer.Exit(code=1) from exc

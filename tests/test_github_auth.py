@@ -14,8 +14,8 @@ from orgpulse.github_auth import (
     GitHubAuthService,
     resolve_auth_token,
 )
-from orgpulse.github_types import GitHubAuthClientLike
 from orgpulse.models import AuthSource, RunConfig, RunMode
+from orgpulse.types.github import GitHubAuthClientLike
 
 
 class TestGitHubAuthService:

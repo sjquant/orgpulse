@@ -8,7 +8,14 @@ from typing import TypeVar, cast
 
 from github import GithubException
 
-from orgpulse.github_types import (
+from orgpulse.ingestion import GitHubIngestionService
+from orgpulse.models import (
+    RepositoryInventory,
+    RepositoryInventoryItem,
+    RunConfig,
+    RunMode,
+)
+from orgpulse.types.github import (
     GitHubActorLike,
     GitHubIngestionClientLike,
     GitHubPullRequestLike,
@@ -16,13 +23,6 @@ from orgpulse.github_types import (
     GitHubReviewLike,
     GitHubTeamLike,
     GitHubTimelineEventLike,
-)
-from orgpulse.ingestion import GitHubIngestionService
-from orgpulse.models import (
-    RepositoryInventory,
-    RepositoryInventoryItem,
-    RunConfig,
-    RunMode,
 )
 
 T = TypeVar("T")

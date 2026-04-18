@@ -8,14 +8,6 @@ from typing import TypeVar, cast
 from github import Github, GithubException
 
 from orgpulse.errors import GitHubApiError
-from orgpulse.github_types import (
-    GitHubActorLike,
-    GitHubIngestionClientLike,
-    GitHubOrganizationLike,
-    GitHubPullRequestLike,
-    GitHubRepositoryLike,
-    GitHubTeamLike,
-)
 from orgpulse.models import (
     CollectionWindow,
     PullRequestCollection,
@@ -27,6 +19,14 @@ from orgpulse.models import (
     RepositoryInventoryItem,
     RunConfig,
     repo_filter_matches,
+)
+from orgpulse.types.github import (
+    GitHubActorLike,
+    GitHubIngestionClientLike,
+    GitHubOrganizationLike,
+    GitHubPullRequestLike,
+    GitHubRepositoryLike,
+    GitHubTeamLike,
 )
 
 DEFAULT_MAX_RETRIES = 2

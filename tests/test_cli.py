@@ -116,6 +116,15 @@ class FakeCliSnapshotWriter:
         )
 
 
+class UnexpectedSnapshotWriter:
+    def write(
+        self,
+        config,
+        collection: PullRequestCollection,
+    ) -> RawSnapshotWriteResult:
+        raise AssertionError("snapshot writer should not run")
+
+
 class TestRunConfigParsing:
     def test_parses_incremental_run_defaults(self) -> None:
         """Parse the default incremental run configuration from explicit input."""
@@ -555,14 +564,14 @@ class TestRunConfigParsing:
 
 
 class TestRunCommandRuntime:
-    def test_writes_normalized_raw_snapshots_and_reports_partial_failures(
+    def test_writes_normalized_raw_snapshots_for_complete_collection(
         self,
         runner: CliRunner,
         github_auth_service: None,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path,
     ) -> None:
-        """Write normalized raw snapshots from the CLI flow while preserving repo-scoped partial failures."""
+        """Write normalized raw snapshots from the CLI flow when collection completes without repo failures."""
         # Given
         pull_request = PullRequestRecord(
             repository_full_name="acme/api",
@@ -593,15 +602,7 @@ class TestRunCommandRuntime:
                 end_date=datetime.fromisoformat("2026-04-18T00:00:00").date(),
             ),
             pull_requests=(pull_request,),
-            failures=(
-                RepositoryCollectionFailure(
-                    repository_full_name="acme/web",
-                    operation="pull_requests",
-                    status_code=503,
-                    retriable=True,
-                    message="Service unavailable",
-                ),
-            ),
+            failures=(),
         )
         monkeypatch.setattr(
             "orgpulse.cli.GitHubIngestionService",
@@ -633,11 +634,74 @@ class TestRunCommandRuntime:
         assert result.exit_code == 0
         payload = json.loads(result.stdout)
         assert payload["collection"]["pull_request_count"] == 1
-        assert payload["collection"]["failure_count"] == 1
+        assert payload["collection"]["failure_count"] == 0
         assert payload["raw_snapshot"]["periods"][0]["key"] == "2026-04"
         assert payload["raw_snapshot"]["periods"][0]["pull_request_count"] == 1
+        assert payload["raw_snapshot_skipped_reason"] is None
         pull_requests_path = (
             tmp_path / "raw" / "month" / "2026-04" / "pull_requests.csv"
         )
         assert pull_requests_path.exists()
         assert "acme/api" in pull_requests_path.read_text(encoding="utf-8")
+
+    def test_skips_snapshot_writes_when_repo_collection_has_failures(
+        self,
+        runner: CliRunner,
+        github_auth_service: None,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path,
+    ) -> None:
+        """Skip raw snapshot persistence when repo-scoped failures would make the output incomplete."""
+        # Given
+        existing_snapshot = tmp_path / "raw" / "month" / "2026-04" / "pull_requests.csv"
+        existing_snapshot.parent.mkdir(parents=True)
+        existing_snapshot.write_text("existing snapshot\n", encoding="utf-8")
+        collection = PullRequestCollection(
+            window=CollectionWindow(
+                scope=RunScope.OPEN_PERIOD,
+                start_date=datetime.fromisoformat("2026-04-01T00:00:00").date(),
+                end_date=datetime.fromisoformat("2026-04-18T00:00:00").date(),
+            ),
+            pull_requests=(),
+            failures=(
+                RepositoryCollectionFailure(
+                    repository_full_name="acme/web",
+                    operation="pull_requests",
+                    status_code=503,
+                    retriable=True,
+                    message="Service unavailable",
+                ),
+            ),
+        )
+        monkeypatch.setattr(
+            "orgpulse.cli.GitHubIngestionService",
+            lambda github_client: FakeCliIngestionService(collection=collection),
+        )
+        monkeypatch.setattr(
+            "orgpulse.cli.NormalizedRawSnapshotWriter",
+            lambda: UnexpectedSnapshotWriter(),
+        )
+
+        # When
+        result = runner.invoke(
+            app,
+            [
+                "run",
+                "--org",
+                "acme",
+                "--as-of",
+                "2026-04-18",
+                "--output-dir",
+                str(tmp_path),
+            ],
+        )
+
+        # Then
+        assert result.exit_code == 0
+        payload = json.loads(result.stdout)
+        assert payload["collection"]["failure_count"] == 1
+        assert payload["raw_snapshot"] is None
+        assert (
+            payload["raw_snapshot_skipped_reason"] == "repository_collection_failures"
+        )
+        assert existing_snapshot.read_text(encoding="utf-8") == "existing snapshot\n"

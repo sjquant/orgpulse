@@ -135,7 +135,7 @@ class FakeCliManifestWriter:
         repository_count: int,
     ) -> ManifestWriteResult:
         return ManifestWriteResult(
-            path=config.output_dir / "manifest.json",
+            path=config.output_dir / "manifest" / config.period.value / "manifest.json",
             manifest=RunManifest(
                 target_org=config.org,
                 period_grain=config.period,
@@ -711,7 +711,7 @@ class TestRunCommandRuntime:
         pull_requests_path = (
             tmp_path / "raw" / "month" / "2026-04" / "pull_requests.csv"
         )
-        manifest_path = tmp_path / "manifest.json"
+        manifest_path = tmp_path / "manifest" / "month" / "manifest.json"
         assert pull_requests_path.exists()
         assert manifest_path.exists()
         assert "acme/api" in pull_requests_path.read_text(encoding="utf-8")
@@ -797,7 +797,7 @@ class TestRunCommandRuntime:
         pull_requests_path = (
             tmp_path / "raw" / "month" / "2026-04" / "pull_requests.csv"
         )
-        manifest_path = tmp_path / "manifest.json"
+        manifest_path = tmp_path / "manifest" / "month" / "manifest.json"
         first_pull_requests_csv = pull_requests_path.read_text(encoding="utf-8")
         first_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
         second_result = runner.invoke(
@@ -844,7 +844,9 @@ class TestRunCommandRuntime:
             "stale snapshot\n",
             encoding="utf-8",
         )
-        (tmp_path / "manifest.json").write_text(
+        stale_manifest_path = tmp_path / "manifest" / "month" / "manifest.json"
+        stale_manifest_path.parent.mkdir(parents=True)
+        stale_manifest_path.write_text(
             json.dumps({"target_org": "stale"}),
             encoding="utf-8",
         )
@@ -922,7 +924,7 @@ class TestRunCommandRuntime:
         ]
         assert payload["manifest"]["locked_periods"] == []
         assert payload["manifest"]["watermarks"]["latest_locked_period_end_date"] is None
-        assert json.loads((tmp_path / "manifest.json").read_text(encoding="utf-8"))[
+        assert json.loads(stale_manifest_path.read_text(encoding="utf-8"))[
             "target_org"
         ] == "acme"
 
@@ -967,7 +969,8 @@ class TestRunCommandRuntime:
             "orgpulse.cli.RunManifestWriter",
             lambda: UnexpectedManifestWriter(),
         )
-        existing_manifest = tmp_path / "manifest.json"
+        existing_manifest = tmp_path / "manifest" / "month" / "manifest.json"
+        existing_manifest.parent.mkdir(parents=True)
         existing_manifest.write_text(
             json.dumps({"target_org": "acme", "status": "previous"}),
             encoding="utf-8",

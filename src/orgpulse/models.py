@@ -211,6 +211,44 @@ class RawSnapshotWriteResult(BaseModel):
     root_dir: Path
     periods: tuple[RawSnapshotPeriod, ...]
 
+class PullRequestMetricRecord(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    period_key: str
+    repository_full_name: str
+    pull_request_number: int
+    author_login: str | None
+    merged: bool
+    created_at: datetime
+    review_ready_at: datetime | None
+    review_requested_at: datetime | None
+    review_started_at: datetime | None
+    first_review_submitted_at: datetime | None
+    time_to_first_review_seconds: int | None
+    merged_at: datetime | None
+    time_to_merge_seconds: int | None
+    additions: int
+    deletions: int
+    changed_lines: int
+    changed_files: int
+    commits: int
+
+
+class PullRequestMetricPeriod(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    key: str
+    start_date: date
+    end_date: date
+    closed: bool
+    pull_request_metrics: tuple[PullRequestMetricRecord, ...]
+
+
+class PullRequestMetricCollection(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    periods: tuple[PullRequestMetricPeriod, ...]
+
 
 class ManifestWatermarks(BaseModel):
     model_config = ConfigDict(frozen=True)

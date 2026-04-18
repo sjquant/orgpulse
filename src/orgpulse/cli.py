@@ -14,12 +14,14 @@ from orgpulse.errors import AuthResolutionError, GitHubApiError, OrgTargetingErr
 from orgpulse.github_auth import GitHubAuthService, resolve_auth_token
 from orgpulse.ingestion import GitHubIngestionService, NormalizedRawSnapshotWriter
 from orgpulse.models import (
+    ManifestWriteResult,
     PeriodGrain,
     PullRequestCollection,
     RawSnapshotWriteResult,
     RunConfig,
     RunMode,
 )
+from orgpulse.output import RunManifestWriter
 
 app = typer.Typer(
     add_completion=False,
@@ -122,8 +124,14 @@ def run_command(
         ingestion_service = GitHubIngestionService(github_client)
         inventory = ingestion_service.load_repository_inventory(config)
         collection = ingestion_service.fetch_pull_requests(config, inventory)
-        raw_snapshot, raw_snapshot_skipped_reason = _write_raw_snapshot(
+        (
+            raw_snapshot,
+            raw_snapshot_skipped_reason,
+            manifest,
+            manifest_skipped_reason,
+        ) = _write_outputs(
             config,
+            len(inventory.repositories),
             collection,
         )
     except AuthResolutionError as exc:
@@ -158,10 +166,46 @@ def run_command(
                 if raw_snapshot is None
                 else raw_snapshot.model_dump(mode="json"),
                 "raw_snapshot_skipped_reason": raw_snapshot_skipped_reason,
+                "manifest": None
+                if manifest is None
+                else manifest.manifest.model_dump(mode="json"),
+                "manifest_path": None
+                if manifest is None
+                else str(manifest.path),
+                "manifest_skipped_reason": manifest_skipped_reason,
             },
             indent=2,
             sort_keys=True,
         )
+    )
+
+
+def _write_outputs(
+    config: RunConfig,
+    repository_count: int,
+    collection: PullRequestCollection,
+) -> tuple[
+    RawSnapshotWriteResult | None,
+    str | None,
+    ManifestWriteResult | None,
+    str | None,
+]:
+    raw_snapshot, raw_snapshot_skipped_reason = _write_raw_snapshot(
+        config,
+        collection,
+    )
+    manifest, manifest_skipped_reason = _write_manifest(
+        config,
+        repository_count=repository_count,
+        collection=collection,
+        raw_snapshot=raw_snapshot,
+        raw_snapshot_skipped_reason=raw_snapshot_skipped_reason,
+    )
+    return (
+        raw_snapshot,
+        raw_snapshot_skipped_reason,
+        manifest,
+        manifest_skipped_reason,
     )
 
 
@@ -172,6 +216,27 @@ def _write_raw_snapshot(
     if collection.failures:
         return None, "repository_collection_failures"
     return NormalizedRawSnapshotWriter().write(config, collection), None
+
+
+def _write_manifest(
+    config: RunConfig,
+    *,
+    repository_count: int,
+    collection: PullRequestCollection,
+    raw_snapshot: RawSnapshotWriteResult | None,
+    raw_snapshot_skipped_reason: str | None,
+) -> tuple[ManifestWriteResult | None, str | None]:
+    if raw_snapshot is None:
+        return None, raw_snapshot_skipped_reason
+    return (
+        RunManifestWriter().write(
+            config,
+            collection,
+            raw_snapshot,
+            repository_count=repository_count,
+        ),
+        None,
+    )
 
 
 def build_run_config(

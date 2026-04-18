@@ -2,8 +2,13 @@ from __future__ import annotations
 
 import csv
 from datetime import datetime
+from statistics import fmean, median
 
 from orgpulse.models import (
+    MetricValueSummary,
+    OrganizationMetricCollection,
+    OrganizationMetricPeriod,
+    OrganizationMetricRollup,
     PullRequestMetricCollection,
     PullRequestMetricPeriod,
     PullRequestMetricRecord,
@@ -405,3 +410,123 @@ class PullRequestMetricCollectionBuilder:
         if not normalized:
             return None
         return normalized
+
+
+class OrganizationMetricCollectionBuilder:
+    """Build org-level rollups from periodized pull request metric facts."""
+
+    def build(
+        self,
+        config: RunConfig,
+        pull_request_metrics: PullRequestMetricCollection,
+    ) -> OrganizationMetricCollection:
+        return OrganizationMetricCollection(
+            target_org=config.org,
+            periods=tuple(
+                self._build_metric_period(metric_period)
+                for metric_period in pull_request_metrics.periods
+            ),
+        )
+
+    def _build_metric_period(
+        self,
+        metric_period: PullRequestMetricPeriod,
+    ) -> OrganizationMetricPeriod:
+        summary = self._build_rollup(metric_period.pull_request_metrics)
+        return OrganizationMetricPeriod(
+            key=metric_period.key,
+            start_date=metric_period.start_date,
+            end_date=metric_period.end_date,
+            closed=metric_period.closed,
+            summary=summary,
+        )
+
+    def _build_rollup(
+        self,
+        pull_request_metrics: tuple[PullRequestMetricRecord, ...],
+    ) -> OrganizationMetricRollup:
+        merged_pull_requests = tuple(
+            metric for metric in pull_request_metrics if metric.merged
+        )
+        active_author_count = self._active_author_count(pull_request_metrics)
+        merged_pull_request_count = len(merged_pull_requests)
+        return OrganizationMetricRollup(
+            repository_count=len(
+                {metric.repository_full_name for metric in pull_request_metrics}
+            ),
+            pull_request_count=len(pull_request_metrics),
+            merged_pull_request_count=merged_pull_request_count,
+            active_author_count=active_author_count,
+            merged_pull_requests_per_active_author=self._per_active_author(
+                merged_pull_request_count,
+                active_author_count,
+            ),
+            time_to_merge_seconds=self._build_summary(
+                tuple(
+                    metric.time_to_merge_seconds
+                    for metric in merged_pull_requests
+                    if metric.time_to_merge_seconds is not None
+                )
+            ),
+            time_to_first_review_seconds=self._build_summary(
+                tuple(
+                    metric.time_to_first_review_seconds
+                    for metric in pull_request_metrics
+                    if metric.time_to_first_review_seconds is not None
+                )
+            ),
+            additions=self._build_summary(
+                tuple(metric.additions for metric in pull_request_metrics)
+            ),
+            deletions=self._build_summary(
+                tuple(metric.deletions for metric in pull_request_metrics)
+            ),
+            changed_lines=self._build_summary(
+                tuple(metric.changed_lines for metric in pull_request_metrics)
+            ),
+            changed_files=self._build_summary(
+                tuple(metric.changed_files for metric in pull_request_metrics)
+            ),
+            commits=self._build_summary(
+                tuple(metric.commits for metric in pull_request_metrics)
+            ),
+        )
+
+    def _active_author_count(
+        self,
+        pull_request_metrics: tuple[PullRequestMetricRecord, ...],
+    ) -> int:
+        return len(
+            {
+                metric.author_login.lower()
+                for metric in pull_request_metrics
+                if metric.author_login is not None
+            }
+        )
+
+    def _per_active_author(
+        self,
+        merged_pull_request_count: int,
+        active_author_count: int,
+    ) -> float | None:
+        if active_author_count == 0:
+            return None
+        return merged_pull_request_count / active_author_count
+
+    def _build_summary(
+        self,
+        values: tuple[int, ...],
+    ) -> MetricValueSummary:
+        if not values:
+            return MetricValueSummary(
+                count=0,
+                total=0,
+                average=None,
+                median=None,
+            )
+        return MetricValueSummary(
+            count=len(values),
+            total=sum(values),
+            average=float(fmean(values)),
+            median=float(median(values)),
+        )

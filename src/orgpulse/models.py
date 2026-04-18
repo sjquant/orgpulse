@@ -211,6 +211,7 @@ class RawSnapshotWriteResult(BaseModel):
     root_dir: Path
     periods: tuple[RawSnapshotPeriod, ...]
 
+
 class PullRequestMetricRecord(BaseModel):
     model_config = ConfigDict(frozen=True)
 
@@ -248,6 +249,49 @@ class PullRequestMetricCollection(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     periods: tuple[PullRequestMetricPeriod, ...]
+
+
+class MetricValueSummary(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    count: int
+    total: int
+    average: float | None
+    median: float | None
+
+
+class OrganizationMetricRollup(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    repository_count: int
+    pull_request_count: int
+    merged_pull_request_count: int
+    active_author_count: int
+    merged_pull_requests_per_active_author: float | None
+    time_to_merge_seconds: MetricValueSummary
+    time_to_first_review_seconds: MetricValueSummary
+    additions: MetricValueSummary
+    deletions: MetricValueSummary
+    changed_lines: MetricValueSummary
+    changed_files: MetricValueSummary
+    commits: MetricValueSummary
+
+
+class OrganizationMetricPeriod(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    key: str
+    start_date: date
+    end_date: date
+    closed: bool
+    summary: OrganizationMetricRollup
+
+
+class OrganizationMetricCollection(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    target_org: str
+    periods: tuple[OrganizationMetricPeriod, ...]
 
 
 class ManifestWatermarks(BaseModel):

@@ -12,13 +12,27 @@ from pydantic import ValidationError
 from orgpulse.config import get_settings
 from orgpulse.errors import AuthResolutionError, GitHubApiError, OrgTargetingError
 from orgpulse.github_auth import GitHubAuthService, resolve_auth_token
-from orgpulse.ingestion import GitHubIngestionService, NormalizedRawSnapshotWriter
+from orgpulse.ingestion import (
+    PULL_REQUEST_REVIEW_SNAPSHOT_FILENAME,
+    PULL_REQUEST_SNAPSHOT_FILENAME,
+    PULL_REQUEST_TIMELINE_EVENT_SNAPSHOT_FILENAME,
+    GitHubIngestionService,
+    NormalizedRawSnapshotWriter,
+)
+from orgpulse.metrics import (
+    OrganizationMetricCollectionBuilder,
+    PullRequestMetricCollectionBuilder,
+)
 from orgpulse.models import (
     ManifestWriteResult,
+    OrganizationMetricCollection,
     PeriodGrain,
     PullRequestCollection,
+    RawSnapshotPeriod,
     RawSnapshotWriteResult,
+    ReportingPeriod,
     RunConfig,
+    RunManifest,
     RunMode,
 )
 from orgpulse.output import RunManifestWriter
@@ -134,6 +148,12 @@ def run_command(
             len(inventory.repositories),
             collection,
         )
+        org_metrics, org_metrics_skipped_reason = _build_org_metrics(
+            config,
+            manifest=manifest,
+            raw_snapshot=raw_snapshot,
+            raw_snapshot_skipped_reason=raw_snapshot_skipped_reason,
+        )
     except AuthResolutionError as exc:
         typer.echo(f"orgpulse: GitHub authentication failed\n{exc}", err=True)
         raise typer.Exit(code=1) from exc
@@ -173,6 +193,10 @@ def run_command(
                 if manifest is None
                 else str(manifest.path),
                 "manifest_skipped_reason": manifest_skipped_reason,
+                "org_metrics": None
+                if org_metrics is None
+                else org_metrics.model_dump(mode="json"),
+                "org_metrics_skipped_reason": org_metrics_skipped_reason,
             },
             indent=2,
             sort_keys=True,
@@ -236,6 +260,76 @@ def _write_manifest(
             repository_count=repository_count,
         ),
         None,
+    )
+
+
+def _build_org_metrics(
+    config: RunConfig,
+    *,
+    manifest: ManifestWriteResult | None,
+    raw_snapshot: RawSnapshotWriteResult | None,
+    raw_snapshot_skipped_reason: str | None,
+) -> tuple[OrganizationMetricCollection | None, str | None]:
+    if raw_snapshot is None or manifest is None:
+        return None, raw_snapshot_skipped_reason
+    metric_snapshot = _build_metric_snapshot(
+        manifest=manifest.manifest,
+        refreshed_snapshot=raw_snapshot,
+    )
+    pull_request_metrics = PullRequestMetricCollectionBuilder().build(
+        config,
+        metric_snapshot,
+    )
+    return (
+        OrganizationMetricCollectionBuilder().build(config, pull_request_metrics),
+        None,
+    )
+
+
+def _build_metric_snapshot(
+    *,
+    manifest: RunManifest,
+    refreshed_snapshot: RawSnapshotWriteResult,
+) -> RawSnapshotWriteResult:
+    period_index = {
+        period.key: period for period in refreshed_snapshot.periods
+    }
+    for locked_period in manifest.locked_periods:
+        period_index.setdefault(
+            locked_period.key,
+            _build_snapshot_period(manifest.raw_snapshot_root_dir, locked_period),
+        )
+    return RawSnapshotWriteResult(
+        root_dir=manifest.raw_snapshot_root_dir,
+        periods=tuple(
+            period_index[key]
+            for key in sorted(
+                period_index.keys(),
+                key=lambda period_key: (
+                    period_index[period_key].start_date,
+                    period_key,
+                ),
+            )
+        ),
+    )
+
+
+def _build_snapshot_period(
+    root_dir,
+    period: ReportingPeriod,
+) -> RawSnapshotPeriod:
+    period_dir = root_dir / period.key
+    return RawSnapshotPeriod(
+        key=period.key,
+        start_date=period.start_date,
+        end_date=period.end_date,
+        directory=period_dir,
+        pull_requests_path=period_dir / PULL_REQUEST_SNAPSHOT_FILENAME,
+        pull_request_count=0,
+        reviews_path=period_dir / PULL_REQUEST_REVIEW_SNAPSHOT_FILENAME,
+        review_count=0,
+        timeline_events_path=period_dir / PULL_REQUEST_TIMELINE_EVENT_SNAPSHOT_FILENAME,
+        timeline_event_count=0,
     )
 
 

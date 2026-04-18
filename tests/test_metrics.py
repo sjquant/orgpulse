@@ -2,8 +2,13 @@ from __future__ import annotations
 
 from datetime import datetime
 
+import pytest
+
 from orgpulse.ingestion import NormalizedRawSnapshotWriter
-from orgpulse.metrics import PullRequestMetricCollectionBuilder
+from orgpulse.metrics import (
+    OrganizationMetricCollectionBuilder,
+    PullRequestMetricCollectionBuilder,
+)
 from orgpulse.models import (
     PullRequestCollection,
     PullRequestRecord,
@@ -447,6 +452,207 @@ class TestPullRequestMetricCollectionBuilder:
 
     def _build_run_config(self, **overrides: object) -> RunConfig:
         """Build the minimal run configuration needed for metric integration tests."""
+        return RunConfig.model_validate({"org": "acme", **overrides})
+
+    def _write_raw_snapshot(
+        self,
+        config: RunConfig,
+        *,
+        pull_requests: tuple[PullRequestRecord, ...],
+    ):
+        """Write raw snapshot fixtures through the production snapshot writer."""
+        return NormalizedRawSnapshotWriter().write(
+            config,
+            PullRequestCollection(
+                window=config.collection_window,
+                pull_requests=pull_requests,
+                failures=(),
+            ),
+        )
+
+
+class TestOrganizationMetricCollectionBuilder:
+    def test_builds_org_rollups_across_multiple_repositories(
+        self,
+        tmp_path,
+    ) -> None:
+        """Build org-level rollups from multiple repository metric fact streams in the same period."""
+        # Given
+        config = self._build_run_config(
+            as_of="2026-04-18",
+            output_dir=tmp_path,
+        )
+        raw_snapshot = self._write_raw_snapshot(
+            config,
+            pull_requests=(
+                PullRequestRecord(
+                    repository_full_name="acme/api",
+                    number=21,
+                    title="Ship API endpoint",
+                    state="closed",
+                    draft=False,
+                    merged=True,
+                    author_login="Alice",
+                    created_at=datetime.fromisoformat("2026-04-05T09:00:00"),
+                    updated_at=datetime.fromisoformat("2026-04-06T12:00:00"),
+                    closed_at=datetime.fromisoformat("2026-04-06T12:00:00"),
+                    merged_at=datetime.fromisoformat("2026-04-06T12:00:00"),
+                    additions=10,
+                    deletions=4,
+                    changed_files=2,
+                    commits=2,
+                    html_url="https://example.test/pr/21",
+                    reviews=(
+                        PullRequestReviewRecord(
+                            review_id=501,
+                            state="APPROVED",
+                            author_login="reviewer-a",
+                            submitted_at=datetime.fromisoformat(
+                                "2026-04-05T12:00:00"
+                            ),
+                            commit_id="commit-501",
+                        ),
+                    ),
+                ),
+                PullRequestRecord(
+                    repository_full_name="acme/web",
+                    number=31,
+                    title="Ship dashboard layout",
+                    state="closed",
+                    draft=False,
+                    merged=True,
+                    author_login="alice",
+                    created_at=datetime.fromisoformat("2026-04-08T09:00:00"),
+                    updated_at=datetime.fromisoformat("2026-04-09T13:00:00"),
+                    closed_at=datetime.fromisoformat("2026-04-09T13:00:00"),
+                    merged_at=datetime.fromisoformat("2026-04-09T12:00:00"),
+                    additions=20,
+                    deletions=10,
+                    changed_files=4,
+                    commits=5,
+                    html_url="https://example.test/pr/31",
+                    reviews=(
+                        PullRequestReviewRecord(
+                            review_id=601,
+                            state="APPROVED",
+                            author_login="reviewer-b",
+                            submitted_at=datetime.fromisoformat(
+                                "2026-04-08T15:00:00"
+                            ),
+                            commit_id="commit-601",
+                        ),
+                    ),
+                ),
+                PullRequestRecord(
+                    repository_full_name="acme/docs",
+                    number=41,
+                    title="Clarify onboarding steps",
+                    state="open",
+                    draft=False,
+                    merged=False,
+                    author_login="bob",
+                    created_at=datetime.fromisoformat("2026-04-10T09:00:00"),
+                    updated_at=datetime.fromisoformat("2026-04-10T16:00:00"),
+                    closed_at=None,
+                    merged_at=None,
+                    additions=5,
+                    deletions=1,
+                    changed_files=1,
+                    commits=1,
+                    html_url="https://example.test/pr/41",
+                    reviews=(
+                        PullRequestReviewRecord(
+                            review_id=701,
+                            state="COMMENTED",
+                            author_login="reviewer-c",
+                            submitted_at=datetime.fromisoformat(
+                                "2026-04-10T11:00:00"
+                            ),
+                            commit_id="commit-701",
+                        ),
+                    ),
+                ),
+            ),
+        )
+        pull_request_metrics = PullRequestMetricCollectionBuilder().build(
+            config,
+            raw_snapshot,
+        )
+
+        # When
+        result = OrganizationMetricCollectionBuilder().build(
+            config,
+            pull_request_metrics,
+        )
+
+        # Then
+        assert result.target_org == "acme"
+        assert [period.key for period in result.periods] == ["2026-04"]
+        summary = result.periods[0].summary
+        assert summary.repository_count == 3
+        assert summary.pull_request_count == 3
+        assert summary.merged_pull_request_count == 2
+        assert summary.active_author_count == 2
+        assert summary.merged_pull_requests_per_active_author == 1.0
+        assert summary.time_to_merge_seconds.count == 2
+        assert summary.time_to_merge_seconds.total == 194_400
+        assert summary.time_to_merge_seconds.average == 97_200.0
+        assert summary.time_to_merge_seconds.median == 97_200.0
+        assert summary.time_to_first_review_seconds.count == 3
+        assert summary.time_to_first_review_seconds.total == 39_600
+        assert summary.time_to_first_review_seconds.average == 13_200.0
+        assert summary.time_to_first_review_seconds.median == 10_800.0
+        assert summary.additions.total == 35
+        assert summary.additions.average == pytest.approx(35 / 3)
+        assert summary.additions.median == 10.0
+        assert summary.changed_lines.total == 50
+        assert summary.changed_lines.average == pytest.approx(50 / 3)
+        assert summary.changed_lines.median == 14.0
+        assert summary.commits.total == 8
+        assert summary.commits.average == pytest.approx(8 / 3)
+        assert summary.commits.median == 2.0
+
+    def test_preserves_empty_backfill_periods_in_org_rollups(
+        self,
+        tmp_path,
+    ) -> None:
+        """Preserve explicit backfill periods in org rollups even when the normalized snapshot only contains headers."""
+        # Given
+        config = self._build_run_config(
+            as_of="2026-05-18",
+            mode=RunMode.BACKFILL,
+            backfill_start="2026-03-01",
+            backfill_end="2026-04-30",
+            output_dir=tmp_path,
+        )
+        raw_snapshot = self._write_raw_snapshot(config, pull_requests=())
+        pull_request_metrics = PullRequestMetricCollectionBuilder().build(
+            config,
+            raw_snapshot,
+        )
+
+        # When
+        result = OrganizationMetricCollectionBuilder().build(
+            config,
+            pull_request_metrics,
+        )
+
+        # Then
+        assert [period.key for period in result.periods] == ["2026-03", "2026-04"]
+        assert result.periods[0].closed is True
+        assert result.periods[1].closed is True
+        assert result.periods[0].summary.repository_count == 0
+        assert result.periods[0].summary.pull_request_count == 0
+        assert result.periods[0].summary.merged_pull_request_count == 0
+        assert result.periods[0].summary.active_author_count == 0
+        assert result.periods[0].summary.merged_pull_requests_per_active_author is None
+        assert result.periods[0].summary.time_to_merge_seconds.average is None
+        assert result.periods[1].summary.repository_count == 0
+        assert result.periods[1].summary.pull_request_count == 0
+        assert result.periods[1].summary.time_to_first_review_seconds.median is None
+
+    def _build_run_config(self, **overrides: object) -> RunConfig:
+        """Build the minimal run configuration needed for org rollup integration tests."""
         return RunConfig.model_validate({"org": "acme", **overrides})
 
     def _write_raw_snapshot(

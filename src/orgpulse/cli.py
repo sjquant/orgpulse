@@ -12,7 +12,14 @@ from pydantic import ValidationError
 from orgpulse.config import get_settings
 from orgpulse.errors import AuthResolutionError, GitHubApiError, OrgTargetingError
 from orgpulse.github_auth import GitHubAuthService, resolve_auth_token
-from orgpulse.models import PeriodGrain, RunConfig, RunMode
+from orgpulse.ingestion import GitHubIngestionService, NormalizedRawSnapshotWriter
+from orgpulse.models import (
+    PeriodGrain,
+    PullRequestCollection,
+    RawSnapshotWriteResult,
+    RunConfig,
+    RunMode,
+)
 
 app = typer.Typer(
     add_completion=False,
@@ -112,6 +119,13 @@ def run_command(
         github_context = GitHubAuthService(
             github_client, resolved_token.source
         ).validate_access(config)
+        ingestion_service = GitHubIngestionService(github_client)
+        inventory = ingestion_service.load_repository_inventory(config)
+        collection = ingestion_service.fetch_pull_requests(config, inventory)
+        raw_snapshot, raw_snapshot_skipped_reason = _write_raw_snapshot(
+            config,
+            collection,
+        )
     except AuthResolutionError as exc:
         typer.echo(f"orgpulse: GitHub authentication failed\n{exc}", err=True)
         raise typer.Exit(code=1) from exc
@@ -127,11 +141,37 @@ def run_command(
             {
                 "config": config.model_dump(mode="json"),
                 "github": github_context.model_dump(mode="json"),
+                "inventory": {
+                    "organization_login": inventory.organization_login,
+                    "repository_count": len(inventory.repositories),
+                },
+                "collection": {
+                    "window": collection.window.model_dump(mode="json"),
+                    "pull_request_count": len(collection.pull_requests),
+                    "failure_count": len(collection.failures),
+                    "failures": [
+                        failure.model_dump(mode="json")
+                        for failure in collection.failures
+                    ],
+                },
+                "raw_snapshot": None
+                if raw_snapshot is None
+                else raw_snapshot.model_dump(mode="json"),
+                "raw_snapshot_skipped_reason": raw_snapshot_skipped_reason,
             },
             indent=2,
             sort_keys=True,
         )
     )
+
+
+def _write_raw_snapshot(
+    config: RunConfig,
+    collection: PullRequestCollection,
+) -> tuple[RawSnapshotWriteResult | None, str | None]:
+    if collection.failures:
+        return None, "repository_collection_failures"
+    return NormalizedRawSnapshotWriter().write(config, collection), None
 
 
 def build_run_config(

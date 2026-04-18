@@ -1,76 +1,27 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from datetime import date, datetime
+from datetime import date
 import time
 from typing import Any, TypeVar
 
 from github import Github, GithubException
-from pydantic import BaseModel, ConfigDict
 
 from orgpulse.errors import GitHubApiError
-from orgpulse.models import CollectionWindow, RunConfig
+from orgpulse.models import (
+    CollectionWindow,
+    PullRequestCollection,
+    PullRequestRecord,
+    RepositoryCollectionFailure,
+    RepositoryInventory,
+    RepositoryInventoryItem,
+    RunConfig,
+    repo_filter_matches,
+)
 
 DEFAULT_MAX_RETRIES = 2
 DEFAULT_RETRY_BACKOFF_SECONDS = 1.0
 T = TypeVar("T")
-
-
-class RepositoryInventoryItem(BaseModel):
-    model_config = ConfigDict(frozen=True)
-
-    name: str
-    full_name: str
-    default_branch: str
-    private: bool
-    archived: bool
-    disabled: bool
-
-
-class RepositoryInventory(BaseModel):
-    model_config = ConfigDict(frozen=True)
-
-    organization_login: str
-    repositories: tuple[RepositoryInventoryItem, ...]
-
-
-class RepositoryCollectionFailure(BaseModel):
-    model_config = ConfigDict(frozen=True)
-
-    repository_full_name: str
-    operation: str
-    status_code: int
-    retriable: bool
-    message: str
-
-
-class PullRequestRecord(BaseModel):
-    model_config = ConfigDict(frozen=True)
-
-    repository_full_name: str
-    number: int
-    title: str
-    state: str
-    draft: bool
-    merged: bool
-    author_login: str | None
-    created_at: datetime
-    updated_at: datetime
-    closed_at: datetime | None
-    merged_at: datetime | None
-    additions: int
-    deletions: int
-    changed_files: int
-    commits: int
-    html_url: str
-
-
-class PullRequestCollection(BaseModel):
-    model_config = ConfigDict(frozen=True)
-
-    window: CollectionWindow
-    pull_requests: tuple[PullRequestRecord, ...]
-    failures: tuple[RepositoryCollectionFailure, ...]
 
 
 class GitHubIngestionService:
@@ -130,20 +81,24 @@ class GitHubIngestionService:
 
     def _repo_is_selected(self, config: RunConfig, full_name: str, name: str) -> bool:
         if config.include_repos and not any(
-            self._matches_repo_filter(repo_filter, full_name, name)
+            self._matches_repo_filter(repo_filter, full_name, name, config.org)
             for repo_filter in config.include_repos
         ):
             return False
         if any(
-            self._matches_repo_filter(repo_filter, full_name, name)
+            self._matches_repo_filter(repo_filter, full_name, name, config.org)
             for repo_filter in config.exclude_repos
         ):
             return False
         return True
 
-    def _matches_repo_filter(self, repo_filter: str, full_name: str, name: str) -> bool:
-        normalized_filter = repo_filter.lower()
-        return normalized_filter in {full_name.lower(), name.lower()}
+    def _matches_repo_filter(self, repo_filter: str, full_name: str, name: str, org: str) -> bool:
+        return repo_filter_matches(
+            repo_filter,
+            full_name=full_name,
+            name=name,
+            org=org,
+        )
 
     def _build_repository_inventory_item(self, repository: Any) -> RepositoryInventoryItem:
         return RepositoryInventoryItem(

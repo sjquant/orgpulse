@@ -7,8 +7,8 @@ from typing import Any
 
 from github import GithubException
 
-from orgpulse.ingestion import GitHubIngestionService, RepositoryInventory, RepositoryInventoryItem
-from orgpulse.models import RunConfig, RunMode
+from orgpulse.ingestion import GitHubIngestionService
+from orgpulse.models import RepositoryInventory, RepositoryInventoryItem, RunConfig, RunMode
 
 
 class TestGitHubIngestionService:

@@ -1,13 +1,12 @@
 from __future__ import annotations
 
 from calendar import monthrange
-from datetime import date
-from datetime import timedelta
+from datetime import date, datetime, timedelta
 from enum import StrEnum
 from pathlib import Path
 from typing import Annotated, Any, Callable
 
-from pydantic import BaseModel, ConfigDict, Field, SecretStr, StringConstraints, computed_field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, StringConstraints, ValidationInfo, computed_field, field_validator, model_validator
 
 ORG_PATTERN = r"^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38}[A-Za-z0-9])?$"
 REPO_PATTERN = r"^(?:[A-Za-z0-9_.-]+/)?[A-Za-z0-9_.-]+$"
@@ -92,6 +91,63 @@ class CollectionWindow(BaseModel):
     end_date: date
 
 
+class RepositoryInventoryItem(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    name: str
+    full_name: str
+    default_branch: str
+    private: bool
+    archived: bool
+    disabled: bool
+
+
+class RepositoryInventory(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    organization_login: str
+    repositories: tuple[RepositoryInventoryItem, ...]
+
+
+class RepositoryCollectionFailure(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    repository_full_name: str
+    operation: str
+    status_code: int
+    retriable: bool
+    message: str
+
+
+class PullRequestRecord(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    repository_full_name: str
+    number: int
+    title: str
+    state: str
+    draft: bool
+    merged: bool
+    author_login: str | None
+    created_at: datetime
+    updated_at: datetime
+    closed_at: datetime | None
+    merged_at: datetime | None
+    additions: int
+    deletions: int
+    changed_files: int
+    commits: int
+    html_url: str
+
+
+class PullRequestCollection(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    window: CollectionWindow
+    pull_requests: tuple[PullRequestRecord, ...]
+    failures: tuple[RepositoryCollectionFailure, ...]
+
+
 class CheckpointPolicy(BaseModel):
     model_config = ConfigDict(frozen=True)
 
@@ -128,7 +184,7 @@ class RunConfig(BaseModel):
 
     @field_validator("include_repos", "exclude_repos", mode="before")
     @classmethod
-    def normalize_repo_filters(cls, value: Any) -> tuple[str, ...]:
+    def normalize_repo_filters(cls, value: Any, info: ValidationInfo) -> tuple[str, ...]:
         if value is None:
             return ()
         if isinstance(value, str):
@@ -136,11 +192,12 @@ class RunConfig(BaseModel):
         else:
             items = list(value)
 
+        org = info.data.get("org")
         deduped: list[str] = []
         seen: set[str] = set()
         for item in items:
             cleaned = item.strip()
-            canonical = _canonical_repo_filter(cleaned)
+            canonical = canonicalize_repo_filter(cleaned, org=org)
             if cleaned and canonical not in seen:
                 deduped.append(cleaned)
                 seen.add(canonical)
@@ -156,6 +213,7 @@ class RunConfig(BaseModel):
     @model_validator(mode="after")
     def validate_cross_field_constraints(self) -> "RunConfig":
         overlapping = _find_overlapping_repo_filters(
+            org=self.org,
             include_repos=self.include_repos,
             exclude_repos=self.exclude_repos,
         )
@@ -315,17 +373,18 @@ def _count_periods(start_date: date, end_date: date, next_period_start: Callable
 
 def _find_overlapping_repo_filters(
     *,
+    org: str,
     include_repos: tuple[str, ...],
     exclude_repos: tuple[str, ...],
 ) -> tuple[str, ...]:
     include_index = {
-        _canonical_repo_filter(repo_filter): repo_filter
+        canonicalize_repo_filter(repo_filter, org=org): repo_filter
         for repo_filter in include_repos
     }
     overlapping: list[str] = []
     seen: set[str] = set()
     for repo_filter in exclude_repos:
-        canonical = _canonical_repo_filter(repo_filter)
+        canonical = canonicalize_repo_filter(repo_filter, org=org)
         if canonical not in include_index or canonical in seen:
             continue
         overlapping.append(include_index[canonical])
@@ -333,8 +392,19 @@ def _find_overlapping_repo_filters(
     return tuple(overlapping)
 
 
-def _canonical_repo_filter(value: str) -> str:
-    return value.lower()
+def canonicalize_repo_filter(value: str, *, org: str | None = None) -> str:
+    normalized = value.strip().lower()
+    if "/" in normalized or org is None:
+        return normalized
+    return f"{org.lower()}/{normalized}"
+
+
+def repo_filter_matches(repo_filter: str, *, full_name: str, name: str, org: str) -> bool:
+    canonical_filter = canonicalize_repo_filter(repo_filter, org=org)
+    return canonical_filter in {
+        canonicalize_repo_filter(full_name),
+        canonicalize_repo_filter(name, org=org),
+    }
 
 
 class ResolvedToken(BaseModel):

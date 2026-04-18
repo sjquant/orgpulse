@@ -708,6 +708,13 @@ class TestRunCommandRuntime:
             "2026-04-18"
         )
         assert payload["manifest_skipped_reason"] is None
+        assert payload["org_metrics"]["target_org"] == "acme"
+        assert payload["org_metrics"]["periods"][0]["key"] == "2026-04"
+        assert (
+            payload["org_metrics"]["periods"][0]["summary"]["merged_pull_request_count"]
+            == 1
+        )
+        assert payload["org_metrics_skipped_reason"] is None
         pull_requests_path = (
             tmp_path / "raw" / "month" / "2026-04" / "pull_requests.csv"
         )
@@ -828,6 +835,136 @@ class TestRunCommandRuntime:
             second_manifest["last_successful_run"]["completed_at"]
             == "2026-04-19T00:00:00Z"
         )
+
+    def test_includes_locked_periods_in_org_rollups_after_incremental_refresh(
+        self,
+        runner: CliRunner,
+        github_auth_service: None,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path,
+    ) -> None:
+        """Include prior locked periods in org rollups when an incremental run refreshes only the active period."""
+        # Given
+        previous_config = build_run_config(
+            org="acme",
+            as_of="2026-03-18",
+            output_dir=tmp_path,
+        )
+        previous_pull_request = PullRequestRecord(
+            repository_full_name="acme/api",
+            number=11,
+            title="Close March work",
+            state="closed",
+            draft=False,
+            merged=True,
+            author_login="alice",
+            created_at=datetime.fromisoformat("2026-03-10T09:00:00"),
+            updated_at=datetime.fromisoformat("2026-03-14T12:00:00"),
+            closed_at=datetime.fromisoformat("2026-03-14T12:00:00"),
+            merged_at=datetime.fromisoformat("2026-03-14T12:00:00"),
+            additions=12,
+            deletions=3,
+            changed_files=2,
+            commits=2,
+            html_url="https://example.test/pr/11",
+        )
+        previous_collection = PullRequestCollection(
+            window=previous_config.collection_window,
+            pull_requests=(previous_pull_request,),
+            failures=(),
+        )
+        previous_snapshot = NormalizedRawSnapshotWriter().write(
+            previous_config,
+            previous_collection,
+        )
+        RunManifestWriter(
+            now=lambda: datetime.fromisoformat("2026-03-18T00:00:00+00:00")
+        ).write(
+            previous_config,
+            previous_collection,
+            previous_snapshot,
+            repository_count=1,
+        )
+        current_pull_request = PullRequestRecord(
+            repository_full_name="acme/web",
+            number=21,
+            title="Open April work",
+            state="closed",
+            draft=False,
+            merged=True,
+            author_login="bob",
+            created_at=datetime.fromisoformat("2026-04-09T10:00:00"),
+            updated_at=datetime.fromisoformat("2026-04-12T11:00:00"),
+            closed_at=datetime.fromisoformat("2026-04-12T11:00:00"),
+            merged_at=datetime.fromisoformat("2026-04-12T11:00:00"),
+            additions=18,
+            deletions=4,
+            changed_files=3,
+            commits=3,
+            html_url="https://example.test/pr/21",
+        )
+        inventory = RepositoryInventory(
+            organization_login="acme",
+            repositories=(),
+        )
+        collection = PullRequestCollection(
+            window=CollectionWindow(
+                scope=RunScope.OPEN_PERIOD,
+                start_date=datetime.fromisoformat("2026-04-01T00:00:00").date(),
+                end_date=datetime.fromisoformat("2026-04-18T00:00:00").date(),
+            ),
+            pull_requests=(current_pull_request,),
+            failures=(),
+        )
+        monkeypatch.setattr(
+            "orgpulse.cli.GitHubIngestionService",
+            lambda github_client: FakeCliIngestionService(
+                inventory=inventory,
+                collection=collection,
+            ),
+        )
+        monkeypatch.setattr(
+            "orgpulse.cli.NormalizedRawSnapshotWriter",
+            lambda: NormalizedRawSnapshotWriter(),
+        )
+        monkeypatch.setattr(
+            "orgpulse.cli.RunManifestWriter",
+            lambda: RunManifestWriter(
+                now=lambda: datetime.fromisoformat("2026-04-18T00:00:00+00:00")
+            ),
+        )
+
+        # When
+        result = runner.invoke(
+            app,
+            [
+                "run",
+                "--org",
+                "acme",
+                "--as-of",
+                "2026-04-18",
+                "--output-dir",
+                str(tmp_path),
+            ],
+        )
+
+        # Then
+        assert result.exit_code == 0
+        payload = json.loads(result.stdout)
+        assert [period["key"] for period in payload["org_metrics"]["periods"]] == [
+            "2026-03",
+            "2026-04",
+        ]
+        summaries = {
+            period["key"]: period["summary"] for period in payload["org_metrics"]["periods"]
+        }
+        assert summaries["2026-03"]["repository_count"] == 1
+        assert summaries["2026-03"]["merged_pull_request_count"] == 1
+        assert summaries["2026-04"]["repository_count"] == 1
+        assert summaries["2026-04"]["merged_pull_request_count"] == 1
+        assert [period["key"] for period in payload["manifest"]["locked_periods"]] == [
+            "2026-03"
+        ]
 
     def test_prunes_stale_period_outputs_and_overwrites_manifest_on_full_rerun(
         self,
@@ -1000,6 +1137,8 @@ class TestRunCommandRuntime:
         )
         assert payload["manifest"] is None
         assert payload["manifest_skipped_reason"] == "repository_collection_failures"
+        assert payload["org_metrics"] is None
+        assert payload["org_metrics_skipped_reason"] == "repository_collection_failures"
         assert existing_snapshot.read_text(encoding="utf-8") == "existing snapshot\n"
         assert json.loads(existing_manifest.read_text(encoding="utf-8")) == {
             "target_org": "acme",

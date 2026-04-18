@@ -185,6 +185,28 @@ class PullRequestCollection(BaseModel):
     failures: tuple[RepositoryCollectionFailure, ...]
 
 
+class RawSnapshotPeriod(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    key: str
+    start_date: date
+    end_date: date
+    directory: Path
+    pull_requests_path: Path
+    pull_request_count: int
+    reviews_path: Path
+    review_count: int
+    timeline_events_path: Path
+    timeline_event_count: int
+
+
+class RawSnapshotWriteResult(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    root_dir: Path
+    periods: tuple[RawSnapshotPeriod, ...]
+
+
 class CheckpointPolicy(BaseModel):
     model_config = ConfigDict(frozen=True)
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import csv
 from collections import deque
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -8,8 +9,10 @@ from typing import TypeVar, cast
 
 from github import GithubException
 
-from orgpulse.ingestion import GitHubIngestionService
+from orgpulse.ingestion import GitHubIngestionService, NormalizedRawSnapshotWriter
 from orgpulse.models import (
+    PullRequestCollection,
+    PullRequestRecord,
     RepositoryInventory,
     RepositoryInventoryItem,
     RunConfig,
@@ -407,6 +410,217 @@ class TestGitHubIngestionService:
         assert result.failures[0].retriable is True
         assert result.failures[0].message == "Review API unavailable"
 
+    def test_writes_normalized_raw_snapshots_partitioned_by_period(
+        self,
+        tmp_path,
+    ) -> None:
+        """Write period-partitioned normalized raw snapshots from enriched pull request records."""
+        # Given
+        repository = self.build_repository(
+            "acme/api",
+            pull_outcomes=[
+                [
+                    self.build_pull_request(
+                        number=20,
+                        updated_at="2026-04-12T09:00:00",
+                        review_outcomes=[
+                            [
+                                self.build_review(
+                                    review_id=101,
+                                    state="APPROVED",
+                                    submitted_at="2026-04-12T10:00:00",
+                                    author_login="reviewer-a",
+                                ),
+                            ]
+                        ],
+                        timeline_outcomes=[
+                            [
+                                self.build_timeline_event(
+                                    event_id=201,
+                                    event="review_requested",
+                                    created_at="2026-04-10T09:30:00",
+                                    actor_login="alice",
+                                    requested_reviewer_login="reviewer-a",
+                                ),
+                            ]
+                        ],
+                    ),
+                    self.build_pull_request(
+                        number=10,
+                        updated_at="2026-03-20T09:00:00",
+                    ),
+                ]
+            ],
+        )
+        service = GitHubIngestionService(
+            cast(
+                GitHubIngestionClientLike,
+                FakeGithubClient(
+                    organizations={},
+                    repositories={"acme/api": [repository]},
+                ),
+            )
+        )
+        writer = NormalizedRawSnapshotWriter()
+        config = self.build_run_config(
+            as_of="2026-04-18",
+            mode=RunMode.FULL,
+            output_dir=tmp_path,
+        )
+        inventory = RepositoryInventory(
+            organization_login="acme",
+            repositories=(self.build_inventory_item("acme/api"),),
+        )
+
+        # When
+        collection = service.fetch_pull_requests(config, inventory)
+        result = writer.write(config, collection)
+
+        # Then
+        assert [period.key for period in result.periods] == ["2026-03", "2026-04"]
+        assert self.read_csv_rows(
+            tmp_path / "raw" / "month" / "2026-03" / "pull_requests.csv"
+        ) == [
+            {
+                "period_key": "2026-03",
+                "repository_full_name": "acme/api",
+                "pull_request_number": "10",
+                "title": "PR 10",
+                "state": "closed",
+                "draft": "False",
+                "merged": "True",
+                "author_login": "alice",
+                "created_at": "2026-03-20T09:00:00",
+                "updated_at": "2026-03-20T09:00:00",
+                "closed_at": "2026-03-20T09:00:00",
+                "merged_at": "2026-03-20T09:00:00",
+                "additions": "12",
+                "deletions": "4",
+                "changed_files": "3",
+                "commits": "2",
+                "html_url": "https://example.test/pr/10",
+            }
+        ]
+        assert self.read_csv_rows(
+            tmp_path / "raw" / "month" / "2026-04" / "pull_request_reviews.csv"
+        ) == [
+            {
+                "period_key": "2026-04",
+                "repository_full_name": "acme/api",
+                "pull_request_number": "20",
+                "review_id": "101",
+                "state": "APPROVED",
+                "author_login": "reviewer-a",
+                "submitted_at": "2026-04-12T10:00:00",
+                "commit_id": "commit-101",
+            }
+        ]
+        assert self.read_csv_rows(
+            tmp_path / "raw" / "month" / "2026-04" / "pull_request_timeline_events.csv"
+        ) == [
+            {
+                "period_key": "2026-04",
+                "repository_full_name": "acme/api",
+                "pull_request_number": "20",
+                "event_id": "201",
+                "event": "review_requested",
+                "actor_login": "alice",
+                "created_at": "2026-04-10T09:30:00",
+                "requested_reviewer_login": "reviewer-a",
+                "requested_team_name": "",
+            }
+        ]
+
+    def test_writes_empty_backfill_snapshots_for_requested_periods_without_rows(
+        self,
+        tmp_path,
+    ) -> None:
+        """Write header-only snapshots for each requested backfill period even when no pull requests are returned."""
+        # Given
+        writer = NormalizedRawSnapshotWriter()
+        config = self.build_run_config(
+            as_of="2026-05-18",
+            mode=RunMode.BACKFILL,
+            backfill_start="2026-03-01",
+            backfill_end="2026-04-30",
+            output_dir=tmp_path,
+        )
+        collection = PullRequestCollection(
+            window=config.collection_window,
+            pull_requests=(),
+            failures=(),
+        )
+
+        # When
+        result = writer.write(config, collection)
+
+        # Then
+        assert [period.key for period in result.periods] == ["2026-03", "2026-04"]
+        assert (
+            self.read_csv_rows(
+                tmp_path / "raw" / "month" / "2026-03" / "pull_requests.csv"
+            )
+            == []
+        )
+        assert (
+            self.read_csv_rows(
+                tmp_path / "raw" / "month" / "2026-04" / "pull_request_reviews.csv"
+            )
+            == []
+        )
+
+    def test_prunes_stale_period_snapshots_during_full_rebuild(
+        self,
+        tmp_path,
+    ) -> None:
+        """Remove obsolete period directories during a full rebuild before rewriting current snapshots."""
+        # Given
+        stale_period_dir = tmp_path / "raw" / "month" / "2026-03"
+        stale_period_dir.mkdir(parents=True)
+        (stale_period_dir / "pull_requests.csv").write_text(
+            "stale snapshot\n",
+            encoding="utf-8",
+        )
+        writer = NormalizedRawSnapshotWriter()
+        config = self.build_run_config(
+            as_of="2026-04-18",
+            mode=RunMode.FULL,
+            output_dir=tmp_path,
+        )
+        timestamp = datetime.fromisoformat("2026-04-12T09:00:00")
+        collection = PullRequestCollection(
+            window=config.collection_window,
+            pull_requests=(
+                PullRequestRecord(
+                    repository_full_name="acme/api",
+                    number=30,
+                    title="PR 30",
+                    state="closed",
+                    draft=False,
+                    merged=True,
+                    author_login="alice",
+                    created_at=timestamp,
+                    updated_at=timestamp,
+                    closed_at=timestamp,
+                    merged_at=timestamp,
+                    additions=12,
+                    deletions=4,
+                    changed_files=3,
+                    commits=2,
+                    html_url="https://example.test/pr/30",
+                ),
+            ),
+            failures=(),
+        )
+
+        # When
+        result = writer.write(config, collection)
+
+        # Then
+        assert [period.key for period in result.periods] == ["2026-04"]
+        assert stale_period_dir.exists() is False
+        assert (tmp_path / "raw" / "month" / "2026-04" / "pull_requests.csv").exists()
+
     def build_inventory_item(self, full_name: str) -> RepositoryInventoryItem:
         """Build the minimal repository inventory item required for PR fetching."""
         return RepositoryInventoryItem(
@@ -514,6 +728,11 @@ class TestGitHubIngestionService:
     ) -> GithubException:
         """Build a GitHub exception with message and headers for retry tests."""
         return GithubException(status, {"message": message}, headers)
+
+    def read_csv_rows(self, path) -> list[dict[str, str]]:
+        """Read snapshot rows back as dictionaries for integration-style assertions."""
+        with path.open(newline="", encoding="utf-8") as handle:
+            return list(csv.DictReader(handle))
 
 
 class FakeGithubClient:

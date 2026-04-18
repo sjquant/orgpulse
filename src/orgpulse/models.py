@@ -1,13 +1,12 @@
 from __future__ import annotations
 
 from calendar import monthrange
-from datetime import date
-from datetime import timedelta
+from datetime import date, datetime, timedelta
 from enum import StrEnum
 from pathlib import Path
 from typing import Annotated, Any, Callable
 
-from pydantic import BaseModel, ConfigDict, Field, SecretStr, StringConstraints, computed_field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, StringConstraints, ValidationInfo, computed_field, field_validator, model_validator
 
 ORG_PATTERN = r"^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38}[A-Za-z0-9])?$"
 REPO_PATTERN = r"^(?:[A-Za-z0-9_.-]+/)?[A-Za-z0-9_.-]+$"
@@ -84,6 +83,71 @@ class PeriodRange(BaseModel):
     period_count: int
 
 
+class CollectionWindow(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    scope: RunScope
+    start_date: date | None
+    end_date: date
+
+
+class RepositoryInventoryItem(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    name: str
+    full_name: str
+    default_branch: str
+    private: bool
+    archived: bool
+    disabled: bool
+
+
+class RepositoryInventory(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    organization_login: str
+    repositories: tuple[RepositoryInventoryItem, ...]
+
+
+class RepositoryCollectionFailure(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    repository_full_name: str
+    operation: str
+    status_code: int
+    retriable: bool
+    message: str
+
+
+class PullRequestRecord(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    repository_full_name: str
+    number: int
+    title: str
+    state: str
+    draft: bool
+    merged: bool
+    author_login: str | None
+    created_at: datetime
+    updated_at: datetime
+    closed_at: datetime | None
+    merged_at: datetime | None
+    additions: int
+    deletions: int
+    changed_files: int
+    commits: int
+    html_url: str
+
+
+class PullRequestCollection(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    window: CollectionWindow
+    pull_requests: tuple[PullRequestRecord, ...]
+    failures: tuple[RepositoryCollectionFailure, ...]
+
+
 class CheckpointPolicy(BaseModel):
     model_config = ConfigDict(frozen=True)
 
@@ -120,7 +184,7 @@ class RunConfig(BaseModel):
 
     @field_validator("include_repos", "exclude_repos", mode="before")
     @classmethod
-    def normalize_repo_filters(cls, value: Any) -> tuple[str, ...]:
+    def normalize_repo_filters(cls, value: Any, info: ValidationInfo) -> tuple[str, ...]:
         if value is None:
             return ()
         if isinstance(value, str):
@@ -128,13 +192,15 @@ class RunConfig(BaseModel):
         else:
             items = list(value)
 
+        org = info.data.get("org")
         deduped: list[str] = []
         seen: set[str] = set()
         for item in items:
             cleaned = item.strip()
-            if cleaned and cleaned not in seen:
+            canonical = canonicalize_repo_filter(cleaned, org=org)
+            if cleaned and canonical not in seen:
                 deduped.append(cleaned)
-                seen.add(cleaned)
+                seen.add(canonical)
         return tuple(deduped)
 
     @field_validator("output_dir", mode="before")
@@ -146,7 +212,11 @@ class RunConfig(BaseModel):
 
     @model_validator(mode="after")
     def validate_cross_field_constraints(self) -> "RunConfig":
-        overlapping = set(self.include_repos) & set(self.exclude_repos)
+        overlapping = _find_overlapping_repo_filters(
+            org=self.org,
+            include_repos=self.include_repos,
+            exclude_repos=self.exclude_repos,
+        )
         if overlapping:
             overlap = ", ".join(sorted(overlapping))
             raise ValueError(f"repo filters overlap across include and exclude lists: {overlap}")
@@ -209,6 +279,27 @@ class RunConfig(BaseModel):
             start_date=self.backfill_start,
             end_date=self.backfill_end,
             period_count=self.period.count_periods(self.backfill_start, self.backfill_end),
+        )
+
+    @computed_field(return_type=CollectionWindow)
+    @property
+    def collection_window(self) -> CollectionWindow:
+        if self.mode is RunMode.FULL:
+            return CollectionWindow(
+                scope=self.refresh_scope,
+                start_date=None,
+                end_date=self.as_of,
+            )
+        if self.mode is RunMode.BACKFILL:
+            return CollectionWindow(
+                scope=self.refresh_scope,
+                start_date=self.backfill_start,
+                end_date=self.backfill_end,
+            )
+        return CollectionWindow(
+            scope=self.refresh_scope,
+            start_date=self.active_period.start_date,
+            end_date=self.as_of,
         )
 
     @computed_field(return_type=CheckpointPolicy)
@@ -278,6 +369,42 @@ def _count_periods(start_date: date, end_date: date, next_period_start: Callable
         count += 1
         current = next_period_start(current)
     return count
+
+
+def _find_overlapping_repo_filters(
+    *,
+    org: str,
+    include_repos: tuple[str, ...],
+    exclude_repos: tuple[str, ...],
+) -> tuple[str, ...]:
+    include_index = {
+        canonicalize_repo_filter(repo_filter, org=org): repo_filter
+        for repo_filter in include_repos
+    }
+    overlapping: list[str] = []
+    seen: set[str] = set()
+    for repo_filter in exclude_repos:
+        canonical = canonicalize_repo_filter(repo_filter, org=org)
+        if canonical not in include_index or canonical in seen:
+            continue
+        overlapping.append(include_index[canonical])
+        seen.add(canonical)
+    return tuple(overlapping)
+
+
+def canonicalize_repo_filter(value: str, *, org: str | None = None) -> str:
+    normalized = value.strip().lower()
+    if "/" in normalized or org is None:
+        return normalized
+    return f"{org.lower()}/{normalized}"
+
+
+def repo_filter_matches(repo_filter: str, *, full_name: str, name: str, org: str) -> bool:
+    canonical_filter = canonicalize_repo_filter(repo_filter, org=org)
+    return canonical_filter in {
+        canonicalize_repo_filter(full_name),
+        canonicalize_repo_filter(name, org=org),
+    }
 
 
 class ResolvedToken(BaseModel):

@@ -176,6 +176,21 @@ class TestRunConfigParsing:
 
         # Then
 
+    def test_deduplicates_equivalent_qualified_and_unqualified_repo_filters(self) -> None:
+        """Deduplicate repo filters that target the same repo through different forms."""
+        # Given
+
+        # When
+        config = build_run_config(
+            org="acme",
+            include_repos=["platform", "acme/platform"],
+            exclude_repos=["legacy", "acme/legacy"],
+        )
+
+        # Then
+        assert config.include_repos == ("platform",)
+        assert config.exclude_repos == ("legacy",)
+
     def test_rejects_backfill_without_bounds(
         self,
         runner: CliRunner,
@@ -263,6 +278,42 @@ class TestRunConfigParsing:
         result = runner.invoke(
             app,
             ["run", "--org", "acme", "--repo", "platform", "--exclude-repo", "platform"],
+        )
+
+        # Then
+        assert result.exit_code == 2
+        assert "repo filters overlap across include and exclude lists: platform" in result.stderr
+
+    def test_rejects_case_insensitive_overlapping_repo_filters(
+        self,
+        runner: CliRunner,
+        github_auth_service: None,
+    ) -> None:
+        """Reject repo filters that overlap after case-insensitive normalization."""
+        # Given
+
+        # When
+        result = runner.invoke(
+            app,
+            ["run", "--org", "acme", "--repo", "Platform", "--exclude-repo", "platform"],
+        )
+
+        # Then
+        assert result.exit_code == 2
+        assert "repo filters overlap across include and exclude lists: Platform" in result.stderr
+
+    def test_rejects_equivalent_qualified_and_unqualified_overlapping_repo_filters(
+        self,
+        runner: CliRunner,
+        github_auth_service: None,
+    ) -> None:
+        """Reject repo filters that overlap across bare and org-qualified forms."""
+        # Given
+
+        # When
+        result = runner.invoke(
+            app,
+            ["run", "--org", "acme", "--repo", "platform", "--exclude-repo", "acme/platform"],
         )
 
         # Then

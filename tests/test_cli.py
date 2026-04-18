@@ -715,6 +715,12 @@ class TestRunCommandRuntime:
             == 1
         )
         assert payload["org_metrics_skipped_reason"] is None
+        assert payload["metric_validation"]["target_org"] == "acme"
+        assert payload["metric_validation"]["periods"][0]["key"] == "2026-04"
+        assert payload["metric_validation"]["periods"][0]["raw_pull_request_count"] == 1
+        assert payload["metric_validation"]["periods"][0]["valid"] is True
+        assert payload["metric_validation"]["periods"][0]["issues"] == []
+        assert payload["metric_validation_skipped_reason"] is None
         pull_requests_path = (
             tmp_path / "raw" / "month" / "2026-04" / "pull_requests.csv"
         )
@@ -965,6 +971,98 @@ class TestRunCommandRuntime:
         assert [period["key"] for period in payload["manifest"]["locked_periods"]] == [
             "2026-03"
         ]
+        assert [period["key"] for period in payload["metric_validation"]["periods"]] == [
+            "2026-03",
+            "2026-04",
+        ]
+        assert [period["raw_pull_request_count"] for period in payload["metric_validation"]["periods"]] == [
+            1,
+            1,
+        ]
+        assert all(period["valid"] for period in payload["metric_validation"]["periods"])
+
+    def test_reports_metric_validation_failures_without_skipping_outputs(
+        self,
+        runner: CliRunner,
+        github_auth_service: None,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path,
+    ) -> None:
+        """Report validation issues for inconsistent timing data while still emitting the run outputs."""
+        # Given
+        pull_request = PullRequestRecord(
+            repository_full_name="acme/api",
+            number=88,
+            title="Carry invalid merge timing",
+            state="closed",
+            draft=False,
+            merged=True,
+            author_login="alice",
+            created_at=datetime.fromisoformat("2026-04-12T12:00:00"),
+            updated_at=datetime.fromisoformat("2026-04-12T12:00:00"),
+            closed_at=datetime.fromisoformat("2026-04-12T12:00:00"),
+            merged_at=datetime.fromisoformat("2026-04-12T10:00:00"),
+            additions=3,
+            deletions=1,
+            changed_files=1,
+            commits=1,
+            html_url="https://example.test/pr/88",
+        )
+        inventory = RepositoryInventory(
+            organization_login="acme",
+            repositories=(),
+        )
+        collection = PullRequestCollection(
+            window=CollectionWindow(
+                scope=RunScope.OPEN_PERIOD,
+                start_date=datetime.fromisoformat("2026-04-01T00:00:00").date(),
+                end_date=datetime.fromisoformat("2026-04-18T00:00:00").date(),
+            ),
+            pull_requests=(pull_request,),
+            failures=(),
+        )
+        monkeypatch.setattr(
+            "orgpulse.cli.GitHubIngestionService",
+            lambda github_client: FakeCliIngestionService(
+                inventory=inventory,
+                collection=collection,
+            ),
+        )
+        monkeypatch.setattr(
+            "orgpulse.cli.NormalizedRawSnapshotWriter",
+            lambda: NormalizedRawSnapshotWriter(),
+        )
+        monkeypatch.setattr(
+            "orgpulse.cli.RunManifestWriter",
+            lambda: RunManifestWriter(
+                now=lambda: datetime.fromisoformat("2026-04-18T00:00:00+00:00")
+            ),
+        )
+
+        # When
+        result = runner.invoke(
+            app,
+            [
+                "run",
+                "--org",
+                "acme",
+                "--as-of",
+                "2026-04-18",
+                "--output-dir",
+                str(tmp_path),
+            ],
+        )
+
+        # Then
+        assert result.exit_code == 0
+        payload = json.loads(result.stdout)
+        assert payload["org_metrics"]["periods"][0]["summary"]["merged_pull_request_count"] == 1
+        assert payload["metric_validation_skipped_reason"] is None
+        assert payload["metric_validation"]["periods"][0]["valid"] is False
+        assert [
+            issue["code"]
+            for issue in payload["metric_validation"]["periods"][0]["issues"]
+        ] == ["merged_pr_merge_before_creation"]
 
     def test_prunes_stale_period_outputs_and_overwrites_manifest_on_full_rerun(
         self,

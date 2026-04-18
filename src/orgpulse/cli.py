@@ -20,11 +20,13 @@ from orgpulse.ingestion import (
     NormalizedRawSnapshotWriter,
 )
 from orgpulse.metrics import (
+    MetricValidationCollectionBuilder,
     OrganizationMetricCollectionBuilder,
     PullRequestMetricCollectionBuilder,
 )
 from orgpulse.models import (
     ManifestWriteResult,
+    MetricValidationCollection,
     OrganizationMetricCollection,
     PeriodGrain,
     PullRequestCollection,
@@ -148,7 +150,12 @@ def run_command(
             len(inventory.repositories),
             collection,
         )
-        org_metrics, org_metrics_skipped_reason = _build_org_metrics(
+        (
+            org_metrics,
+            org_metrics_skipped_reason,
+            metric_validation,
+            metric_validation_skipped_reason,
+        ) = _build_metric_outputs(
             config,
             manifest=manifest,
             raw_snapshot=raw_snapshot,
@@ -197,6 +204,10 @@ def run_command(
                 if org_metrics is None
                 else org_metrics.model_dump(mode="json"),
                 "org_metrics_skipped_reason": org_metrics_skipped_reason,
+                "metric_validation": None
+                if metric_validation is None
+                else metric_validation.model_dump(mode="json"),
+                "metric_validation_skipped_reason": metric_validation_skipped_reason,
             },
             indent=2,
             sort_keys=True,
@@ -263,15 +274,25 @@ def _write_manifest(
     )
 
 
-def _build_org_metrics(
+def _build_metric_outputs(
     config: RunConfig,
     *,
     manifest: ManifestWriteResult | None,
     raw_snapshot: RawSnapshotWriteResult | None,
     raw_snapshot_skipped_reason: str | None,
-) -> tuple[OrganizationMetricCollection | None, str | None]:
+) -> tuple[
+    OrganizationMetricCollection | None,
+    str | None,
+    MetricValidationCollection | None,
+    str | None,
+]:
     if raw_snapshot is None or manifest is None:
-        return None, raw_snapshot_skipped_reason
+        return (
+            None,
+            raw_snapshot_skipped_reason,
+            None,
+            raw_snapshot_skipped_reason,
+        )
     metric_snapshot = _build_metric_snapshot(
         manifest=manifest.manifest,
         refreshed_snapshot=raw_snapshot,
@@ -280,10 +301,17 @@ def _build_org_metrics(
         config,
         metric_snapshot,
     )
-    return (
-        OrganizationMetricCollectionBuilder().build(config, pull_request_metrics),
-        None,
+    org_metrics = OrganizationMetricCollectionBuilder().build(
+        config,
+        pull_request_metrics,
     )
+    metric_validation = MetricValidationCollectionBuilder().build(
+        config,
+        raw_snapshot=metric_snapshot,
+        pull_request_metrics=pull_request_metrics,
+        org_metrics=org_metrics,
+    )
+    return org_metrics, None, metric_validation, None
 
 
 def _build_metric_snapshot(
@@ -315,22 +343,35 @@ def _build_metric_snapshot(
 
 
 def _build_snapshot_period(
-    root_dir,
+    root_dir: Path,
     period: ReportingPeriod,
 ) -> RawSnapshotPeriod:
     period_dir = root_dir / period.key
+    pull_requests_path = period_dir / PULL_REQUEST_SNAPSHOT_FILENAME
+    reviews_path = period_dir / PULL_REQUEST_REVIEW_SNAPSHOT_FILENAME
+    timeline_events_path = period_dir / PULL_REQUEST_TIMELINE_EVENT_SNAPSHOT_FILENAME
     return RawSnapshotPeriod(
         key=period.key,
         start_date=period.start_date,
         end_date=period.end_date,
         directory=period_dir,
-        pull_requests_path=period_dir / PULL_REQUEST_SNAPSHOT_FILENAME,
-        pull_request_count=0,
-        reviews_path=period_dir / PULL_REQUEST_REVIEW_SNAPSHOT_FILENAME,
-        review_count=0,
-        timeline_events_path=period_dir / PULL_REQUEST_TIMELINE_EVENT_SNAPSHOT_FILENAME,
-        timeline_event_count=0,
+        pull_requests_path=pull_requests_path,
+        pull_request_count=_count_snapshot_rows(pull_requests_path),
+        reviews_path=reviews_path,
+        review_count=_count_snapshot_rows(reviews_path),
+        timeline_events_path=timeline_events_path,
+        timeline_event_count=_count_snapshot_rows(timeline_events_path),
     )
+
+
+def _count_snapshot_rows(path: Path) -> int:
+    if not path.exists():
+        return 0
+    try:
+        with path.open(encoding="utf-8", newline="") as handle:
+            return max(sum(1 for _ in handle) - 1, 0)
+    except OSError:
+        return 0
 
 
 def build_run_config(

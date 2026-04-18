@@ -5,10 +5,14 @@ from datetime import datetime
 from statistics import fmean, median
 
 from orgpulse.models import (
+    MetricValidationCollection,
+    MetricValidationIssue,
+    MetricValidationPeriod,
     MetricValueSummary,
     OrganizationMetricCollection,
     OrganizationMetricPeriod,
     OrganizationMetricRollup,
+    OrganizationMetricValidationSummary,
     PullRequestMetricCollection,
     PullRequestMetricPeriod,
     PullRequestMetricRecord,
@@ -17,6 +21,7 @@ from orgpulse.models import (
     PullRequestTimelineEventRecord,
     RawSnapshotPeriod,
     RawSnapshotWriteResult,
+    RepositoryMetricValidationSummary,
     RunConfig,
 )
 
@@ -530,3 +535,469 @@ class OrganizationMetricCollectionBuilder:
             average=float(fmean(values)),
             median=float(median(values)),
         )
+
+
+class MetricValidationCollectionBuilder:
+    """Validate raw snapshot counts, repo totals, and timing sanity for metric outputs."""
+
+    def build(
+        self,
+        config: RunConfig,
+        *,
+        raw_snapshot: RawSnapshotWriteResult,
+        pull_request_metrics: PullRequestMetricCollection,
+        org_metrics: OrganizationMetricCollection,
+    ) -> MetricValidationCollection:
+        raw_periods = self._raw_period_index(raw_snapshot)
+        metric_periods = self._metric_period_index(pull_request_metrics)
+        org_periods = self._org_period_index(org_metrics)
+        return MetricValidationCollection(
+            target_org=config.org,
+            periods=tuple(
+                self._build_period(
+                    period_key,
+                    raw_period=raw_periods.get(period_key),
+                    metric_period=metric_periods.get(period_key),
+                    org_period=org_periods.get(period_key),
+                )
+                for period_key in self._sorted_period_keys(
+                    raw_periods=raw_periods,
+                    metric_periods=metric_periods,
+                    org_periods=org_periods,
+                )
+            ),
+        )
+
+    def _build_period(
+        self,
+        period_key: str,
+        *,
+        raw_period: RawSnapshotPeriod | None,
+        metric_period: PullRequestMetricPeriod | None,
+        org_period: OrganizationMetricPeriod | None,
+    ) -> MetricValidationPeriod:
+        period = raw_period or metric_period or org_period
+        assert period is not None
+        issues = [
+            *self._missing_period_issues(
+                period_key,
+                raw_period=raw_period,
+                metric_period=metric_period,
+                org_period=org_period,
+            ),
+            *self._count_issues(
+                raw_period=raw_period,
+                metric_period=metric_period,
+            ),
+        ]
+        repository_summaries = self._build_repository_summaries(metric_period)
+        org_summary = self._build_org_summary(org_period)
+        issues.extend(
+            self._rollup_issues(
+                repository_summaries=repository_summaries,
+                org_summary=org_summary,
+            )
+        )
+        if metric_period is not None:
+            issues.extend(
+                self._timing_issues(metric_period.pull_request_metrics)
+            )
+        return MetricValidationPeriod(
+            key=period.key,
+            start_date=period.start_date,
+            end_date=period.end_date,
+            closed=self._closed(metric_period, org_period),
+            raw_pull_request_count=0 if raw_period is None else raw_period.pull_request_count,
+            raw_review_count=0 if raw_period is None else raw_period.review_count,
+            raw_timeline_event_count=0
+            if raw_period is None
+            else raw_period.timeline_event_count,
+            repository_summaries=repository_summaries,
+            org_summary=org_summary,
+            valid=not issues,
+            issues=tuple(issues),
+        )
+
+    def _closed(
+        self,
+        metric_period: PullRequestMetricPeriod | None,
+        org_period: OrganizationMetricPeriod | None,
+    ) -> bool:
+        if metric_period is not None:
+            return metric_period.closed
+        if org_period is not None:
+            return org_period.closed
+        return False
+
+    def _raw_period_index(
+        self,
+        raw_snapshot: RawSnapshotWriteResult,
+    ) -> dict[str, RawSnapshotPeriod]:
+        return {period.key: period for period in raw_snapshot.periods}
+
+    def _metric_period_index(
+        self,
+        pull_request_metrics: PullRequestMetricCollection,
+    ) -> dict[str, PullRequestMetricPeriod]:
+        return {period.key: period for period in pull_request_metrics.periods}
+
+    def _org_period_index(
+        self,
+        org_metrics: OrganizationMetricCollection,
+    ) -> dict[str, OrganizationMetricPeriod]:
+        return {period.key: period for period in org_metrics.periods}
+
+    def _sorted_period_keys(
+        self,
+        *,
+        raw_periods: dict[str, RawSnapshotPeriod],
+        metric_periods: dict[str, PullRequestMetricPeriod],
+        org_periods: dict[str, OrganizationMetricPeriod],
+    ) -> tuple[str, ...]:
+        period_index = {
+            **raw_periods,
+            **metric_periods,
+            **org_periods,
+        }
+        return tuple(
+            sorted(
+                period_index.keys(),
+                key=lambda period_key: (
+                    period_index[period_key].start_date,
+                    period_key,
+                ),
+            )
+        )
+
+    def _missing_period_issues(
+        self,
+        period_key: str,
+        *,
+        raw_period: RawSnapshotPeriod | None,
+        metric_period: PullRequestMetricPeriod | None,
+        org_period: OrganizationMetricPeriod | None,
+    ) -> tuple[MetricValidationIssue, ...]:
+        issues: list[MetricValidationIssue] = []
+        if raw_period is None:
+            issues.append(
+                MetricValidationIssue(
+                    code="missing_raw_period",
+                    message=f"raw snapshot period '{period_key}' is missing",
+                )
+            )
+        if metric_period is None:
+            issues.append(
+                MetricValidationIssue(
+                    code="missing_metric_period",
+                    message=f"pull request metric period '{period_key}' is missing",
+                )
+            )
+        if org_period is None:
+            issues.append(
+                MetricValidationIssue(
+                    code="missing_org_period",
+                    message=f"org metric period '{period_key}' is missing",
+                )
+            )
+        return tuple(issues)
+
+    def _count_issues(
+        self,
+        *,
+        raw_period: RawSnapshotPeriod | None,
+        metric_period: PullRequestMetricPeriod | None,
+    ) -> tuple[MetricValidationIssue, ...]:
+        if raw_period is None or metric_period is None:
+            return ()
+        metric_count = len(metric_period.pull_request_metrics)
+        if raw_period.pull_request_count == metric_count:
+            return ()
+        return (
+            MetricValidationIssue(
+                code="raw_pull_request_count_mismatch",
+                message=(
+                    "raw pull request rows do not match derived metric facts: "
+                    f"{raw_period.pull_request_count} != {metric_count}"
+                ),
+            ),
+        )
+
+    def _build_repository_summaries(
+        self,
+        metric_period: PullRequestMetricPeriod | None,
+    ) -> tuple[RepositoryMetricValidationSummary, ...]:
+        if metric_period is None:
+            return ()
+        metrics_by_repository: dict[str, list[PullRequestMetricRecord]] = {}
+        for metric in metric_period.pull_request_metrics:
+            metrics_by_repository.setdefault(metric.repository_full_name, []).append(metric)
+        return tuple(
+            RepositoryMetricValidationSummary(
+                repository_full_name=repository_full_name,
+                pull_request_count=len(repository_metrics),
+                merged_pull_request_count=sum(
+                    1 for metric in repository_metrics if metric.merged
+                ),
+                time_to_merge_count=sum(
+                    1
+                    for metric in repository_metrics
+                    if metric.time_to_merge_seconds is not None
+                ),
+                time_to_first_review_count=sum(
+                    1
+                    for metric in repository_metrics
+                    if metric.time_to_first_review_seconds is not None
+                ),
+            )
+            for repository_full_name, repository_metrics in sorted(
+                metrics_by_repository.items()
+            )
+        )
+
+    def _build_org_summary(
+        self,
+        org_period: OrganizationMetricPeriod | None,
+    ) -> OrganizationMetricValidationSummary:
+        if org_period is None:
+            return OrganizationMetricValidationSummary(
+                repository_count=0,
+                pull_request_count=0,
+                merged_pull_request_count=0,
+                time_to_merge_count=0,
+                time_to_first_review_count=0,
+            )
+        summary = org_period.summary
+        return OrganizationMetricValidationSummary(
+            repository_count=summary.repository_count,
+            pull_request_count=summary.pull_request_count,
+            merged_pull_request_count=summary.merged_pull_request_count,
+            time_to_merge_count=summary.time_to_merge_seconds.count,
+            time_to_first_review_count=summary.time_to_first_review_seconds.count,
+        )
+
+    def _rollup_issues(
+        self,
+        *,
+        repository_summaries: tuple[RepositoryMetricValidationSummary, ...],
+        org_summary: OrganizationMetricValidationSummary,
+    ) -> tuple[MetricValidationIssue, ...]:
+        repository_count = len(repository_summaries)
+        pull_request_count = sum(
+            repository_summary.pull_request_count
+            for repository_summary in repository_summaries
+        )
+        merged_pull_request_count = sum(
+            repository_summary.merged_pull_request_count
+            for repository_summary in repository_summaries
+        )
+        time_to_merge_count = sum(
+            repository_summary.time_to_merge_count
+            for repository_summary in repository_summaries
+        )
+        time_to_first_review_count = sum(
+            repository_summary.time_to_first_review_count
+            for repository_summary in repository_summaries
+        )
+        issues: list[MetricValidationIssue] = []
+        issues.extend(
+            self._summary_issue(
+                code="repository_count_mismatch",
+                label="repository count",
+                expected=repository_count,
+                actual=org_summary.repository_count,
+            )
+        )
+        issues.extend(
+            self._summary_issue(
+                code="pull_request_count_mismatch",
+                label="pull request count",
+                expected=pull_request_count,
+                actual=org_summary.pull_request_count,
+            )
+        )
+        issues.extend(
+            self._summary_issue(
+                code="merged_pull_request_count_mismatch",
+                label="merged pull request count",
+                expected=merged_pull_request_count,
+                actual=org_summary.merged_pull_request_count,
+            )
+        )
+        issues.extend(
+            self._summary_issue(
+                code="time_to_merge_count_mismatch",
+                label="time-to-merge count",
+                expected=time_to_merge_count,
+                actual=org_summary.time_to_merge_count,
+            )
+        )
+        issues.extend(
+            self._summary_issue(
+                code="time_to_first_review_count_mismatch",
+                label="time-to-first-review count",
+                expected=time_to_first_review_count,
+                actual=org_summary.time_to_first_review_count,
+            )
+        )
+        return tuple(issues)
+
+    def _summary_issue(
+        self,
+        *,
+        code: str,
+        label: str,
+        expected: int,
+        actual: int,
+    ) -> tuple[MetricValidationIssue, ...]:
+        if expected == actual:
+            return ()
+        return (
+            MetricValidationIssue(
+                code=code,
+                message=f"{label} does not match repo totals: {expected} != {actual}",
+            ),
+        )
+
+    def _timing_issues(
+        self,
+        pull_request_metrics: tuple[PullRequestMetricRecord, ...],
+    ) -> tuple[MetricValidationIssue, ...]:
+        issues: list[MetricValidationIssue] = []
+        for metric in pull_request_metrics:
+            issues.extend(self._merge_timing_issues(metric))
+            issues.extend(self._review_timing_issues(metric))
+        return tuple(issues)
+
+    def _merge_timing_issues(
+        self,
+        metric: PullRequestMetricRecord,
+    ) -> tuple[MetricValidationIssue, ...]:
+        if not metric.merged:
+            issues: list[MetricValidationIssue] = []
+            if metric.merged_at is not None:
+                issues.append(
+                    self._pull_request_issue(
+                        code="unmerged_pr_has_merged_at",
+                        message="unmerged pull request unexpectedly carries merged_at",
+                        metric=metric,
+                    )
+                )
+            if metric.time_to_merge_seconds is not None:
+                issues.append(
+                    self._pull_request_issue(
+                        code="unmerged_pr_has_merge_timing",
+                        message=(
+                            "unmerged pull request unexpectedly carries "
+                            "time_to_merge_seconds"
+                        ),
+                        metric=metric,
+                    )
+                )
+            return tuple(issues)
+        if metric.merged_at is None:
+            return (
+                self._pull_request_issue(
+                    code="merged_pr_missing_merged_at",
+                    message="merged pull request is missing merged_at",
+                    metric=metric,
+                ),
+            )
+        expected_seconds = self._seconds_between(metric.created_at, metric.merged_at)
+        if expected_seconds is None:
+            return (
+                self._pull_request_issue(
+                    code="merged_pr_merge_before_creation",
+                    message="merged pull request merges before it was created",
+                    metric=metric,
+                ),
+            )
+        if metric.time_to_merge_seconds == expected_seconds:
+            return ()
+        return (
+            self._pull_request_issue(
+                code="merged_pr_merge_timing_mismatch",
+                message=(
+                    "merged pull request time_to_merge_seconds does not match the "
+                    "created_at-to-merged_at duration"
+                ),
+                metric=metric,
+            ),
+        )
+
+    def _review_timing_issues(
+        self,
+        metric: PullRequestMetricRecord,
+    ) -> tuple[MetricValidationIssue, ...]:
+        if metric.first_review_submitted_at is None:
+            if metric.time_to_first_review_seconds is None:
+                return ()
+            return (
+                self._pull_request_issue(
+                    code="review_timing_without_review_submission",
+                    message=(
+                        "pull request carries time_to_first_review_seconds without a "
+                        "first review submission timestamp"
+                    ),
+                    metric=metric,
+                ),
+            )
+        if metric.review_started_at is None:
+            return (
+                self._pull_request_issue(
+                    code="review_submission_missing_review_start",
+                    message=(
+                        "pull request has a first review submission timestamp without "
+                        "a review start timestamp"
+                    ),
+                    metric=metric,
+                ),
+            )
+        expected_seconds = self._seconds_between(
+            metric.review_started_at,
+            metric.first_review_submitted_at,
+        )
+        if expected_seconds is None:
+            return (
+                self._pull_request_issue(
+                    code="review_submitted_before_review_start",
+                    message="first review submission occurs before the review start",
+                    metric=metric,
+                ),
+            )
+        if metric.time_to_first_review_seconds == expected_seconds:
+            return ()
+        return (
+            self._pull_request_issue(
+                code="review_timing_mismatch",
+                message=(
+                    "time_to_first_review_seconds does not match the review_start-to-"
+                    "first_review_submitted duration"
+                ),
+                metric=metric,
+            ),
+        )
+
+    def _pull_request_issue(
+        self,
+        *,
+        code: str,
+        message: str,
+        metric: PullRequestMetricRecord,
+    ) -> MetricValidationIssue:
+        return MetricValidationIssue(
+            code=code,
+            message=message,
+            repository_full_name=metric.repository_full_name,
+            pull_request_number=metric.pull_request_number,
+        )
+
+    def _seconds_between(
+        self,
+        start_at: datetime | None,
+        end_at: datetime | None,
+    ) -> int | None:
+        if start_at is None or end_at is None:
+            return None
+        if end_at < start_at:
+            return None
+        return int((end_at - start_at).total_seconds())

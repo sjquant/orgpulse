@@ -1,13 +1,13 @@
 from __future__ import annotations
 
-from datetime import date
 import json
+from datetime import date
 from pathlib import Path
 from typing import Annotated
 
+import typer
 from github import Auth, Github
 from pydantic import ValidationError
-import typer
 
 from orgpulse.config import get_settings
 from orgpulse.errors import AuthResolutionError, GitHubApiError, OrgTargetingError
@@ -30,39 +30,65 @@ def callback() -> None:
 def run_command(
     org: Annotated[
         str | None,
-        typer.Option("--org", help="GitHub organization to collect. Falls back to ORGPULSE_ORG."),
+        typer.Option(
+            "--org", help="GitHub organization to collect. Falls back to ORGPULSE_ORG."
+        ),
     ] = None,
     as_of: Annotated[
         str | None,
-        typer.Option("--as-of", help="Anchor date used to resolve the current open reporting period. Falls back to ORGPULSE_AS_OF or today."),
+        typer.Option(
+            "--as-of",
+            help="Anchor date used to resolve the current open reporting period. Falls back to ORGPULSE_AS_OF or today.",
+        ),
     ] = None,
     period: Annotated[
         PeriodGrain | None,
-        typer.Option("--period", help="Reporting grain for snapshots and rollups. Falls back to ORGPULSE_PERIOD."),
+        typer.Option(
+            "--period",
+            help="Reporting grain for snapshots and rollups. Falls back to ORGPULSE_PERIOD.",
+        ),
     ] = None,
     mode: Annotated[
         RunMode | None,
-        typer.Option("--mode", help="Run strategy: full rebuild ignores locks, incremental refreshes the current open period, and backfill refreshes an explicit closed-period range. Falls back to ORGPULSE_MODE."),
+        typer.Option(
+            "--mode",
+            help="Run strategy: full rebuild ignores locks, incremental refreshes the current open period, and backfill refreshes an explicit closed-period range. Falls back to ORGPULSE_MODE.",
+        ),
     ] = None,
     include_repos: Annotated[
         list[str] | None,
-        typer.Option("--repo", help="Restrict collection to a repository. May be provided multiple times."),
+        typer.Option(
+            "--repo",
+            help="Restrict collection to a repository. May be provided multiple times.",
+        ),
     ] = None,
     exclude_repos: Annotated[
         list[str] | None,
-        typer.Option("--exclude-repo", help="Exclude a repository from collection. May be provided multiple times."),
+        typer.Option(
+            "--exclude-repo",
+            help="Exclude a repository from collection. May be provided multiple times.",
+        ),
     ] = None,
     output_dir: Annotated[
         Path | None,
-        typer.Option("--output-dir", help="Directory where raw snapshots and rollups will be written. Falls back to ORGPULSE_OUTPUT_DIR."),
+        typer.Option(
+            "--output-dir",
+            help="Directory where raw snapshots and rollups will be written. Falls back to ORGPULSE_OUTPUT_DIR.",
+        ),
     ] = None,
     backfill_start: Annotated[
         str | None,
-        typer.Option("--backfill-start", help="Inclusive ISO date for backfill mode, for example 2026-01-01."),
+        typer.Option(
+            "--backfill-start",
+            help="Inclusive ISO date for backfill mode, for example 2026-01-01.",
+        ),
     ] = None,
     backfill_end: Annotated[
         str | None,
-        typer.Option("--backfill-end", help="Inclusive ISO date for backfill mode, for example 2026-03-31."),
+        typer.Option(
+            "--backfill-end",
+            help="Inclusive ISO date for backfill mode, for example 2026-03-31.",
+        ),
     ] = None,
 ) -> None:
     try:
@@ -83,7 +109,9 @@ def run_command(
     try:
         resolved_token = resolve_auth_token(config)
         github_client = Github(auth=Auth.Token(resolved_token.token))
-        github_context = GitHubAuthService(github_client, resolved_token.source).validate_access(config)
+        github_context = GitHubAuthService(
+            github_client, resolved_token.source
+        ).validate_access(config)
     except AuthResolutionError as exc:
         typer.echo(f"orgpulse: GitHub authentication failed\n{exc}", err=True)
         raise typer.Exit(code=1) from exc
@@ -135,7 +163,7 @@ def build_run_config(
         payload["backfill_start"] = backfill_start
     if backfill_end is not None:
         payload["backfill_end"] = backfill_end
-    return RunConfig(**payload)
+    return RunConfig.model_validate(payload)
 
 
 def main() -> None:

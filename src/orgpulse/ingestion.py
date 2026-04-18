@@ -265,7 +265,13 @@ class GitHubIngestionService:
     ) -> tuple[PullRequestReviewRecord, ...]:
         def collect_reviews() -> tuple[PullRequestReviewRecord, ...]:
             reviews = [
-                self._build_pull_request_review_record(review)
+                PullRequestReviewRecord(
+                    review_id=review.id,
+                    state=review.state,
+                    author_login=self._login_for(getattr(review, "user", None)),
+                    submitted_at=getattr(review, "submitted_at", None),
+                    commit_id=getattr(review, "commit_id", None),
+                )
                 for review in pull_request.get_reviews()
             ]
             return tuple(
@@ -282,15 +288,6 @@ class GitHubIngestionService:
             call=collect_reviews,
         )
 
-    def _build_pull_request_review_record(self, review: Any) -> PullRequestReviewRecord:
-        return PullRequestReviewRecord(
-            review_id=review.id,
-            state=review.state,
-            author_login=self._login_for(getattr(review, "user", None)),
-            submitted_at=getattr(review, "submitted_at", None),
-            commit_id=getattr(review, "commit_id", None),
-        )
-
     def _load_pull_request_timeline_events(
         self,
         pull_request: Any,
@@ -298,7 +295,14 @@ class GitHubIngestionService:
         def collect_timeline_events() -> tuple[PullRequestTimelineEventRecord, ...]:
             issue = pull_request.as_issue()
             timeline_events = [
-                self._build_pull_request_timeline_event_record(timeline_event)
+                PullRequestTimelineEventRecord(
+                    event_id=timeline_event.id,
+                    event=timeline_event.event,
+                    actor_login=self._login_for(getattr(timeline_event, "actor", None)),
+                    created_at=getattr(timeline_event, "created_at", None),
+                    requested_reviewer_login=self._login_for(getattr(timeline_event, "requested_reviewer", None)),
+                    requested_team_name=self._team_name_for(getattr(timeline_event, "requested_team", None)),
+                )
                 for timeline_event in issue.get_timeline()
                 if getattr(timeline_event, "event", None) in FIRST_REVIEW_TIMELINE_EVENTS
             ]
@@ -315,19 +319,6 @@ class GitHubIngestionService:
 
         return self._run_github_operation(
             call=collect_timeline_events,
-        )
-
-    def _build_pull_request_timeline_event_record(
-        self,
-        timeline_event: Any,
-    ) -> PullRequestTimelineEventRecord:
-        return PullRequestTimelineEventRecord(
-            event_id=timeline_event.id,
-            event=timeline_event.event,
-            actor_login=self._login_for(getattr(timeline_event, "actor", None)),
-            created_at=getattr(timeline_event, "created_at", None),
-            requested_reviewer_login=self._login_for(getattr(timeline_event, "requested_reviewer", None)),
-            requested_team_name=self._team_name_for(getattr(timeline_event, "requested_team", None)),
         )
 
     def _login_for(self, actor: Any) -> str | None:

@@ -50,15 +50,15 @@ class TestGitHubIngestionService:
                 "acme": FakeOrganization(
                     login="acme",
                     repo_outcomes=[
-                        self.build_github_exception(
+                        self._build_github_exception(
                             status=403,
                             message="You have exceeded a secondary rate limit.",
                             headers={"retry-after": "2"},
                         ),
                         [
-                            self.build_repository("acme/zeta"),
-                            self.build_repository("acme/api"),
-                            self.build_repository("acme/ops"),
+                            self._build_repository("acme/zeta"),
+                            self._build_repository("acme/api"),
+                            self._build_repository("acme/ops"),
                         ],
                     ],
                 )
@@ -89,17 +89,17 @@ class TestGitHubIngestionService:
     def test_fetches_incremental_pull_requests_within_collection_window(self) -> None:
         """Fetch only pull requests updated inside the incremental collection window."""
         # Given
-        repository = self.build_repository(
+        repository = self._build_repository(
             "acme/api",
             pull_outcomes=[
                 [
-                    self.build_pull_request(
+                    self._build_pull_request(
                         number=30, updated_at="2026-04-20T09:00:00"
                     ),
-                    self.build_pull_request(
+                    self._build_pull_request(
                         number=20, updated_at="2026-04-12T09:00:00"
                     ),
-                    self.build_pull_request(
+                    self._build_pull_request(
                         number=10, updated_at="2026-03-31T23:59:00"
                     ),
                 ]
@@ -114,14 +114,14 @@ class TestGitHubIngestionService:
                 ),
             )
         )
-        config = self.build_run_config(as_of="2026-04-18")
+        config = self._build_run_config(as_of="2026-04-18")
 
         # When
         result = service.fetch_pull_requests(
             config,
             RepositoryInventory(
                 organization_login="acme",
-                repositories=(self.build_inventory_item("acme/api"),),
+                repositories=(self._build_inventory_item("acme/api"),),
             ),
         )
 
@@ -136,22 +136,22 @@ class TestGitHubIngestionService:
     ) -> None:
         """Enrich pull requests with sorted review and timeline data needed for first-review timing."""
         # Given
-        repository = self.build_repository(
+        repository = self._build_repository(
             "acme/api",
             pull_outcomes=[
                 [
-                    self.build_pull_request(
+                    self._build_pull_request(
                         number=20,
                         updated_at="2026-04-12T09:00:00",
                         review_outcomes=[
                             [
-                                self.build_review(
+                                self._build_review(
                                     review_id=102,
                                     state="APPROVED",
                                     submitted_at="2026-04-11T10:30:00",
                                     author_login="reviewer-b",
                                 ),
-                                self.build_review(
+                                self._build_review(
                                     review_id=101,
                                     state="COMMENTED",
                                     submitted_at="2026-04-10T11:00:00",
@@ -161,19 +161,19 @@ class TestGitHubIngestionService:
                         ],
                         timeline_outcomes=[
                             [
-                                self.build_timeline_event(
+                                self._build_timeline_event(
                                     event_id=302,
                                     event="ready_for_review",
                                     created_at="2026-04-10T10:00:00",
                                     actor_login="alice",
                                 ),
-                                self.build_timeline_event(
+                                self._build_timeline_event(
                                     event_id=303,
                                     event="labeled",
                                     created_at="2026-04-10T10:05:00",
                                     actor_login="alice",
                                 ),
-                                self.build_timeline_event(
+                                self._build_timeline_event(
                                     event_id=301,
                                     event="review_requested",
                                     created_at="2026-04-10T09:30:00",
@@ -195,14 +195,14 @@ class TestGitHubIngestionService:
                 ),
             )
         )
-        config = self.build_run_config(as_of="2026-04-18")
+        config = self._build_run_config(as_of="2026-04-18")
 
         # When
         result = service.fetch_pull_requests(
             config,
             RepositoryInventory(
                 organization_login="acme",
-                repositories=(self.build_inventory_item("acme/api"),),
+                repositories=(self._build_inventory_item("acme/api"),),
             ),
         )
 
@@ -227,17 +227,17 @@ class TestGitHubIngestionService:
     def test_fetches_backfill_pull_requests_from_closed_period_window(self) -> None:
         """Fetch only pull requests updated inside an explicit backfill window."""
         # Given
-        repository = self.build_repository(
+        repository = self._build_repository(
             "acme/api",
             pull_outcomes=[
                 [
-                    self.build_pull_request(
+                    self._build_pull_request(
                         number=30, updated_at="2026-04-01T00:00:00"
                     ),
-                    self.build_pull_request(
+                    self._build_pull_request(
                         number=20, updated_at="2026-03-20T09:00:00"
                     ),
-                    self.build_pull_request(
+                    self._build_pull_request(
                         number=10, updated_at="2026-02-28T22:00:00"
                     ),
                 ]
@@ -252,7 +252,7 @@ class TestGitHubIngestionService:
                 ),
             )
         )
-        config = self.build_run_config(
+        config = self._build_run_config(
             as_of="2026-04-18",
             mode=RunMode.BACKFILL,
             backfill_start="2026-03-01",
@@ -264,7 +264,7 @@ class TestGitHubIngestionService:
             config,
             RepositoryInventory(
                 organization_login="acme",
-                repositories=(self.build_inventory_item("acme/api"),),
+                repositories=(self._build_inventory_item("acme/api"),),
             ),
         )
 
@@ -280,19 +280,21 @@ class TestGitHubIngestionService:
         """Record repo-scoped failures after retries and continue fetching other repositories."""
         # Given
         sleep_calls: list[float] = []
-        failing_repository = self.build_repository(
+        failing_repository = self._build_repository(
             "acme/api",
             pull_outcomes=[
-                self.build_github_exception(status=503, message="Service unavailable"),
-                self.build_github_exception(status=503, message="Service unavailable"),
-                self.build_github_exception(status=503, message="Service unavailable"),
+                self._build_github_exception(status=503, message="Service unavailable"),
+                self._build_github_exception(status=503, message="Service unavailable"),
+                self._build_github_exception(status=503, message="Service unavailable"),
             ],
         )
-        succeeding_repository = self.build_repository(
+        succeeding_repository = self._build_repository(
             "acme/web",
             pull_outcomes=[
                 [
-                    self.build_pull_request(number=7, updated_at="2026-04-11T10:00:00"),
+                    self._build_pull_request(
+                        number=7, updated_at="2026-04-11T10:00:00"
+                    ),
                 ]
             ],
         )
@@ -310,7 +312,7 @@ class TestGitHubIngestionService:
             max_retries=2,
             sleep=lambda seconds: sleep_calls.append(seconds),
         )
-        config = self.build_run_config(as_of="2026-04-18")
+        config = self._build_run_config(as_of="2026-04-18")
 
         # When
         result = service.fetch_pull_requests(
@@ -318,8 +320,8 @@ class TestGitHubIngestionService:
             RepositoryInventory(
                 organization_login="acme",
                 repositories=(
-                    self.build_inventory_item("acme/api"),
-                    self.build_inventory_item("acme/web"),
+                    self._build_inventory_item("acme/api"),
+                    self._build_inventory_item("acme/web"),
                 ),
             ),
         )
@@ -341,21 +343,21 @@ class TestGitHubIngestionService:
         """Record repo-scoped failures when review enrichment exhausts retries and keep other repos running."""
         # Given
         sleep_calls: list[float] = []
-        failing_repository = self.build_repository(
+        failing_repository = self._build_repository(
             "acme/api",
             pull_outcomes=[
                 [
-                    self.build_pull_request(
+                    self._build_pull_request(
                         number=7,
                         updated_at="2026-04-11T10:00:00",
                         review_outcomes=[
-                            self.build_github_exception(
+                            self._build_github_exception(
                                 status=503, message="Review API unavailable"
                             ),
-                            self.build_github_exception(
+                            self._build_github_exception(
                                 status=503, message="Review API unavailable"
                             ),
-                            self.build_github_exception(
+                            self._build_github_exception(
                                 status=503, message="Review API unavailable"
                             ),
                         ],
@@ -363,11 +365,13 @@ class TestGitHubIngestionService:
                 ]
             ],
         )
-        succeeding_repository = self.build_repository(
+        succeeding_repository = self._build_repository(
             "acme/web",
             pull_outcomes=[
                 [
-                    self.build_pull_request(number=8, updated_at="2026-04-11T10:00:00"),
+                    self._build_pull_request(
+                        number=8, updated_at="2026-04-11T10:00:00"
+                    ),
                 ]
             ],
         )
@@ -385,7 +389,7 @@ class TestGitHubIngestionService:
             max_retries=2,
             sleep=lambda seconds: sleep_calls.append(seconds),
         )
-        config = self.build_run_config(as_of="2026-04-18")
+        config = self._build_run_config(as_of="2026-04-18")
 
         # When
         result = service.fetch_pull_requests(
@@ -393,8 +397,8 @@ class TestGitHubIngestionService:
             RepositoryInventory(
                 organization_login="acme",
                 repositories=(
-                    self.build_inventory_item("acme/api"),
-                    self.build_inventory_item("acme/web"),
+                    self._build_inventory_item("acme/api"),
+                    self._build_inventory_item("acme/web"),
                 ),
             ),
         )
@@ -416,16 +420,16 @@ class TestGitHubIngestionService:
     ) -> None:
         """Write period-partitioned normalized raw snapshots from enriched pull request records."""
         # Given
-        repository = self.build_repository(
+        repository = self._build_repository(
             "acme/api",
             pull_outcomes=[
                 [
-                    self.build_pull_request(
+                    self._build_pull_request(
                         number=20,
                         updated_at="2026-04-12T09:00:00",
                         review_outcomes=[
                             [
-                                self.build_review(
+                                self._build_review(
                                     review_id=101,
                                     state="APPROVED",
                                     submitted_at="2026-04-12T10:00:00",
@@ -435,7 +439,7 @@ class TestGitHubIngestionService:
                         ],
                         timeline_outcomes=[
                             [
-                                self.build_timeline_event(
+                                self._build_timeline_event(
                                     event_id=201,
                                     event="review_requested",
                                     created_at="2026-04-10T09:30:00",
@@ -445,7 +449,7 @@ class TestGitHubIngestionService:
                             ]
                         ],
                     ),
-                    self.build_pull_request(
+                    self._build_pull_request(
                         number=10,
                         updated_at="2026-03-20T09:00:00",
                     ),
@@ -462,14 +466,14 @@ class TestGitHubIngestionService:
             )
         )
         writer = NormalizedRawSnapshotWriter()
-        config = self.build_run_config(
+        config = self._build_run_config(
             as_of="2026-04-18",
             mode=RunMode.FULL,
             output_dir=tmp_path,
         )
         inventory = RepositoryInventory(
             organization_login="acme",
-            repositories=(self.build_inventory_item("acme/api"),),
+            repositories=(self._build_inventory_item("acme/api"),),
         )
 
         # When
@@ -478,7 +482,7 @@ class TestGitHubIngestionService:
 
         # Then
         assert [period.key for period in result.periods] == ["2026-03", "2026-04"]
-        assert self.read_csv_rows(
+        assert self._read_csv_rows(
             tmp_path / "raw" / "month" / "2026-03" / "pull_requests.csv"
         ) == [
             {
@@ -501,7 +505,7 @@ class TestGitHubIngestionService:
                 "html_url": "https://example.test/pr/10",
             }
         ]
-        assert self.read_csv_rows(
+        assert self._read_csv_rows(
             tmp_path / "raw" / "month" / "2026-04" / "pull_request_reviews.csv"
         ) == [
             {
@@ -515,7 +519,7 @@ class TestGitHubIngestionService:
                 "commit_id": "commit-101",
             }
         ]
-        assert self.read_csv_rows(
+        assert self._read_csv_rows(
             tmp_path / "raw" / "month" / "2026-04" / "pull_request_timeline_events.csv"
         ) == [
             {
@@ -538,7 +542,7 @@ class TestGitHubIngestionService:
         """Write header-only snapshots for each requested backfill period even when no pull requests are returned."""
         # Given
         writer = NormalizedRawSnapshotWriter()
-        config = self.build_run_config(
+        config = self._build_run_config(
             as_of="2026-05-18",
             mode=RunMode.BACKFILL,
             backfill_start="2026-03-01",
@@ -557,13 +561,13 @@ class TestGitHubIngestionService:
         # Then
         assert [period.key for period in result.periods] == ["2026-03", "2026-04"]
         assert (
-            self.read_csv_rows(
+            self._read_csv_rows(
                 tmp_path / "raw" / "month" / "2026-03" / "pull_requests.csv"
             )
             == []
         )
         assert (
-            self.read_csv_rows(
+            self._read_csv_rows(
                 tmp_path / "raw" / "month" / "2026-04" / "pull_request_reviews.csv"
             )
             == []
@@ -582,7 +586,7 @@ class TestGitHubIngestionService:
             encoding="utf-8",
         )
         writer = NormalizedRawSnapshotWriter()
-        config = self.build_run_config(
+        config = self._build_run_config(
             as_of="2026-04-18",
             mode=RunMode.FULL,
             output_dir=tmp_path,
@@ -621,7 +625,7 @@ class TestGitHubIngestionService:
         assert stale_period_dir.exists() is False
         assert (tmp_path / "raw" / "month" / "2026-04" / "pull_requests.csv").exists()
 
-    def build_inventory_item(self, full_name: str) -> RepositoryInventoryItem:
+    def _build_inventory_item(self, full_name: str) -> RepositoryInventoryItem:
         """Build the minimal repository inventory item required for PR fetching."""
         return RepositoryInventoryItem(
             name=full_name.split("/", 1)[1],
@@ -632,11 +636,11 @@ class TestGitHubIngestionService:
             disabled=False,
         )
 
-    def build_run_config(self, **overrides: object) -> RunConfig:
+    def _build_run_config(self, **overrides: object) -> RunConfig:
         """Build the minimal run configuration needed for ingestion tests."""
         return RunConfig.model_validate({"org": "acme", **overrides})
 
-    def build_repository(
+    def _build_repository(
         self,
         full_name: str,
         *,
@@ -648,7 +652,7 @@ class TestGitHubIngestionService:
             pull_outcomes=[] if pull_outcomes is None else pull_outcomes,
         )
 
-    def build_pull_request(
+    def _build_pull_request(
         self,
         *,
         number: int,
@@ -678,7 +682,7 @@ class TestGitHubIngestionService:
             timeline_outcomes=[()] if timeline_outcomes is None else timeline_outcomes,
         )
 
-    def build_review(
+    def _build_review(
         self,
         *,
         review_id: int,
@@ -695,7 +699,7 @@ class TestGitHubIngestionService:
             commit_id=f"commit-{review_id}",
         )
 
-    def build_timeline_event(
+    def _build_timeline_event(
         self,
         *,
         event_id: int,
@@ -719,7 +723,7 @@ class TestGitHubIngestionService:
             else FakeTeam(name=requested_team_name),
         )
 
-    def build_github_exception(
+    def _build_github_exception(
         self,
         *,
         status: int,
@@ -729,7 +733,7 @@ class TestGitHubIngestionService:
         """Build a GitHub exception with message and headers for retry tests."""
         return GithubException(status, {"message": message}, headers)
 
-    def read_csv_rows(self, path) -> list[dict[str, str]]:
+    def _read_csv_rows(self, path) -> list[dict[str, str]]:
         """Read snapshot rows back as dictionaries for integration-style assertions."""
         with path.open(newline="", encoding="utf-8") as handle:
             return list(csv.DictReader(handle))

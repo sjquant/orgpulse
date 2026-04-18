@@ -24,8 +24,8 @@ class TestGitHubAuthService:
     ) -> None:
         """Resolve GitHub credentials from RunConfig before attempting GitHub CLI fallback."""
         # Given
-        client = self.build_github_client()
-        config = self.build_run_config(github_token="env-token")
+        client = self._build_github_client()
+        config = self._build_run_config(github_token="env-token")
         service = GitHubAuthService(
             cast(GitHubAuthClientLike, client), AuthSource.GH_TOKEN
         )
@@ -51,8 +51,8 @@ class TestGitHubAuthService:
     ) -> None:
         """Resolve credentials from `gh auth token` when RunConfig does not provide a token."""
         # Given
-        client = self.build_github_client()
-        config = self.build_run_config()
+        client = self._build_github_client()
+        config = self._build_run_config()
         service = GitHubAuthService(
             cast(GitHubAuthClientLike, client), AuthSource.GH_CLI
         )
@@ -81,7 +81,7 @@ class TestGitHubAuthService:
     ) -> None:
         """Reject authentication when neither RunConfig nor GitHub CLI provides a token."""
         # Given
-        config = self.build_run_config()
+        config = self._build_run_config()
         monkeypatch.setattr(
             "orgpulse.github_auth.subprocess.run",
             lambda *args, **kwargs: subprocess.CompletedProcess(
@@ -103,8 +103,8 @@ class TestGitHubAuthService:
     def test_validates_target_organization_access(self) -> None:
         """Validate an accessible target organization with the resolved GitHub credentials."""
         # Given
-        client = self.build_github_client()
-        config = self.build_run_config(github_token="env-token")
+        client = self._build_github_client()
+        config = self._build_run_config(github_token="env-token")
         service = GitHubAuthService(
             cast(GitHubAuthClientLike, client), AuthSource.GH_TOKEN
         )
@@ -120,11 +120,11 @@ class TestGitHubAuthService:
     def test_rejects_inaccessible_target_organization(self) -> None:
         """Reject target organizations that are not accessible to the resolved credentials."""
         # Given
-        client = self.build_github_client()
+        client = self._build_github_client()
         client.get_organization_mock.side_effect = GithubException(
             404, {"message": "Not Found"}, None
         )
-        config = self.build_run_config(github_token="env-token")
+        config = self._build_run_config(github_token="env-token")
         service = GitHubAuthService(
             cast(GitHubAuthClientLike, client), AuthSource.GH_TOKEN
         )
@@ -140,11 +140,11 @@ class TestGitHubAuthService:
     def test_rejects_invalid_resolved_token(self) -> None:
         """Reject resolved credentials when the GitHub API returns 401 for the viewer lookup."""
         # Given
-        client = self.build_github_client()
+        client = self._build_github_client()
         client.get_user_mock.side_effect = GithubException(
             401, {"message": "Bad credentials"}, None
         )
-        config = self.build_run_config(github_token="env-token")
+        config = self._build_run_config(github_token="env-token")
         service = GitHubAuthService(
             cast(GitHubAuthClientLike, client), AuthSource.GH_TOKEN
         )
@@ -162,11 +162,11 @@ class TestGitHubAuthService:
     ) -> None:
         """Surface non-401 viewer lookup failures as generic GitHub API errors."""
         # Given
-        client = self.build_github_client()
+        client = self._build_github_client()
         client.get_user_mock.side_effect = GithubException(
             500, {"message": "Server Error"}, None
         )
-        config = self.build_run_config(github_token="env-token")
+        config = self._build_run_config(github_token="env-token")
         service = GitHubAuthService(
             cast(GitHubAuthClientLike, client), AuthSource.GH_TOKEN
         )
@@ -180,11 +180,11 @@ class TestGitHubAuthService:
     def test_rejects_forbidden_target_organization(self) -> None:
         """Reject target organizations that return a forbidden access error."""
         # Given
-        client = self.build_github_client()
+        client = self._build_github_client()
         client.get_organization_mock.side_effect = GithubException(
             403, {"message": "Forbidden"}, None
         )
-        config = self.build_run_config(github_token="env-token")
+        config = self._build_run_config(github_token="env-token")
         service = GitHubAuthService(
             cast(GitHubAuthClientLike, client), AuthSource.GH_TOKEN
         )
@@ -198,7 +198,7 @@ class TestGitHubAuthService:
     def test_rejects_missing_gh_binary(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Reject GitHub CLI auth resolution when the gh binary is not installed."""
         # Given
-        config = self.build_run_config()
+        config = self._build_run_config()
 
         def raise_file_not_found(*args, **kwargs) -> subprocess.CompletedProcess[str]:
             raise FileNotFoundError()
@@ -217,7 +217,7 @@ class TestGitHubAuthService:
     ) -> None:
         """Reject GitHub CLI auth resolution when `gh auth token` returns an error."""
         # Given
-        config = self.build_run_config()
+        config = self._build_run_config()
         monkeypatch.setattr(
             "orgpulse.github_auth.subprocess.run",
             lambda *args, **kwargs: subprocess.CompletedProcess(
@@ -234,11 +234,11 @@ class TestGitHubAuthService:
 
         # Then
 
-    def build_github_client(self) -> FakeGithubAuthClient:
+    def _build_github_client(self) -> FakeGithubAuthClient:
         """Build a typed fake GitHub client for auth service tests."""
         return FakeGithubAuthClient()
 
-    def build_run_config(self, **overrides: object) -> RunConfig:
+    def _build_run_config(self, **overrides: object) -> RunConfig:
         """Build the minimal run configuration needed for auth validation tests."""
         return RunConfig.model_validate(
             {"org": "acme", "mode": RunMode.INCREMENTAL, **overrides}

@@ -254,6 +254,129 @@ class TestPullRequestMetricCollectionBuilder:
         )
         assert metric.time_to_first_review_seconds == 10_800
 
+    def test_keeps_review_timing_null_for_pull_requests_created_as_drafts(
+        self,
+        tmp_path,
+    ) -> None:
+        """Keep review timing null until a draft-created pull request becomes reviewable."""
+        # Given
+        config = self._build_run_config(
+            as_of="2026-04-18",
+            output_dir=tmp_path,
+        )
+        raw_snapshot = self._write_raw_snapshot(
+            config,
+            pull_requests=(
+                PullRequestRecord(
+                    repository_full_name="acme/api",
+                    number=45,
+                    title="Start life as a draft",
+                    state="open",
+                    draft=True,
+                    merged=False,
+                    author_login="alice",
+                    created_at=datetime.fromisoformat("2026-04-10T09:00:00"),
+                    updated_at=datetime.fromisoformat("2026-04-12T11:00:00"),
+                    closed_at=None,
+                    merged_at=None,
+                    additions=6,
+                    deletions=1,
+                    changed_files=1,
+                    commits=1,
+                    html_url="https://example.test/pr/45",
+                ),
+            ),
+        )
+
+        # When
+        result = PullRequestMetricCollectionBuilder().build(config, raw_snapshot)
+
+        # Then
+        metric = result.periods[0].pull_request_metrics[0]
+        assert metric.review_ready_at is None
+        assert metric.review_requested_at is None
+        assert metric.review_started_at is None
+        assert metric.first_review_submitted_at is None
+        assert metric.time_to_first_review_seconds is None
+
+    def test_ignores_pre_ready_reviews_for_pull_requests_opened_as_drafts(
+        self,
+        tmp_path,
+    ) -> None:
+        """Ignore reviews that arrive before the first ready transition for a draft-created pull request."""
+        # Given
+        config = self._build_run_config(
+            as_of="2026-04-18",
+            output_dir=tmp_path,
+        )
+        raw_snapshot = self._write_raw_snapshot(
+            config,
+            pull_requests=(
+                PullRequestRecord(
+                    repository_full_name="acme/api",
+                    number=46,
+                    title="Become ready later",
+                    state="closed",
+                    draft=False,
+                    merged=True,
+                    author_login="alice",
+                    created_at=datetime.fromisoformat("2026-04-10T09:00:00"),
+                    updated_at=datetime.fromisoformat("2026-04-11T13:00:00"),
+                    closed_at=datetime.fromisoformat("2026-04-11T13:00:00"),
+                    merged_at=datetime.fromisoformat("2026-04-11T13:00:00"),
+                    additions=9,
+                    deletions=2,
+                    changed_files=2,
+                    commits=2,
+                    html_url="https://example.test/pr/46",
+                    reviews=(
+                        PullRequestReviewRecord(
+                            review_id=703,
+                            state="COMMENTED",
+                            author_login="reviewer-a",
+                            submitted_at=datetime.fromisoformat(
+                                "2026-04-10T10:00:00"
+                            ),
+                            commit_id="commit-703",
+                        ),
+                        PullRequestReviewRecord(
+                            review_id=704,
+                            state="APPROVED",
+                            author_login="reviewer-b",
+                            submitted_at=datetime.fromisoformat(
+                                "2026-04-11T12:00:00"
+                            ),
+                            commit_id="commit-704",
+                        ),
+                    ),
+                    timeline_events=(
+                        PullRequestTimelineEventRecord(
+                            event_id=803,
+                            event="ready_for_review",
+                            actor_login="alice",
+                            created_at=datetime.fromisoformat("2026-04-11T09:00:00"),
+                            requested_reviewer_login=None,
+                            requested_team_name=None,
+                        ),
+                    ),
+                ),
+            ),
+        )
+
+        # When
+        result = PullRequestMetricCollectionBuilder().build(config, raw_snapshot)
+
+        # Then
+        metric = result.periods[0].pull_request_metrics[0]
+        assert metric.review_ready_at == datetime.fromisoformat("2026-04-11T09:00:00")
+        assert metric.review_started_at == datetime.fromisoformat(
+            "2026-04-11T09:00:00"
+        )
+        assert metric.first_review_submitted_at == datetime.fromisoformat(
+            "2026-04-11T12:00:00"
+        )
+        assert metric.time_to_first_review_seconds == 10_800
+
     def test_preserves_incremental_period_scope_from_raw_snapshot_output(
         self,
         tmp_path,

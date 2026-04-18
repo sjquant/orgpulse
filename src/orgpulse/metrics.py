@@ -260,7 +260,7 @@ class PullRequestMetricCollectionBuilder:
         pull_request: PullRequestRecord,
         reference_at: datetime,
     ) -> datetime | None:
-        review_ready_at: datetime | None = pull_request.created_at
+        review_ready_at = self._initial_review_ready_at(pull_request)
         for timeline_event in pull_request.timeline_events:
             if timeline_event.created_at is None:
                 continue
@@ -271,6 +271,30 @@ class PullRequestMetricCollectionBuilder:
             elif timeline_event.event == "ready_for_review":
                 review_ready_at = timeline_event.created_at
         return review_ready_at
+
+    def _initial_review_ready_at(
+        self,
+        pull_request: PullRequestRecord,
+    ) -> datetime | None:
+        first_transition_event = self._first_draft_transition_event(pull_request)
+        if first_transition_event == "ready_for_review":
+            return None
+        if first_transition_event == "converted_to_draft":
+            return pull_request.created_at
+        if pull_request.draft:
+            return None
+        return pull_request.created_at
+
+    def _first_draft_transition_event(
+        self,
+        pull_request: PullRequestRecord,
+    ) -> str | None:
+        for timeline_event in pull_request.timeline_events:
+            if timeline_event.created_at is None:
+                continue
+            if timeline_event.event in {"converted_to_draft", "ready_for_review"}:
+                return timeline_event.event
+        return None
 
     def _review_requested_at(
         self,

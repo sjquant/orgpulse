@@ -55,6 +55,11 @@ class PeriodGrain(StrEnum):
             return _period_key_for_month(value)
         return _period_key_for_week(value)
 
+    def start_for_key(self, key: str) -> date:
+        if self is PeriodGrain.MONTH:
+            return _month_start_for_period_key(key)
+        return _week_start_for_period_key(key)
+
     def count_periods(self, start_date: date, end_date: date) -> int:
         if self is PeriodGrain.MONTH:
             return _count_periods(start_date, end_date, _next_month_start)
@@ -205,6 +210,47 @@ class RawSnapshotWriteResult(BaseModel):
 
     root_dir: Path
     periods: tuple[RawSnapshotPeriod, ...]
+
+
+class ManifestWatermarks(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    collection_window_start_date: date | None
+    collection_window_end_date: date
+    latest_refreshed_period_end_date: date | None
+    latest_locked_period_end_date: date | None
+
+
+class LastSuccessfulRun(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    completed_at: datetime
+    as_of: date
+    mode: RunMode
+    refresh_scope: RunScope
+    repository_count: int
+    pull_request_count: int
+
+
+class RunManifest(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    target_org: str
+    period_grain: PeriodGrain
+    include_repos: tuple[str, ...]
+    exclude_repos: tuple[str, ...]
+    raw_snapshot_root_dir: Path
+    refreshed_periods: tuple[RawSnapshotPeriod, ...]
+    locked_periods: tuple[ReportingPeriod, ...]
+    watermarks: ManifestWatermarks
+    last_successful_run: LastSuccessfulRun
+
+
+class ManifestWriteResult(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    path: Path
+    manifest: RunManifest
 
 
 class CheckpointPolicy(BaseModel):
@@ -427,6 +473,15 @@ def _period_key_for_month(value: date) -> str:
 def _period_key_for_week(value: date) -> str:
     iso_year, iso_week, _ = value.isocalendar()
     return f"{iso_year}-W{iso_week:02d}"
+
+
+def _month_start_for_period_key(key: str) -> date:
+    return datetime.strptime(key, "%Y-%m").date()
+
+
+def _week_start_for_period_key(key: str) -> date:
+    iso_year, iso_week = key.split("-W", 1)
+    return date.fromisocalendar(int(iso_year), int(iso_week), 1)
 
 
 def _month_end(value: date) -> date:

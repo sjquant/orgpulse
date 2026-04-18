@@ -12,6 +12,8 @@ from orgpulse.models import (
     CollectionWindow,
     PullRequestCollection,
     PullRequestRecord,
+    PullRequestReviewRecord,
+    PullRequestTimelineEventRecord,
     RepositoryCollectionFailure,
     RepositoryInventory,
     RepositoryInventoryItem,
@@ -21,6 +23,14 @@ from orgpulse.models import (
 
 DEFAULT_MAX_RETRIES = 2
 DEFAULT_RETRY_BACKOFF_SECONDS = 1.0
+FIRST_REVIEW_TIMELINE_EVENTS = frozenset(
+    {
+        "converted_to_draft",
+        "ready_for_review",
+        "review_request_removed",
+        "review_requested",
+    }
+)
 T = TypeVar("T")
 
 
@@ -171,8 +181,22 @@ class GitHubIngestionService:
         repository: Any,
         window: CollectionWindow,
     ) -> tuple[PullRequestRecord, ...]:
-        def collect_pull_requests() -> tuple[PullRequestRecord, ...]:
-            pull_requests: list[PullRequestRecord] = []
+        pull_requests = self._load_pull_request_nodes(repository, window)
+        return tuple(
+            self._build_pull_request_record(
+                repository_full_name=repository.full_name,
+                pull_request=pull_request,
+            )
+            for pull_request in pull_requests
+        )
+
+    def _load_pull_request_nodes(
+        self,
+        repository: Any,
+        window: CollectionWindow,
+    ) -> tuple[Any, ...]:
+        def collect_pull_requests() -> tuple[Any, ...]:
+            pull_requests: list[Any] = []
             for pull_request in repository.get_pulls(state="all", sort="updated", direction="desc"):
                 if not self._pull_request_is_within_window(pull_request.updated_at.date(), window):
                     if self._should_stop_loading_pull_requests(
@@ -181,12 +205,7 @@ class GitHubIngestionService:
                     ):
                         break
                     continue
-                pull_requests.append(
-                    self._build_pull_request_record(
-                        repository_full_name=repository.full_name,
-                        pull_request=pull_request,
-                    )
-                )
+                pull_requests.append(pull_request)
             return tuple(pull_requests)
 
         return self._run_github_operation(
@@ -215,7 +234,9 @@ class GitHubIngestionService:
         pull_request: Any,
     ) -> PullRequestRecord:
         author = getattr(pull_request, "user", None)
-        author_login = None if author is None else getattr(author, "login", None)
+        author_login = self._login_for(author)
+        reviews = self._load_pull_request_reviews(pull_request)
+        timeline_events = self._load_pull_request_timeline_events(pull_request)
 
         return PullRequestRecord(
             repository_full_name=repository_full_name,
@@ -234,7 +255,90 @@ class GitHubIngestionService:
             changed_files=pull_request.changed_files,
             commits=pull_request.commits,
             html_url=pull_request.html_url,
+            reviews=reviews,
+            timeline_events=timeline_events,
         )
+
+    def _load_pull_request_reviews(
+        self,
+        pull_request: Any,
+    ) -> tuple[PullRequestReviewRecord, ...]:
+        def collect_reviews() -> tuple[PullRequestReviewRecord, ...]:
+            reviews = [
+                self._build_pull_request_review_record(review)
+                for review in pull_request.get_reviews()
+            ]
+            return tuple(
+                sorted(
+                    reviews,
+                    key=lambda review: (
+                        review.submitted_at.isoformat() if review.submitted_at else "",
+                        review.review_id,
+                    ),
+                )
+            )
+
+        return self._run_github_operation(
+            call=collect_reviews,
+        )
+
+    def _build_pull_request_review_record(self, review: Any) -> PullRequestReviewRecord:
+        return PullRequestReviewRecord(
+            review_id=review.id,
+            state=review.state,
+            author_login=self._login_for(getattr(review, "user", None)),
+            submitted_at=getattr(review, "submitted_at", None),
+            commit_id=getattr(review, "commit_id", None),
+        )
+
+    def _load_pull_request_timeline_events(
+        self,
+        pull_request: Any,
+    ) -> tuple[PullRequestTimelineEventRecord, ...]:
+        def collect_timeline_events() -> tuple[PullRequestTimelineEventRecord, ...]:
+            issue = pull_request.as_issue()
+            timeline_events = [
+                self._build_pull_request_timeline_event_record(timeline_event)
+                for timeline_event in issue.get_timeline()
+                if getattr(timeline_event, "event", None) in FIRST_REVIEW_TIMELINE_EVENTS
+            ]
+            return tuple(
+                sorted(
+                    timeline_events,
+                    key=lambda timeline_event: (
+                        timeline_event.created_at.isoformat() if timeline_event.created_at else "",
+                        timeline_event.event,
+                        timeline_event.event_id,
+                    ),
+                )
+            )
+
+        return self._run_github_operation(
+            call=collect_timeline_events,
+        )
+
+    def _build_pull_request_timeline_event_record(
+        self,
+        timeline_event: Any,
+    ) -> PullRequestTimelineEventRecord:
+        return PullRequestTimelineEventRecord(
+            event_id=timeline_event.id,
+            event=timeline_event.event,
+            actor_login=self._login_for(getattr(timeline_event, "actor", None)),
+            created_at=getattr(timeline_event, "created_at", None),
+            requested_reviewer_login=self._login_for(getattr(timeline_event, "requested_reviewer", None)),
+            requested_team_name=self._team_name_for(getattr(timeline_event, "requested_team", None)),
+        )
+
+    def _login_for(self, actor: Any) -> str | None:
+        if actor is None:
+            return None
+        return getattr(actor, "login", None)
+
+    def _team_name_for(self, team: Any) -> str | None:
+        if team is None:
+            return None
+        return getattr(team, "name", None)
 
     def _build_collection_failure(
         self,

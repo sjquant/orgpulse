@@ -119,6 +119,27 @@ class RepositoryCollectionFailure(BaseModel):
     message: str
 
 
+class PullRequestReviewRecord(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    review_id: int
+    state: str
+    author_login: str | None
+    submitted_at: datetime | None
+    commit_id: str | None
+
+
+class PullRequestTimelineEventRecord(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    event_id: int
+    event: str
+    actor_login: str | None
+    created_at: datetime | None
+    requested_reviewer_login: str | None
+    requested_team_name: str | None
+
+
 class PullRequestRecord(BaseModel):
     model_config = ConfigDict(frozen=True)
 
@@ -138,6 +159,8 @@ class PullRequestRecord(BaseModel):
     changed_files: int
     commits: int
     html_url: str
+    reviews: tuple[PullRequestReviewRecord, ...] = ()
+    timeline_events: tuple[PullRequestTimelineEventRecord, ...] = ()
 
 
 class PullRequestCollection(BaseModel):

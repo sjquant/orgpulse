@@ -95,6 +95,94 @@ class TestGitHubIngestionService:
         assert [pull_request.number for pull_request in result.pull_requests] == [20]
         assert result.failures == ()
 
+    def test_enriches_pull_requests_with_review_and_timeline_data_for_first_review_inputs(self) -> None:
+        """Enrich pull requests with sorted review and timeline data needed for first-review timing."""
+        # Given
+        repository = self.build_repository(
+            "acme/api",
+            pull_outcomes=[
+                [
+                    self.build_pull_request(
+                        number=20,
+                        updated_at="2026-04-12T09:00:00",
+                        review_outcomes=[
+                            [
+                                self.build_review(
+                                    review_id=102,
+                                    state="APPROVED",
+                                    submitted_at="2026-04-11T10:30:00",
+                                    author_login="reviewer-b",
+                                ),
+                                self.build_review(
+                                    review_id=101,
+                                    state="COMMENTED",
+                                    submitted_at="2026-04-10T11:00:00",
+                                    author_login="reviewer-a",
+                                ),
+                            ]
+                        ],
+                        timeline_outcomes=[
+                            [
+                                self.build_timeline_event(
+                                    event_id=302,
+                                    event="ready_for_review",
+                                    created_at="2026-04-10T10:00:00",
+                                    actor_login="alice",
+                                ),
+                                self.build_timeline_event(
+                                    event_id=303,
+                                    event="labeled",
+                                    created_at="2026-04-10T10:05:00",
+                                    actor_login="alice",
+                                ),
+                                self.build_timeline_event(
+                                    event_id=301,
+                                    event="review_requested",
+                                    created_at="2026-04-10T09:30:00",
+                                    actor_login="alice",
+                                    requested_reviewer_login="reviewer-a",
+                                ),
+                            ]
+                        ],
+                    )
+                ]
+            ],
+        )
+        service = GitHubIngestionService(
+            FakeGithubClient(
+                organizations={},
+                repositories={"acme/api": [repository]},
+            )
+        )
+        config = RunConfig(
+            org="acme",
+            as_of="2026-04-18",
+        )
+
+        # When
+        result = service.fetch_pull_requests(
+            config,
+            RepositoryInventory(
+                organization_login="acme",
+                repositories=(
+                    self.build_inventory_item("acme/api"),
+                ),
+            ),
+        )
+
+        # Then
+        assert len(result.pull_requests) == 1
+        pull_request = result.pull_requests[0]
+        assert [review.review_id for review in pull_request.reviews] == [101, 102]
+        assert [review.author_login for review in pull_request.reviews] == ["reviewer-a", "reviewer-b"]
+        assert [timeline_event.event for timeline_event in pull_request.timeline_events] == [
+            "review_requested",
+            "ready_for_review",
+        ]
+        assert pull_request.timeline_events[0].requested_reviewer_login == "reviewer-a"
+        assert pull_request.timeline_events[1].actor_login == "alice"
+        assert result.failures == ()
+
     def test_fetches_backfill_pull_requests_from_closed_period_window(self) -> None:
         """Fetch only pull requests updated inside an explicit backfill window."""
         # Given
@@ -193,6 +281,68 @@ class TestGitHubIngestionService:
         assert result.failures[0].retriable is True
         assert result.failures[0].message == "Service unavailable"
 
+    def test_records_repo_scoped_failures_when_review_enrichment_exhausts_retries(self) -> None:
+        """Record repo-scoped failures when review enrichment exhausts retries and keep other repos running."""
+        # Given
+        sleep_calls: list[float] = []
+        failing_repository = self.build_repository(
+            "acme/api",
+            pull_outcomes=[
+                [
+                    self.build_pull_request(
+                        number=7,
+                        updated_at="2026-04-11T10:00:00",
+                        review_outcomes=[
+                            self.build_github_exception(status=503, message="Review API unavailable"),
+                            self.build_github_exception(status=503, message="Review API unavailable"),
+                            self.build_github_exception(status=503, message="Review API unavailable"),
+                        ],
+                    )
+                ]
+            ],
+        )
+        succeeding_repository = self.build_repository(
+            "acme/web",
+            pull_outcomes=[
+                [
+                    self.build_pull_request(number=8, updated_at="2026-04-11T10:00:00"),
+                ]
+            ],
+        )
+        service = GitHubIngestionService(
+            FakeGithubClient(
+                organizations={},
+                repositories={
+                    "acme/api": [failing_repository],
+                    "acme/web": [succeeding_repository],
+                },
+            ),
+            max_retries=2,
+            sleep=lambda seconds: sleep_calls.append(seconds),
+        )
+        config = RunConfig(org="acme", as_of="2026-04-18")
+
+        # When
+        result = service.fetch_pull_requests(
+            config,
+            RepositoryInventory(
+                organization_login="acme",
+                repositories=(
+                    self.build_inventory_item("acme/api"),
+                    self.build_inventory_item("acme/web"),
+                ),
+            ),
+        )
+
+        # Then
+        assert sleep_calls == [1.0, 2.0]
+        assert [pull_request.repository_full_name for pull_request in result.pull_requests] == ["acme/web"]
+        assert len(result.failures) == 1
+        assert result.failures[0].repository_full_name == "acme/api"
+        assert result.failures[0].status_code == 503
+        assert result.failures[0].retriable is True
+        assert result.failures[0].message == "Review API unavailable"
+
     def build_inventory_item(self, full_name: str) -> RepositoryInventoryItem:
         """Build the minimal repository inventory item required for PR fetching."""
         return RepositoryInventoryItem(
@@ -216,7 +366,14 @@ class TestGitHubIngestionService:
             pull_outcomes=pull_outcomes or [],
         )
 
-    def build_pull_request(self, *, number: int, updated_at: str) -> FakePullRequest:
+    def build_pull_request(
+        self,
+        *,
+        number: int,
+        updated_at: str,
+        review_outcomes: list[Any] | None = None,
+        timeline_outcomes: list[Any] | None = None,
+    ) -> FakePullRequest:
         """Build a fake pull request object with deterministic metric fields."""
         timestamp = datetime.fromisoformat(updated_at)
         return FakePullRequest(
@@ -235,6 +392,49 @@ class TestGitHubIngestionService:
             changed_files=3,
             commits=2,
             html_url=f"https://example.test/pr/{number}",
+            review_outcomes=review_outcomes or [[]],
+            timeline_outcomes=timeline_outcomes or [[]],
+        )
+
+    def build_review(
+        self,
+        *,
+        review_id: int,
+        state: str,
+        submitted_at: str,
+        author_login: str | None,
+    ) -> SimpleNamespace:
+        """Build a fake pull request review record for enrichment tests."""
+        return SimpleNamespace(
+            id=review_id,
+            state=state,
+            submitted_at=datetime.fromisoformat(submitted_at),
+            user=None if author_login is None else SimpleNamespace(login=author_login),
+            commit_id=f"commit-{review_id}",
+        )
+
+    def build_timeline_event(
+        self,
+        *,
+        event_id: int,
+        event: str,
+        created_at: str,
+        actor_login: str | None,
+        requested_reviewer_login: str | None = None,
+        requested_team_name: str | None = None,
+    ) -> SimpleNamespace:
+        """Build a fake timeline event record for review timing enrichment tests."""
+        return SimpleNamespace(
+            id=event_id,
+            event=event,
+            created_at=datetime.fromisoformat(created_at),
+            actor=None if actor_login is None else SimpleNamespace(login=actor_login),
+            requested_reviewer=None
+            if requested_reviewer_login is None
+            else SimpleNamespace(login=requested_reviewer_login),
+            requested_team=None
+            if requested_team_name is None
+            else SimpleNamespace(name=requested_team_name),
         )
 
     def build_github_exception(
@@ -293,8 +493,24 @@ class FakeRepository:
 
 class FakePullRequest:
     def __init__(self, **payload: Any) -> None:
+        self._review_outcomes = deque(payload.pop("review_outcomes", [[]]))
+        self._timeline_outcomes = deque(payload.pop("timeline_outcomes", [[]]))
         for key, value in payload.items():
             setattr(self, key, value)
+
+    def get_reviews(self) -> list[Any]:
+        return resolve_outcome(self._review_outcomes)
+
+    def as_issue(self) -> FakeIssue:
+        return FakeIssue(self._timeline_outcomes)
+
+
+class FakeIssue:
+    def __init__(self, timeline_outcomes: deque[Any]) -> None:
+        self._timeline_outcomes = timeline_outcomes
+
+    def get_timeline(self) -> list[Any]:
+        return resolve_outcome(self._timeline_outcomes)
 
 
 def resolve_outcome(outcomes: deque[Any]) -> Any:

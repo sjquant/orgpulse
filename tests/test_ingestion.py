@@ -5,7 +5,7 @@ from collections import deque
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
-from typing import TypeVar, cast
+from typing import TypeVar, cast, overload
 
 from github import GithubException
 
@@ -13,6 +13,8 @@ from orgpulse.ingestion import GitHubIngestionService, NormalizedRawSnapshotWrit
 from orgpulse.models import (
     PullRequestCollection,
     PullRequestRecord,
+    PullRequestReviewRecord,
+    PullRequestTimelineEventRecord,
     RepositoryInventory,
     RepositoryInventoryItem,
     RunConfig,
@@ -86,6 +88,39 @@ class TestGitHubIngestionService:
             "acme/zeta",
         ]
 
+    def test_loads_repository_inventory_across_paginated_api_results(self) -> None:
+        """Load repository inventory across paginated API results without dropping later pages."""
+        # Given
+        paginated_repositories = FakePaginatedSequence(
+            (
+                self._build_repository("acme/api"),
+                self._build_repository("acme/docs"),
+            ),
+            (self._build_repository("acme/web"),),
+        )
+        api = FakeGithubClient(
+            organizations={
+                "acme": FakeOrganization(
+                    login="acme",
+                    repo_outcomes=[paginated_repositories],
+                )
+            },
+            repositories={},
+        )
+        service = GitHubIngestionService(cast(GitHubIngestionClientLike, api))
+        config = RunConfig(org="acme")
+
+        # When
+        inventory = service.load_repository_inventory(config)
+
+        # Then
+        assert [repository.full_name for repository in inventory.repositories] == [
+            "acme/api",
+            "acme/docs",
+            "acme/web",
+        ]
+        assert paginated_repositories.page_accesses == [0, 1]
+
     def test_fetches_incremental_pull_requests_within_collection_window(self) -> None:
         """Fetch only pull requests updated inside the incremental collection window."""
         # Given
@@ -129,6 +164,88 @@ class TestGitHubIngestionService:
         assert str(result.window.start_date) == "2026-04-01"
         assert str(result.window.end_date) == "2026-04-18"
         assert [pull_request.number for pull_request in result.pull_requests] == [20]
+        assert result.failures == ()
+
+    def test_fetches_pull_requests_across_paginated_api_results(self) -> None:
+        """Fetch pull requests across paginated API results at the repository boundary."""
+        # Given
+        paginated_pull_requests = FakePaginatedSequence(
+            (
+                self._build_pull_request(
+                    number=30, updated_at="2026-04-12T09:00:00"
+                ),
+                self._build_pull_request(
+                    number=20, updated_at="2026-04-10T09:00:00"
+                ),
+            ),
+            (
+                self._build_pull_request(
+                    number=10, updated_at="2026-04-05T09:00:00"
+                ),
+            ),
+        )
+        repository = self._build_repository(
+            "acme/api",
+            pull_outcomes=[paginated_pull_requests],
+        )
+        service = GitHubIngestionService(
+            cast(
+                GitHubIngestionClientLike,
+                FakeGithubClient(
+                    organizations={},
+                    repositories={"acme/api": [repository]},
+                ),
+            )
+        )
+        config = self._build_run_config(as_of="2026-04-18")
+
+        # When
+        result = service.fetch_pull_requests(
+            config,
+            RepositoryInventory(
+                organization_login="acme",
+                repositories=(self._build_inventory_item("acme/api"),),
+            ),
+        )
+
+        # Then
+        assert [pull_request.number for pull_request in result.pull_requests] == [
+            10,
+            20,
+            30,
+        ]
+        assert result.failures == ()
+        assert paginated_pull_requests.page_accesses == [0, 1]
+
+    def test_returns_empty_collection_for_repository_without_pull_requests(self) -> None:
+        """Return an empty collection for repositories that currently have no pull requests."""
+        # Given
+        repository = self._build_repository(
+            "acme/empty",
+            pull_outcomes=[FakePaginatedSequence[FakePullRequest]()],
+        )
+        service = GitHubIngestionService(
+            cast(
+                GitHubIngestionClientLike,
+                FakeGithubClient(
+                    organizations={},
+                    repositories={"acme/empty": [repository]},
+                ),
+            )
+        )
+        config = self._build_run_config(as_of="2026-04-18")
+
+        # When
+        result = service.fetch_pull_requests(
+            config,
+            RepositoryInventory(
+                organization_login="acme",
+                repositories=(self._build_inventory_item("acme/empty"),),
+            ),
+        )
+
+        # Then
+        assert result.pull_requests == ()
         assert result.failures == ()
 
     def test_enriches_pull_requests_with_review_and_timeline_data_for_first_review_inputs(
@@ -336,6 +453,66 @@ class TestGitHubIngestionService:
         assert result.failures[0].status_code == 503
         assert result.failures[0].retriable is True
         assert result.failures[0].message == "Service unavailable"
+
+    def test_records_permission_failures_without_retrying_and_keeps_other_repositories_running(
+        self,
+    ) -> None:
+        """Record repo-scoped permission failures as non-retriable and continue collecting other repositories."""
+        # Given
+        sleep_calls: list[float] = []
+        succeeding_repository = self._build_repository(
+            "acme/web",
+            pull_outcomes=[
+                [
+                    self._build_pull_request(
+                        number=7, updated_at="2026-04-11T10:00:00"
+                    ),
+                ]
+            ],
+        )
+        service = GitHubIngestionService(
+            cast(
+                GitHubIngestionClientLike,
+                FakeGithubClient(
+                    organizations={},
+                    repositories={
+                        "acme/private": [
+                            self._build_github_exception(
+                                status=403,
+                                message="Forbidden",
+                            )
+                        ],
+                        "acme/web": [succeeding_repository],
+                    },
+                ),
+            ),
+            sleep=lambda seconds: sleep_calls.append(seconds),
+        )
+        config = self._build_run_config(as_of="2026-04-18")
+
+        # When
+        result = service.fetch_pull_requests(
+            config,
+            RepositoryInventory(
+                organization_login="acme",
+                repositories=(
+                    self._build_inventory_item("acme/private"),
+                    self._build_inventory_item("acme/web"),
+                ),
+            ),
+        )
+
+        # Then
+        assert sleep_calls == []
+        assert [
+            pull_request.repository_full_name for pull_request in result.pull_requests
+        ] == ["acme/web"]
+        assert len(result.failures) == 1
+        assert result.failures[0].repository_full_name == "acme/private"
+        assert result.failures[0].operation == "pull_requests"
+        assert result.failures[0].status_code == 403
+        assert result.failures[0].retriable is False
+        assert result.failures[0].message == "Forbidden"
 
     def test_records_repo_scoped_failures_when_review_enrichment_exhausts_retries(
         self,
@@ -625,6 +802,318 @@ class TestGitHubIngestionService:
         assert stale_period_dir.exists() is False
         assert (tmp_path / "raw" / "month" / "2026-04" / "pull_requests.csv").exists()
 
+    def test_rewrites_incremental_snapshots_idempotently_on_rerun(
+        self,
+        tmp_path,
+    ) -> None:
+        """Rewrite the same incremental snapshot deterministically across repeated runs."""
+        # Given
+        writer = NormalizedRawSnapshotWriter()
+        config = self._build_run_config(
+            as_of="2026-04-18",
+            output_dir=tmp_path,
+        )
+        collection = PullRequestCollection(
+            window=config.collection_window,
+            pull_requests=(
+                self._build_pull_request_record(
+                    number=20,
+                    updated_at="2026-04-12T09:00:00",
+                    reviews=(
+                        self._build_pull_request_review_record(
+                            review_id=101,
+                            submitted_at="2026-04-12T10:00:00",
+                            author_login="reviewer-a",
+                        ),
+                    ),
+                    timeline_events=(
+                        self._build_pull_request_timeline_event_record(
+                            event_id=201,
+                            event="review_requested",
+                            created_at="2026-04-10T09:30:00",
+                            actor_login="alice",
+                            requested_reviewer_login="reviewer-a",
+                        ),
+                    ),
+                ),
+            ),
+            failures=(),
+        )
+
+        # When
+        first_result = writer.write(config, collection)
+        first_file_contents = self._read_snapshot_texts(first_result)
+        second_result = writer.write(config, collection)
+        second_file_contents = self._read_snapshot_texts(second_result)
+
+        # Then
+        assert [period.key for period in first_result.periods] == ["2026-04"]
+        assert [period.key for period in second_result.periods] == ["2026-04"]
+        assert first_file_contents == second_file_contents
+        assert self._read_csv_rows(
+            tmp_path / "raw" / "month" / "2026-04" / "pull_requests.csv"
+        ) == [
+            {
+                "period_key": "2026-04",
+                "repository_full_name": "acme/api",
+                "pull_request_number": "20",
+                "title": "PR 20",
+                "state": "closed",
+                "draft": "False",
+                "merged": "True",
+                "author_login": "alice",
+                "created_at": "2026-04-12T09:00:00",
+                "updated_at": "2026-04-12T09:00:00",
+                "closed_at": "2026-04-12T09:00:00",
+                "merged_at": "2026-04-12T09:00:00",
+                "additions": "12",
+                "deletions": "4",
+                "changed_files": "3",
+                "commits": "2",
+                "html_url": "https://example.test/pr/20",
+            }
+        ]
+
+    def test_overwrites_stale_active_period_rows_on_rerun(
+        self,
+        tmp_path,
+    ) -> None:
+        """Overwrite active-period files on rerun so stale rows from prior snapshots are removed."""
+        # Given
+        writer = NormalizedRawSnapshotWriter()
+        config = self._build_run_config(
+            as_of="2026-04-18",
+            output_dir=tmp_path,
+        )
+        first_collection = PullRequestCollection(
+            window=config.collection_window,
+            pull_requests=(
+                self._build_pull_request_record(
+                    number=20,
+                    updated_at="2026-04-12T09:00:00",
+                    reviews=(
+                        self._build_pull_request_review_record(
+                            review_id=101,
+                            submitted_at="2026-04-12T10:00:00",
+                            author_login="reviewer-a",
+                        ),
+                    ),
+                    timeline_events=(
+                        self._build_pull_request_timeline_event_record(
+                            event_id=201,
+                            event="review_requested",
+                            created_at="2026-04-10T09:30:00",
+                            actor_login="alice",
+                            requested_reviewer_login="reviewer-a",
+                        ),
+                    ),
+                ),
+                self._build_pull_request_record(
+                    number=21,
+                    updated_at="2026-04-14T09:00:00",
+                ),
+            ),
+            failures=(),
+        )
+        second_collection = PullRequestCollection(
+            window=config.collection_window,
+            pull_requests=(
+                self._build_pull_request_record(
+                    number=20,
+                    updated_at="2026-04-12T09:00:00",
+                    title="PR 20 rerun",
+                ),
+            ),
+            failures=(),
+        )
+
+        # When
+        writer.write(config, first_collection)
+        writer.write(config, second_collection)
+
+        # Then
+        assert self._read_csv_rows(
+            tmp_path / "raw" / "month" / "2026-04" / "pull_requests.csv"
+        ) == [
+            {
+                "period_key": "2026-04",
+                "repository_full_name": "acme/api",
+                "pull_request_number": "20",
+                "title": "PR 20 rerun",
+                "state": "closed",
+                "draft": "False",
+                "merged": "True",
+                "author_login": "alice",
+                "created_at": "2026-04-12T09:00:00",
+                "updated_at": "2026-04-12T09:00:00",
+                "closed_at": "2026-04-12T09:00:00",
+                "merged_at": "2026-04-12T09:00:00",
+                "additions": "12",
+                "deletions": "4",
+                "changed_files": "3",
+                "commits": "2",
+                "html_url": "https://example.test/pr/20",
+            }
+        ]
+        assert (
+            self._read_csv_rows(
+                tmp_path / "raw" / "month" / "2026-04" / "pull_request_reviews.csv"
+            )
+            == []
+        )
+        assert (
+            self._read_csv_rows(
+                tmp_path
+                / "raw"
+                / "month"
+                / "2026-04"
+                / "pull_request_timeline_events.csv"
+            )
+            == []
+        )
+
+    def test_stops_iterating_paginated_pull_requests_once_the_window_is_exhausted(
+        self,
+    ) -> None:
+        """Stop iterating paginated pull requests once descending results fall behind the collection window."""
+        # Given
+        paginated_pull_requests = FakePaginatedSequence(
+            (
+                self._build_pull_request(
+                    number=30, updated_at="2026-04-20T09:00:00"
+                ),
+                self._build_pull_request(
+                    number=20, updated_at="2026-04-12T09:00:00"
+                ),
+            ),
+            (
+                self._build_pull_request(
+                    number=10, updated_at="2026-03-31T23:59:00"
+                ),
+                self._build_pull_request(
+                    number=5, updated_at="2026-03-15T09:00:00"
+                ),
+            ),
+            (
+                self._build_pull_request(
+                    number=1, updated_at="2026-03-01T09:00:00"
+                ),
+            ),
+        )
+        repository = self._build_repository(
+            "acme/api",
+            pull_outcomes=[paginated_pull_requests],
+        )
+        service = GitHubIngestionService(
+            cast(
+                GitHubIngestionClientLike,
+                FakeGithubClient(
+                    organizations={},
+                    repositories={"acme/api": [repository]},
+                ),
+            )
+        )
+        config = self._build_run_config(as_of="2026-04-18")
+
+        # When
+        result = service.fetch_pull_requests(
+            config,
+            RepositoryInventory(
+                organization_login="acme",
+                repositories=(self._build_inventory_item("acme/api"),),
+            ),
+        )
+
+        # Then
+        assert [pull_request.number for pull_request in result.pull_requests] == [20]
+        assert paginated_pull_requests.page_accesses == [0, 1]
+        assert [
+            pull_request.number
+            for pull_request in paginated_pull_requests.iterated_items
+        ] == [30, 20, 10]
+
+    def _build_pull_request_record(
+        self,
+        *,
+        number: int,
+        updated_at: str,
+        title: str | None = None,
+        reviews: tuple[PullRequestReviewRecord, ...] = (),
+        timeline_events: tuple[PullRequestTimelineEventRecord, ...] = (),
+    ) -> PullRequestRecord:
+        """Build a deterministic pull request record for snapshot rerun tests."""
+        timestamp = datetime.fromisoformat(updated_at)
+        return PullRequestRecord(
+            repository_full_name="acme/api",
+            number=number,
+            title=f"PR {number}" if title is None else title,
+            state="closed",
+            draft=False,
+            merged=True,
+            author_login="alice",
+            created_at=timestamp,
+            updated_at=timestamp,
+            closed_at=timestamp,
+            merged_at=timestamp,
+            additions=12,
+            deletions=4,
+            changed_files=3,
+            commits=2,
+            html_url=f"https://example.test/pr/{number}",
+            reviews=reviews,
+            timeline_events=timeline_events,
+        )
+
+    def _build_pull_request_review_record(
+        self,
+        *,
+        review_id: int,
+        submitted_at: str,
+        author_login: str | None,
+    ) -> PullRequestReviewRecord:
+        """Build a deterministic pull request review record for snapshot rerun tests."""
+        return PullRequestReviewRecord(
+            review_id=review_id,
+            state="APPROVED",
+            author_login=author_login,
+            submitted_at=datetime.fromisoformat(submitted_at),
+            commit_id=f"commit-{review_id}",
+        )
+
+    def _build_pull_request_timeline_event_record(
+        self,
+        *,
+        event_id: int,
+        event: str,
+        created_at: str,
+        actor_login: str | None,
+        requested_reviewer_login: str | None = None,
+        requested_team_name: str | None = None,
+    ) -> PullRequestTimelineEventRecord:
+        """Build a deterministic pull request timeline event record for snapshot rerun tests."""
+        return PullRequestTimelineEventRecord(
+            event_id=event_id,
+            event=event,
+            actor_login=actor_login,
+            created_at=datetime.fromisoformat(created_at),
+            requested_reviewer_login=requested_reviewer_login,
+            requested_team_name=requested_team_name,
+        )
+
+    def _read_snapshot_texts(
+        self,
+        result,
+    ) -> dict[str, str]:
+        """Read snapshot file contents back for deterministic rerun assertions."""
+        period = result.periods[0]
+        return {
+            "pull_requests": period.pull_requests_path.read_text(encoding="utf-8"),
+            "reviews": period.reviews_path.read_text(encoding="utf-8"),
+            "timeline_events": period.timeline_events_path.read_text(
+                encoding="utf-8"
+            ),
+        }
+
     def _build_inventory_item(self, full_name: str) -> RepositoryInventoryItem:
         """Build the minimal repository inventory item required for PR fetching."""
         return RepositoryInventoryItem(
@@ -838,6 +1327,33 @@ class FakeIssue:
 
     def get_timeline(self) -> TimelineEventBatch:
         return resolve_outcome(self._timeline_outcomes)
+
+
+class FakePaginatedSequence(Sequence[T]):
+    def __init__(self, *pages: Sequence[T]) -> None:
+        self._pages = tuple(tuple(page) for page in pages)
+        self._flattened = tuple(item for page in self._pages for item in page)
+        self.page_accesses: list[int] = []
+        self.iterated_items: list[T] = []
+
+    def __iter__(self):
+        for page_index, page in enumerate(self._pages):
+            self.page_accesses.append(page_index)
+            for item in page:
+                self.iterated_items.append(item)
+                yield item
+
+    def __len__(self) -> int:
+        return len(self._flattened)
+
+    @overload
+    def __getitem__(self, index: int) -> T: ...
+
+    @overload
+    def __getitem__(self, index: slice) -> Sequence[T]: ...
+
+    def __getitem__(self, index: int | slice) -> T | Sequence[T]:
+        return self._flattened[index]
 
 
 @dataclass(frozen=True)

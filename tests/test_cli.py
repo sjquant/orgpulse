@@ -16,6 +16,9 @@ from orgpulse.models import (
     AuthSource,
     CollectionWindow,
     GitHubTargetContext,
+    LastSuccessfulRun,
+    ManifestWatermarks,
+    ManifestWriteResult,
     PeriodGrain,
     PullRequestCollection,
     PullRequestRecord,
@@ -23,9 +26,11 @@ from orgpulse.models import (
     RepositoryCollectionFailure,
     RepositoryInventory,
     ResolvedToken,
+    RunManifest,
     RunMode,
     RunScope,
 )
+from orgpulse.output import RunManifestWriter
 
 
 @pytest.fixture(scope="module")
@@ -65,6 +70,10 @@ def github_auth_service(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         "orgpulse.cli.NormalizedRawSnapshotWriter",
         lambda: FakeCliSnapshotWriter(),
+    )
+    monkeypatch.setattr(
+        "orgpulse.cli.RunManifestWriter",
+        lambda: FakeCliManifestWriter(),
     )
 
 
@@ -116,6 +125,43 @@ class FakeCliSnapshotWriter:
         )
 
 
+class FakeCliManifestWriter:
+    def write(
+        self,
+        config,
+        collection: PullRequestCollection,
+        raw_snapshot: RawSnapshotWriteResult,
+        *,
+        repository_count: int,
+    ) -> ManifestWriteResult:
+        return ManifestWriteResult(
+            path=config.output_dir / "manifest" / config.period.value / "manifest.json",
+            manifest=RunManifest(
+                target_org=config.org,
+                period_grain=config.period,
+                include_repos=config.include_repos,
+                exclude_repos=config.exclude_repos,
+                raw_snapshot_root_dir=raw_snapshot.root_dir,
+                refreshed_periods=raw_snapshot.periods,
+                locked_periods=(),
+                watermarks=ManifestWatermarks(
+                    collection_window_start_date=collection.window.start_date,
+                    collection_window_end_date=collection.window.end_date,
+                    latest_refreshed_period_end_date=None,
+                    latest_locked_period_end_date=None,
+                ),
+                last_successful_run=LastSuccessfulRun(
+                    completed_at=datetime.fromisoformat("2026-04-18T00:00:00+00:00"),
+                    as_of=config.as_of,
+                    mode=config.mode,
+                    refresh_scope=config.refresh_scope,
+                    repository_count=repository_count,
+                    pull_request_count=len(collection.pull_requests),
+                ),
+            ),
+        )
+
+
 class UnexpectedSnapshotWriter:
     def write(
         self,
@@ -123,6 +169,18 @@ class UnexpectedSnapshotWriter:
         collection: PullRequestCollection,
     ) -> RawSnapshotWriteResult:
         raise AssertionError("snapshot writer should not run")
+
+
+class UnexpectedManifestWriter:
+    def write(
+        self,
+        config,
+        collection: PullRequestCollection,
+        raw_snapshot: RawSnapshotWriteResult,
+        *,
+        repository_count: int,
+    ) -> None:
+        raise AssertionError("manifest writer should not run")
 
 
 class TestRunConfigParsing:
@@ -615,6 +673,12 @@ class TestRunCommandRuntime:
             "orgpulse.cli.NormalizedRawSnapshotWriter",
             lambda: NormalizedRawSnapshotWriter(),
         )
+        monkeypatch.setattr(
+            "orgpulse.cli.RunManifestWriter",
+            lambda: RunManifestWriter(
+                now=lambda: datetime.fromisoformat("2026-04-18T00:00:00+00:00")
+            ),
+        )
 
         # When
         result = runner.invoke(
@@ -638,11 +702,231 @@ class TestRunCommandRuntime:
         assert payload["raw_snapshot"]["periods"][0]["key"] == "2026-04"
         assert payload["raw_snapshot"]["periods"][0]["pull_request_count"] == 1
         assert payload["raw_snapshot_skipped_reason"] is None
+        assert payload["manifest"]["refreshed_periods"][0]["key"] == "2026-04"
+        assert payload["manifest"]["locked_periods"] == []
+        assert payload["manifest"]["watermarks"]["collection_window_end_date"] == (
+            "2026-04-18"
+        )
+        assert payload["manifest_skipped_reason"] is None
         pull_requests_path = (
             tmp_path / "raw" / "month" / "2026-04" / "pull_requests.csv"
         )
+        manifest_path = tmp_path / "manifest" / "month" / "manifest.json"
         assert pull_requests_path.exists()
+        assert manifest_path.exists()
         assert "acme/api" in pull_requests_path.read_text(encoding="utf-8")
+        assert json.loads(manifest_path.read_text(encoding="utf-8"))["target_org"] == (
+            "acme"
+        )
+
+    def test_rewrites_identical_outputs_safely_on_rerun(
+        self,
+        runner: CliRunner,
+        github_auth_service: None,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path,
+    ) -> None:
+        """Rewrite identical raw snapshot and manifest outputs without drifting the exported PR data."""
+        # Given
+        pull_request = PullRequestRecord(
+            repository_full_name="acme/api",
+            number=17,
+            title="Add snapshot writer",
+            state="closed",
+            draft=False,
+            merged=True,
+            author_login="alice",
+            created_at=datetime.fromisoformat("2026-04-09T10:00:00"),
+            updated_at=datetime.fromisoformat("2026-04-12T09:00:00"),
+            closed_at=datetime.fromisoformat("2026-04-12T09:00:00"),
+            merged_at=datetime.fromisoformat("2026-04-12T09:00:00"),
+            additions=25,
+            deletions=6,
+            changed_files=4,
+            commits=3,
+            html_url="https://example.test/pr/17",
+        )
+        inventory = RepositoryInventory(
+            organization_login="acme",
+            repositories=(),
+        )
+        collection = PullRequestCollection(
+            window=CollectionWindow(
+                scope=RunScope.OPEN_PERIOD,
+                start_date=datetime.fromisoformat("2026-04-01T00:00:00").date(),
+                end_date=datetime.fromisoformat("2026-04-18T00:00:00").date(),
+            ),
+            pull_requests=(pull_request,),
+            failures=(),
+        )
+        completed_at_values = iter(
+            (
+                datetime.fromisoformat("2026-04-18T00:00:00+00:00"),
+                datetime.fromisoformat("2026-04-19T00:00:00+00:00"),
+            )
+        )
+        monkeypatch.setattr(
+            "orgpulse.cli.GitHubIngestionService",
+            lambda github_client: FakeCliIngestionService(
+                inventory=inventory,
+                collection=collection,
+            ),
+        )
+        monkeypatch.setattr(
+            "orgpulse.cli.NormalizedRawSnapshotWriter",
+            lambda: NormalizedRawSnapshotWriter(),
+        )
+        monkeypatch.setattr(
+            "orgpulse.cli.RunManifestWriter",
+            lambda: RunManifestWriter(now=lambda: next(completed_at_values)),
+        )
+
+        # When
+        first_result = runner.invoke(
+            app,
+            [
+                "run",
+                "--org",
+                "acme",
+                "--as-of",
+                "2026-04-18",
+                "--output-dir",
+                str(tmp_path),
+            ],
+        )
+        pull_requests_path = (
+            tmp_path / "raw" / "month" / "2026-04" / "pull_requests.csv"
+        )
+        manifest_path = tmp_path / "manifest" / "month" / "manifest.json"
+        first_pull_requests_csv = pull_requests_path.read_text(encoding="utf-8")
+        first_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        second_result = runner.invoke(
+            app,
+            [
+                "run",
+                "--org",
+                "acme",
+                "--as-of",
+                "2026-04-18",
+                "--output-dir",
+                str(tmp_path),
+            ],
+        )
+
+        # Then
+        assert first_result.exit_code == 0
+        assert second_result.exit_code == 0
+        assert pull_requests_path.read_text(encoding="utf-8") == first_pull_requests_csv
+        second_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        assert first_manifest["refreshed_periods"] == second_manifest["refreshed_periods"]
+        assert first_manifest["locked_periods"] == second_manifest["locked_periods"]
+        assert (
+            first_manifest["last_successful_run"]["completed_at"]
+            == "2026-04-18T00:00:00Z"
+        )
+        assert (
+            second_manifest["last_successful_run"]["completed_at"]
+            == "2026-04-19T00:00:00Z"
+        )
+
+    def test_prunes_stale_period_outputs_and_overwrites_manifest_on_full_rerun(
+        self,
+        runner: CliRunner,
+        github_auth_service: None,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path,
+    ) -> None:
+        """Prune stale full-history raw outputs and overwrite the manifest with only the surviving periods."""
+        # Given
+        stale_period_dir = tmp_path / "raw" / "month" / "2026-03"
+        stale_period_dir.mkdir(parents=True)
+        (stale_period_dir / "pull_requests.csv").write_text(
+            "stale snapshot\n",
+            encoding="utf-8",
+        )
+        stale_manifest_path = tmp_path / "manifest" / "month" / "manifest.json"
+        stale_manifest_path.parent.mkdir(parents=True)
+        stale_manifest_path.write_text(
+            json.dumps({"target_org": "stale"}),
+            encoding="utf-8",
+        )
+        pull_request = PullRequestRecord(
+            repository_full_name="acme/api",
+            number=30,
+            title="Rewrite current period only",
+            state="closed",
+            draft=False,
+            merged=True,
+            author_login="alice",
+            created_at=datetime.fromisoformat("2026-04-12T09:00:00"),
+            updated_at=datetime.fromisoformat("2026-04-12T09:00:00"),
+            closed_at=datetime.fromisoformat("2026-04-12T09:00:00"),
+            merged_at=datetime.fromisoformat("2026-04-12T09:00:00"),
+            additions=12,
+            deletions=4,
+            changed_files=3,
+            commits=2,
+            html_url="https://example.test/pr/30",
+        )
+        inventory = RepositoryInventory(
+            organization_login="acme",
+            repositories=(),
+        )
+        collection = PullRequestCollection(
+            window=CollectionWindow(
+                scope=RunScope.FULL_HISTORY,
+                start_date=None,
+                end_date=datetime.fromisoformat("2026-04-18T00:00:00").date(),
+            ),
+            pull_requests=(pull_request,),
+            failures=(),
+        )
+        monkeypatch.setattr(
+            "orgpulse.cli.GitHubIngestionService",
+            lambda github_client: FakeCliIngestionService(
+                inventory=inventory,
+                collection=collection,
+            ),
+        )
+        monkeypatch.setattr(
+            "orgpulse.cli.NormalizedRawSnapshotWriter",
+            lambda: NormalizedRawSnapshotWriter(),
+        )
+        monkeypatch.setattr(
+            "orgpulse.cli.RunManifestWriter",
+            lambda: RunManifestWriter(
+                now=lambda: datetime.fromisoformat("2026-04-18T00:00:00+00:00")
+            ),
+        )
+
+        # When
+        result = runner.invoke(
+            app,
+            [
+                "run",
+                "--org",
+                "acme",
+                "--as-of",
+                "2026-04-18",
+                "--mode",
+                "full",
+                "--output-dir",
+                str(tmp_path),
+            ],
+        )
+
+        # Then
+        assert result.exit_code == 0
+        payload = json.loads(result.stdout)
+        assert stale_period_dir.exists() is False
+        assert [period["key"] for period in payload["manifest"]["refreshed_periods"]] == [
+            "2026-04"
+        ]
+        assert payload["manifest"]["locked_periods"] == []
+        assert payload["manifest"]["watermarks"]["latest_locked_period_end_date"] is None
+        assert json.loads(stale_manifest_path.read_text(encoding="utf-8"))[
+            "target_org"
+        ] == "acme"
 
     def test_skips_snapshot_writes_when_repo_collection_has_failures(
         self,
@@ -681,6 +965,16 @@ class TestRunCommandRuntime:
             "orgpulse.cli.NormalizedRawSnapshotWriter",
             lambda: UnexpectedSnapshotWriter(),
         )
+        monkeypatch.setattr(
+            "orgpulse.cli.RunManifestWriter",
+            lambda: UnexpectedManifestWriter(),
+        )
+        existing_manifest = tmp_path / "manifest" / "month" / "manifest.json"
+        existing_manifest.parent.mkdir(parents=True)
+        existing_manifest.write_text(
+            json.dumps({"target_org": "acme", "status": "previous"}),
+            encoding="utf-8",
+        )
 
         # When
         result = runner.invoke(
@@ -704,4 +998,10 @@ class TestRunCommandRuntime:
         assert (
             payload["raw_snapshot_skipped_reason"] == "repository_collection_failures"
         )
+        assert payload["manifest"] is None
+        assert payload["manifest_skipped_reason"] == "repository_collection_failures"
         assert existing_snapshot.read_text(encoding="utf-8") == "existing snapshot\n"
+        assert json.loads(existing_manifest.read_text(encoding="utf-8")) == {
+            "target_org": "acme",
+            "status": "previous",
+        }

@@ -1,13 +1,21 @@
 from __future__ import annotations
 
+import time
 from collections.abc import Callable
 from datetime import date
-import time
-from typing import Any, TypeVar
+from typing import TypeVar, cast
 
 from github import Github, GithubException
 
 from orgpulse.errors import GitHubApiError
+from orgpulse.github_types import (
+    GitHubActorLike,
+    GitHubIngestionClientLike,
+    GitHubOrganizationLike,
+    GitHubPullRequestLike,
+    GitHubRepositoryLike,
+    GitHubTeamLike,
+)
 from orgpulse.models import (
     CollectionWindow,
     PullRequestCollection,
@@ -39,7 +47,7 @@ class GitHubIngestionService:
 
     def __init__(
         self,
-        github_client: Github,
+        github_client: Github | GitHubIngestionClientLike,
         *,
         max_retries: int = DEFAULT_MAX_RETRIES,
         retry_backoff_seconds: float = DEFAULT_RETRY_BACKOFF_SECONDS,
@@ -67,23 +75,32 @@ class GitHubIngestionService:
             repositories=repositories,
         )
 
-    def _load_organization(self, org: str) -> Any:
-        return self._run_github_operation(
-            call=lambda: self._github_client.get_organization(org),
+    def _load_organization(self, org: str) -> GitHubOrganizationLike:
+        return cast(
+            GitHubOrganizationLike,
+            self._run_github_operation(
+                call=lambda: self._github_client.get_organization(org),
+            ),
         )
 
     def _load_repository_inventory_items(
         self,
-        organization: Any,
+        organization: GitHubOrganizationLike,
         config: RunConfig,
     ) -> tuple[RepositoryInventoryItem, ...]:
         def load_repositories() -> tuple[RepositoryInventoryItem, ...]:
             repositories: list[RepositoryInventoryItem] = []
-            for repository in organization.get_repos(type="all", sort="full_name", direction="asc"):
-                if not self._repo_is_selected(config, repository.full_name, repository.name):
+            for repository in organization.get_repos(
+                type="all", sort="full_name", direction="asc"
+            ):
+                if not self._repo_is_selected(
+                    config, repository.full_name, repository.name
+                ):
                     continue
                 repositories.append(self._build_repository_inventory_item(repository))
-            return tuple(sorted(repositories, key=lambda repository: repository.full_name))
+            return tuple(
+                sorted(repositories, key=lambda repository: repository.full_name)
+            )
 
         return self._run_github_operation(
             call=load_repositories,
@@ -102,7 +119,9 @@ class GitHubIngestionService:
             return False
         return True
 
-    def _matches_repo_filter(self, repo_filter: str, full_name: str, name: str, org: str) -> bool:
+    def _matches_repo_filter(
+        self, repo_filter: str, full_name: str, name: str, org: str
+    ) -> bool:
         return repo_filter_matches(
             repo_filter,
             full_name=full_name,
@@ -110,7 +129,9 @@ class GitHubIngestionService:
             org=org,
         )
 
-    def _build_repository_inventory_item(self, repository: Any) -> RepositoryInventoryItem:
+    def _build_repository_inventory_item(
+        self, repository: GitHubRepositoryLike
+    ) -> RepositoryInventoryItem:
         return RepositoryInventoryItem(
             name=repository.name,
             full_name=repository.full_name,
@@ -171,14 +192,17 @@ class GitHubIngestionService:
         repository = self._load_repository(repository_full_name)
         return self._load_pull_requests(repository, window)
 
-    def _load_repository(self, repository_full_name: str) -> Any:
-        return self._run_github_operation(
-            call=lambda: self._github_client.get_repo(repository_full_name),
+    def _load_repository(self, repository_full_name: str) -> GitHubRepositoryLike:
+        return cast(
+            GitHubRepositoryLike,
+            self._run_github_operation(
+                call=lambda: self._github_client.get_repo(repository_full_name),
+            ),
         )
 
     def _load_pull_requests(
         self,
-        repository: Any,
+        repository: GitHubRepositoryLike,
         window: CollectionWindow,
     ) -> tuple[PullRequestRecord, ...]:
         pull_requests = self._load_pull_request_nodes(repository, window)
@@ -192,13 +216,17 @@ class GitHubIngestionService:
 
     def _load_pull_request_nodes(
         self,
-        repository: Any,
+        repository: GitHubRepositoryLike,
         window: CollectionWindow,
-    ) -> tuple[Any, ...]:
-        def collect_pull_requests() -> tuple[Any, ...]:
-            pull_requests: list[Any] = []
-            for pull_request in repository.get_pulls(state="all", sort="updated", direction="desc"):
-                if not self._pull_request_is_within_window(pull_request.updated_at.date(), window):
+    ) -> tuple[GitHubPullRequestLike, ...]:
+        def collect_pull_requests() -> tuple[GitHubPullRequestLike, ...]:
+            pull_requests: list[GitHubPullRequestLike] = []
+            for pull_request in repository.get_pulls(
+                state="all", sort="updated", direction="desc"
+            ):
+                if not self._pull_request_is_within_window(
+                    pull_request.updated_at.date(), window
+                ):
                     if self._should_stop_loading_pull_requests(
                         updated_on=pull_request.updated_at.date(),
                         window=window,
@@ -212,7 +240,9 @@ class GitHubIngestionService:
             call=collect_pull_requests,
         )
 
-    def _pull_request_is_within_window(self, updated_on: date, window: CollectionWindow) -> bool:
+    def _pull_request_is_within_window(
+        self, updated_on: date, window: CollectionWindow
+    ) -> bool:
         if updated_on > window.end_date:
             return False
         if window.start_date is None:
@@ -231,10 +261,9 @@ class GitHubIngestionService:
         self,
         *,
         repository_full_name: str,
-        pull_request: Any,
+        pull_request: GitHubPullRequestLike,
     ) -> PullRequestRecord:
-        author = getattr(pull_request, "user", None)
-        author_login = self._login_for(author)
+        author_login = self._login_for(pull_request.user)
         reviews = self._load_pull_request_reviews(pull_request)
         timeline_events = self._load_pull_request_timeline_events(pull_request)
 
@@ -261,16 +290,16 @@ class GitHubIngestionService:
 
     def _load_pull_request_reviews(
         self,
-        pull_request: Any,
+        pull_request: GitHubPullRequestLike,
     ) -> tuple[PullRequestReviewRecord, ...]:
         def collect_reviews() -> tuple[PullRequestReviewRecord, ...]:
             reviews = [
                 PullRequestReviewRecord(
                     review_id=review.id,
                     state=review.state,
-                    author_login=self._login_for(getattr(review, "user", None)),
-                    submitted_at=getattr(review, "submitted_at", None),
-                    commit_id=getattr(review, "commit_id", None),
+                    author_login=self._login_for(review.user),
+                    submitted_at=review.submitted_at,
+                    commit_id=review.commit_id,
                 )
                 for review in pull_request.get_reviews()
             ]
@@ -290,7 +319,7 @@ class GitHubIngestionService:
 
     def _load_pull_request_timeline_events(
         self,
-        pull_request: Any,
+        pull_request: GitHubPullRequestLike,
     ) -> tuple[PullRequestTimelineEventRecord, ...]:
         def collect_timeline_events() -> tuple[PullRequestTimelineEventRecord, ...]:
             issue = pull_request.as_issue()
@@ -298,19 +327,25 @@ class GitHubIngestionService:
                 PullRequestTimelineEventRecord(
                     event_id=timeline_event.id,
                     event=timeline_event.event,
-                    actor_login=self._login_for(getattr(timeline_event, "actor", None)),
-                    created_at=getattr(timeline_event, "created_at", None),
-                    requested_reviewer_login=self._login_for(getattr(timeline_event, "requested_reviewer", None)),
-                    requested_team_name=self._team_name_for(getattr(timeline_event, "requested_team", None)),
+                    actor_login=self._login_for(timeline_event.actor),
+                    created_at=timeline_event.created_at,
+                    requested_reviewer_login=self._login_for(
+                        timeline_event.requested_reviewer
+                    ),
+                    requested_team_name=self._team_name_for(
+                        timeline_event.requested_team
+                    ),
                 )
                 for timeline_event in issue.get_timeline()
-                if getattr(timeline_event, "event", None) in FIRST_REVIEW_TIMELINE_EVENTS
+                if timeline_event.event in FIRST_REVIEW_TIMELINE_EVENTS
             ]
             return tuple(
                 sorted(
                     timeline_events,
                     key=lambda timeline_event: (
-                        timeline_event.created_at.isoformat() if timeline_event.created_at else "",
+                        timeline_event.created_at.isoformat()
+                        if timeline_event.created_at
+                        else "",
                         timeline_event.event,
                         timeline_event.event_id,
                     ),
@@ -321,15 +356,15 @@ class GitHubIngestionService:
             call=collect_timeline_events,
         )
 
-    def _login_for(self, actor: Any) -> str | None:
+    def _login_for(self, actor: GitHubActorLike | None) -> str | None:
         if actor is None:
             return None
-        return getattr(actor, "login", None)
+        return actor.login
 
-    def _team_name_for(self, team: Any) -> str | None:
+    def _team_name_for(self, team: GitHubTeamLike | None) -> str | None:
         if team is None:
             return None
-        return getattr(team, "name", None)
+        return team.name
 
     def _build_collection_failure(
         self,

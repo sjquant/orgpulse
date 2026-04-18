@@ -10,7 +10,14 @@ from typer.testing import CliRunner
 from orgpulse.cli import app, build_run_config
 from orgpulse.errors import AuthResolutionError, GitHubApiError
 from orgpulse.github_auth import GitHubAuthService
-from orgpulse.models import AuthSource, GitHubTargetContext, PeriodGrain, ResolvedToken, RunMode, RunScope
+from orgpulse.models import (
+    AuthSource,
+    GitHubTargetContext,
+    PeriodGrain,
+    ResolvedToken,
+    RunMode,
+    RunScope,
+)
 
 
 @pytest.fixture(scope="module")
@@ -22,19 +29,27 @@ def runner() -> CliRunner:
 @pytest.fixture
 def github_auth_service(monkeypatch: pytest.MonkeyPatch) -> None:
     """Stub the GitHub auth boundary for CLI tests that focus on config behavior."""
-    github_auth_service = create_autospec(GitHubAuthService, instance=True, spec_set=True)
-    github_auth_service.validate_access.side_effect = (
-        lambda config: GitHubTargetContext(
+    github_auth_service = create_autospec(
+        GitHubAuthService, instance=True, spec_set=True
+    )
+    github_auth_service.validate_access.side_effect = lambda config: (
+        GitHubTargetContext(
             auth_source=AuthSource.GH_TOKEN,
             viewer_login="test-user",
             organization_login=config.org,
         )
     )
 
-    monkeypatch.setattr("orgpulse.cli.resolve_auth_token", lambda config: ResolvedToken(source=AuthSource.GH_TOKEN, token="env-token"))
+    monkeypatch.setattr(
+        "orgpulse.cli.resolve_auth_token",
+        lambda config: ResolvedToken(source=AuthSource.GH_TOKEN, token="env-token"),
+    )
     monkeypatch.setattr("orgpulse.cli.Github", lambda auth: object())
     monkeypatch.setattr("orgpulse.cli.Auth.Token", lambda token: object())
-    monkeypatch.setattr("orgpulse.cli.GitHubAuthService", lambda github_client, auth_source: github_auth_service)
+    monkeypatch.setattr(
+        "orgpulse.cli.GitHubAuthService",
+        lambda github_client, auth_source: github_auth_service,
+    )
 
 
 class TestRunConfigParsing:
@@ -102,7 +117,9 @@ class TestRunConfigParsing:
         }
 
         # When
-        result = runner.invoke(app, ["run", "--org", "cli-acme", "--period", "week"], env=env)
+        result = runner.invoke(
+            app, ["run", "--org", "cli-acme", "--period", "week"], env=env
+        )
 
         # Then
         payload = json.loads(result.stdout)
@@ -129,7 +146,9 @@ class TestRunConfigParsing:
         # Given
 
         # When
-        config = build_run_config(org="acme", as_of="2026-04-18", period=PeriodGrain.WEEK)
+        config = build_run_config(
+            org="acme", as_of="2026-04-18", period=PeriodGrain.WEEK
+        )
 
         # Then
         assert str(config.active_period.start_date) == "2026-04-13"
@@ -171,12 +190,16 @@ class TestRunConfigParsing:
         # Given
 
         # When
-        with pytest.raises(ValidationError, match="repo filter owner must match target org 'acme'"):
+        with pytest.raises(
+            ValidationError, match="repo filter owner must match target org 'acme'"
+        ):
             build_run_config(org="acme", include_repos=["other-org/api"])
 
         # Then
 
-    def test_deduplicates_equivalent_qualified_and_unqualified_repo_filters(self) -> None:
+    def test_deduplicates_equivalent_qualified_and_unqualified_repo_filters(
+        self,
+    ) -> None:
         """Deduplicate repo filters that target the same repo through different forms."""
         # Given
 
@@ -204,7 +227,10 @@ class TestRunConfigParsing:
 
         # Then
         assert result.exit_code == 2
-        assert "backfill mode requires both --backfill-start and --backfill-end" in result.stderr
+        assert (
+            "backfill mode requires both --backfill-start and --backfill-end"
+            in result.stderr
+        )
 
     def test_rejects_backfill_start_outside_period_boundary(
         self,
@@ -234,7 +260,9 @@ class TestRunConfigParsing:
 
         # Then
         assert result.exit_code == 2
-        assert "backfill start must align to the selected period boundary" in result.stderr
+        assert (
+            "backfill start must align to the selected period boundary" in result.stderr
+        )
 
     def test_rejects_backfill_end_in_current_open_period(
         self,
@@ -264,7 +292,10 @@ class TestRunConfigParsing:
 
         # Then
         assert result.exit_code == 2
-        assert "backfill range must end before the current open period begins" in result.stderr
+        assert (
+            "backfill range must end before the current open period begins"
+            in result.stderr
+        )
 
     def test_rejects_overlapping_repo_filters(
         self,
@@ -277,12 +308,23 @@ class TestRunConfigParsing:
         # When
         result = runner.invoke(
             app,
-            ["run", "--org", "acme", "--repo", "platform", "--exclude-repo", "platform"],
+            [
+                "run",
+                "--org",
+                "acme",
+                "--repo",
+                "platform",
+                "--exclude-repo",
+                "platform",
+            ],
         )
 
         # Then
         assert result.exit_code == 2
-        assert "repo filters overlap across include and exclude lists: platform" in result.stderr
+        assert (
+            "repo filters overlap across include and exclude lists: platform"
+            in result.stderr
+        )
 
     def test_rejects_case_insensitive_overlapping_repo_filters(
         self,
@@ -295,12 +337,23 @@ class TestRunConfigParsing:
         # When
         result = runner.invoke(
             app,
-            ["run", "--org", "acme", "--repo", "Platform", "--exclude-repo", "platform"],
+            [
+                "run",
+                "--org",
+                "acme",
+                "--repo",
+                "Platform",
+                "--exclude-repo",
+                "platform",
+            ],
         )
 
         # Then
         assert result.exit_code == 2
-        assert "repo filters overlap across include and exclude lists: Platform" in result.stderr
+        assert (
+            "repo filters overlap across include and exclude lists: Platform"
+            in result.stderr
+        )
 
     def test_rejects_equivalent_qualified_and_unqualified_overlapping_repo_filters(
         self,
@@ -313,12 +366,23 @@ class TestRunConfigParsing:
         # When
         result = runner.invoke(
             app,
-            ["run", "--org", "acme", "--repo", "platform", "--exclude-repo", "acme/platform"],
+            [
+                "run",
+                "--org",
+                "acme",
+                "--repo",
+                "platform",
+                "--exclude-repo",
+                "acme/platform",
+            ],
         )
 
         # Then
         assert result.exit_code == 2
-        assert "repo filters overlap across include and exclude lists: platform" in result.stderr
+        assert (
+            "repo filters overlap across include and exclude lists: platform"
+            in result.stderr
+        )
 
     def test_rejects_backfill_dates_for_non_backfill_mode(
         self,
@@ -329,11 +393,16 @@ class TestRunConfigParsing:
         # Given
 
         # When
-        result = runner.invoke(app, ["run", "--org", "acme", "--backfill-start", "2026-01-01"])
+        result = runner.invoke(
+            app, ["run", "--org", "acme", "--backfill-start", "2026-01-01"]
+        )
 
         # Then
         assert result.exit_code == 2
-        assert "backfill date bounds are only valid when --mode backfill is selected" in result.stderr
+        assert (
+            "backfill date bounds are only valid when --mode backfill is selected"
+            in result.stderr
+        )
 
     def test_serializes_full_mode_policy_in_cli_output(
         self,
@@ -344,7 +413,9 @@ class TestRunConfigParsing:
         # Given
 
         # When
-        result = runner.invoke(app, ["run", "--org", "acme", "--as-of", "2026-04-18", "--mode", "full"])
+        result = runner.invoke(
+            app, ["run", "--org", "acme", "--as-of", "2026-04-18", "--mode", "full"]
+        )
 
         # Then
         payload = json.loads(result.stdout)
@@ -363,12 +434,22 @@ class TestRunConfigParsing:
     ) -> None:
         """Surface GitHub auth failures separately from invalid configuration errors."""
         # Given
-        github_auth_service = create_autospec(GitHubAuthService, instance=True, spec_set=True)
-        github_auth_service.validate_access.side_effect = AuthResolutionError("token rejected")
-        monkeypatch.setattr("orgpulse.cli.resolve_auth_token", lambda config: ResolvedToken(source=AuthSource.GH_TOKEN, token="env-token"))
+        github_auth_service = create_autospec(
+            GitHubAuthService, instance=True, spec_set=True
+        )
+        github_auth_service.validate_access.side_effect = AuthResolutionError(
+            "token rejected"
+        )
+        monkeypatch.setattr(
+            "orgpulse.cli.resolve_auth_token",
+            lambda config: ResolvedToken(source=AuthSource.GH_TOKEN, token="env-token"),
+        )
         monkeypatch.setattr("orgpulse.cli.Github", lambda auth: object())
         monkeypatch.setattr("orgpulse.cli.Auth.Token", lambda token: object())
-        monkeypatch.setattr("orgpulse.cli.GitHubAuthService", lambda github_client, auth_source: github_auth_service)
+        monkeypatch.setattr(
+            "orgpulse.cli.GitHubAuthService",
+            lambda github_client, auth_source: github_auth_service,
+        )
 
         # When
         result = runner.invoke(app, ["run", "--org", "acme"])
@@ -385,12 +466,20 @@ class TestRunConfigParsing:
     ) -> None:
         """Surface non-auth GitHub API failures separately from auth errors."""
         # Given
-        github_auth_service = create_autospec(GitHubAuthService, instance=True, spec_set=True)
+        github_auth_service = create_autospec(
+            GitHubAuthService, instance=True, spec_set=True
+        )
         github_auth_service.validate_access.side_effect = GitHubApiError("rate limited")
-        monkeypatch.setattr("orgpulse.cli.resolve_auth_token", lambda config: ResolvedToken(source=AuthSource.GH_TOKEN, token="env-token"))
+        monkeypatch.setattr(
+            "orgpulse.cli.resolve_auth_token",
+            lambda config: ResolvedToken(source=AuthSource.GH_TOKEN, token="env-token"),
+        )
         monkeypatch.setattr("orgpulse.cli.Github", lambda auth: object())
         monkeypatch.setattr("orgpulse.cli.Auth.Token", lambda token: object())
-        monkeypatch.setattr("orgpulse.cli.GitHubAuthService", lambda github_client, auth_source: github_auth_service)
+        monkeypatch.setattr(
+            "orgpulse.cli.GitHubAuthService",
+            lambda github_client, auth_source: github_auth_service,
+        )
 
         # When
         result = runner.invoke(app, ["run", "--org", "acme"])

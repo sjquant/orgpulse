@@ -21,10 +21,26 @@ build-backend = "hatchling.build"
 [tool.uv]
 package = true
 
+[tool.ruff]
+target-version = "py311"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+extend-select = ["I"]
+
+[tool.ty.environment]
+python-version = "3.11"
+root = [".", "./src"]
+
+[tool.ty.src]
+include = ["src", "tests"]
+
 [dependency-groups]
 dev = [
   "pytest>=9.0,<10",
   "pytest-cov>=7.0,<8",
+  "ruff>=0.15.11",
+  "ty>=0.0.31",
 ]
 
 [tool.pytest.ini_options]

@@ -3,12 +3,18 @@ from __future__ import annotations
 from collections import deque
 from datetime import datetime
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, cast
 
 from github import GithubException
 
+from orgpulse.github_types import GitHubIngestionClientLike
 from orgpulse.ingestion import GitHubIngestionService
-from orgpulse.models import RepositoryInventory, RepositoryInventoryItem, RunConfig, RunMode
+from orgpulse.models import (
+    RepositoryInventory,
+    RepositoryInventoryItem,
+    RunConfig,
+    RunMode,
+)
 
 
 class TestGitHubIngestionService:
@@ -36,7 +42,10 @@ class TestGitHubIngestionService:
             },
             repositories={},
         )
-        service = GitHubIngestionService(api, sleep=lambda seconds: sleep_calls.append(seconds))
+        service = GitHubIngestionService(
+            cast(GitHubIngestionClientLike, api),
+            sleep=lambda seconds: sleep_calls.append(seconds),
+        )
         config = RunConfig(
             org="acme",
             include_repos=("api", "acme/zeta"),
@@ -61,31 +70,35 @@ class TestGitHubIngestionService:
             "acme/api",
             pull_outcomes=[
                 [
-                    self.build_pull_request(number=30, updated_at="2026-04-20T09:00:00"),
-                    self.build_pull_request(number=20, updated_at="2026-04-12T09:00:00"),
-                    self.build_pull_request(number=10, updated_at="2026-03-31T23:59:00"),
+                    self.build_pull_request(
+                        number=30, updated_at="2026-04-20T09:00:00"
+                    ),
+                    self.build_pull_request(
+                        number=20, updated_at="2026-04-12T09:00:00"
+                    ),
+                    self.build_pull_request(
+                        number=10, updated_at="2026-03-31T23:59:00"
+                    ),
                 ]
             ],
         )
         service = GitHubIngestionService(
-            FakeGithubClient(
-                organizations={},
-                repositories={"acme/api": [repository]},
+            cast(
+                GitHubIngestionClientLike,
+                FakeGithubClient(
+                    organizations={},
+                    repositories={"acme/api": [repository]},
+                ),
             )
         )
-        config = RunConfig(
-            org="acme",
-            as_of="2026-04-18",
-        )
+        config = self.build_run_config(as_of="2026-04-18")
 
         # When
         result = service.fetch_pull_requests(
             config,
             RepositoryInventory(
                 organization_login="acme",
-                repositories=(
-                    self.build_inventory_item("acme/api"),
-                ),
+                repositories=(self.build_inventory_item("acme/api"),),
             ),
         )
 
@@ -95,7 +108,9 @@ class TestGitHubIngestionService:
         assert [pull_request.number for pull_request in result.pull_requests] == [20]
         assert result.failures == ()
 
-    def test_enriches_pull_requests_with_review_and_timeline_data_for_first_review_inputs(self) -> None:
+    def test_enriches_pull_requests_with_review_and_timeline_data_for_first_review_inputs(
+        self,
+    ) -> None:
         """Enrich pull requests with sorted review and timeline data needed for first-review timing."""
         # Given
         repository = self.build_repository(
@@ -149,24 +164,22 @@ class TestGitHubIngestionService:
             ],
         )
         service = GitHubIngestionService(
-            FakeGithubClient(
-                organizations={},
-                repositories={"acme/api": [repository]},
+            cast(
+                GitHubIngestionClientLike,
+                FakeGithubClient(
+                    organizations={},
+                    repositories={"acme/api": [repository]},
+                ),
             )
         )
-        config = RunConfig(
-            org="acme",
-            as_of="2026-04-18",
-        )
+        config = self.build_run_config(as_of="2026-04-18")
 
         # When
         result = service.fetch_pull_requests(
             config,
             RepositoryInventory(
                 organization_login="acme",
-                repositories=(
-                    self.build_inventory_item("acme/api"),
-                ),
+                repositories=(self.build_inventory_item("acme/api"),),
             ),
         )
 
@@ -174,8 +187,13 @@ class TestGitHubIngestionService:
         assert len(result.pull_requests) == 1
         pull_request = result.pull_requests[0]
         assert [review.review_id for review in pull_request.reviews] == [101, 102]
-        assert [review.author_login for review in pull_request.reviews] == ["reviewer-a", "reviewer-b"]
-        assert [timeline_event.event for timeline_event in pull_request.timeline_events] == [
+        assert [review.author_login for review in pull_request.reviews] == [
+            "reviewer-a",
+            "reviewer-b",
+        ]
+        assert [
+            timeline_event.event for timeline_event in pull_request.timeline_events
+        ] == [
             "review_requested",
             "ready_for_review",
         ]
@@ -190,20 +208,28 @@ class TestGitHubIngestionService:
             "acme/api",
             pull_outcomes=[
                 [
-                    self.build_pull_request(number=30, updated_at="2026-04-01T00:00:00"),
-                    self.build_pull_request(number=20, updated_at="2026-03-20T09:00:00"),
-                    self.build_pull_request(number=10, updated_at="2026-02-28T22:00:00"),
+                    self.build_pull_request(
+                        number=30, updated_at="2026-04-01T00:00:00"
+                    ),
+                    self.build_pull_request(
+                        number=20, updated_at="2026-03-20T09:00:00"
+                    ),
+                    self.build_pull_request(
+                        number=10, updated_at="2026-02-28T22:00:00"
+                    ),
                 ]
             ],
         )
         service = GitHubIngestionService(
-            FakeGithubClient(
-                organizations={},
-                repositories={"acme/api": [repository]},
+            cast(
+                GitHubIngestionClientLike,
+                FakeGithubClient(
+                    organizations={},
+                    repositories={"acme/api": [repository]},
+                ),
             )
         )
-        config = RunConfig(
-            org="acme",
+        config = self.build_run_config(
             as_of="2026-04-18",
             mode=RunMode.BACKFILL,
             backfill_start="2026-03-01",
@@ -215,9 +241,7 @@ class TestGitHubIngestionService:
             config,
             RepositoryInventory(
                 organization_login="acme",
-                repositories=(
-                    self.build_inventory_item("acme/api"),
-                ),
+                repositories=(self.build_inventory_item("acme/api"),),
             ),
         )
 
@@ -227,7 +251,9 @@ class TestGitHubIngestionService:
         assert [pull_request.number for pull_request in result.pull_requests] == [20]
         assert result.failures == ()
 
-    def test_records_repo_scoped_failures_without_stopping_other_repositories(self) -> None:
+    def test_records_repo_scoped_failures_without_stopping_other_repositories(
+        self,
+    ) -> None:
         """Record repo-scoped failures after retries and continue fetching other repositories."""
         # Given
         sleep_calls: list[float] = []
@@ -248,17 +274,20 @@ class TestGitHubIngestionService:
             ],
         )
         service = GitHubIngestionService(
-            FakeGithubClient(
-                organizations={},
-                repositories={
-                    "acme/api": [failing_repository],
-                    "acme/web": [succeeding_repository],
-                },
+            cast(
+                GitHubIngestionClientLike,
+                FakeGithubClient(
+                    organizations={},
+                    repositories={
+                        "acme/api": [failing_repository],
+                        "acme/web": [succeeding_repository],
+                    },
+                ),
             ),
             max_retries=2,
             sleep=lambda seconds: sleep_calls.append(seconds),
         )
-        config = RunConfig(org="acme", as_of="2026-04-18")
+        config = self.build_run_config(as_of="2026-04-18")
 
         # When
         result = service.fetch_pull_requests(
@@ -274,14 +303,18 @@ class TestGitHubIngestionService:
 
         # Then
         assert sleep_calls == [1.0, 2.0]
-        assert [pull_request.repository_full_name for pull_request in result.pull_requests] == ["acme/web"]
+        assert [
+            pull_request.repository_full_name for pull_request in result.pull_requests
+        ] == ["acme/web"]
         assert len(result.failures) == 1
         assert result.failures[0].repository_full_name == "acme/api"
         assert result.failures[0].status_code == 503
         assert result.failures[0].retriable is True
         assert result.failures[0].message == "Service unavailable"
 
-    def test_records_repo_scoped_failures_when_review_enrichment_exhausts_retries(self) -> None:
+    def test_records_repo_scoped_failures_when_review_enrichment_exhausts_retries(
+        self,
+    ) -> None:
         """Record repo-scoped failures when review enrichment exhausts retries and keep other repos running."""
         # Given
         sleep_calls: list[float] = []
@@ -293,9 +326,15 @@ class TestGitHubIngestionService:
                         number=7,
                         updated_at="2026-04-11T10:00:00",
                         review_outcomes=[
-                            self.build_github_exception(status=503, message="Review API unavailable"),
-                            self.build_github_exception(status=503, message="Review API unavailable"),
-                            self.build_github_exception(status=503, message="Review API unavailable"),
+                            self.build_github_exception(
+                                status=503, message="Review API unavailable"
+                            ),
+                            self.build_github_exception(
+                                status=503, message="Review API unavailable"
+                            ),
+                            self.build_github_exception(
+                                status=503, message="Review API unavailable"
+                            ),
                         ],
                     )
                 ]
@@ -310,17 +349,20 @@ class TestGitHubIngestionService:
             ],
         )
         service = GitHubIngestionService(
-            FakeGithubClient(
-                organizations={},
-                repositories={
-                    "acme/api": [failing_repository],
-                    "acme/web": [succeeding_repository],
-                },
+            cast(
+                GitHubIngestionClientLike,
+                FakeGithubClient(
+                    organizations={},
+                    repositories={
+                        "acme/api": [failing_repository],
+                        "acme/web": [succeeding_repository],
+                    },
+                ),
             ),
             max_retries=2,
             sleep=lambda seconds: sleep_calls.append(seconds),
         )
-        config = RunConfig(org="acme", as_of="2026-04-18")
+        config = self.build_run_config(as_of="2026-04-18")
 
         # When
         result = service.fetch_pull_requests(
@@ -336,7 +378,9 @@ class TestGitHubIngestionService:
 
         # Then
         assert sleep_calls == [1.0, 2.0]
-        assert [pull_request.repository_full_name for pull_request in result.pull_requests] == ["acme/web"]
+        assert [
+            pull_request.repository_full_name for pull_request in result.pull_requests
+        ] == ["acme/web"]
         assert len(result.failures) == 1
         assert result.failures[0].repository_full_name == "acme/api"
         assert result.failures[0].status_code == 503
@@ -353,6 +397,10 @@ class TestGitHubIngestionService:
             archived=False,
             disabled=False,
         )
+
+    def build_run_config(self, **overrides: object) -> RunConfig:
+        """Build the minimal run configuration needed for ingestion tests."""
+        return RunConfig.model_validate({"org": "acme", **overrides})
 
     def build_repository(
         self,
@@ -457,8 +505,7 @@ class FakeGithubClient:
     ) -> None:
         self._organizations = organizations
         self._repositories = {
-            name: deque(outcomes)
-            for name, outcomes in repositories.items()
+            name: deque(outcomes) for name, outcomes in repositories.items()
         }
 
     def get_organization(self, org: str) -> FakeOrganization:
@@ -473,7 +520,9 @@ class FakeOrganization:
         self.login = login
         self._repo_outcomes = deque(repo_outcomes)
 
-    def get_repos(self, *, type: str, sort: str, direction: str) -> list[FakeRepository]:
+    def get_repos(
+        self, *, type: str, sort: str, direction: str
+    ) -> list[FakeRepository]:
         return resolve_outcome(self._repo_outcomes)
 
 
@@ -487,7 +536,9 @@ class FakeRepository:
         self.disabled = False
         self._pull_outcomes = deque(pull_outcomes)
 
-    def get_pulls(self, *, state: str, sort: str, direction: str) -> list[FakePullRequest]:
+    def get_pulls(
+        self, *, state: str, sort: str, direction: str
+    ) -> list[FakePullRequest]:
         return resolve_outcome(self._pull_outcomes)
 
 

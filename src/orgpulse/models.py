@@ -6,13 +6,27 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Annotated, Any, Callable
 
-from pydantic import BaseModel, ConfigDict, Field, SecretStr, StringConstraints, ValidationInfo, computed_field, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    SecretStr,
+    StringConstraints,
+    ValidationInfo,
+    computed_field,
+    field_validator,
+    model_validator,
+)
 
 ORG_PATTERN = r"^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38}[A-Za-z0-9])?$"
 REPO_PATTERN = r"^(?:[A-Za-z0-9_.-]+/)?[A-Za-z0-9_.-]+$"
 
-OrgSlug = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, pattern=ORG_PATTERN)]
-RepoSlug = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, pattern=REPO_PATTERN)]
+OrgSlug = Annotated[
+    str, StringConstraints(strip_whitespace=True, min_length=1, pattern=ORG_PATTERN)
+]
+RepoSlug = Annotated[
+    str, StringConstraints(strip_whitespace=True, min_length=1, pattern=REPO_PATTERN)
+]
 
 
 class PeriodGrain(StrEnum):
@@ -207,7 +221,9 @@ class RunConfig(BaseModel):
 
     @field_validator("include_repos", "exclude_repos", mode="before")
     @classmethod
-    def normalize_repo_filters(cls, value: Any, info: ValidationInfo) -> tuple[str, ...]:
+    def normalize_repo_filters(
+        cls, value: Any, info: ValidationInfo
+    ) -> tuple[str, ...]:
         if value is None:
             return ()
         if isinstance(value, str):
@@ -242,7 +258,9 @@ class RunConfig(BaseModel):
         )
         if overlapping:
             overlap = ", ".join(sorted(overlapping))
-            raise ValueError(f"repo filters overlap across include and exclude lists: {overlap}")
+            raise ValueError(
+                f"repo filters overlap across include and exclude lists: {overlap}"
+            )
 
         for repo_filter in (*self.include_repos, *self.exclude_repos):
             if "/" not in repo_filter:
@@ -253,20 +271,32 @@ class RunConfig(BaseModel):
                     f"repo filter owner must match target org '{self.org}': {repo_filter}"
                 )
 
-        has_backfill_bounds = self.backfill_start is not None or self.backfill_end is not None
+        has_backfill_bounds = (
+            self.backfill_start is not None or self.backfill_end is not None
+        )
         if self.mode is RunMode.BACKFILL:
             if self.backfill_start is None or self.backfill_end is None:
-                raise ValueError("backfill mode requires both --backfill-start and --backfill-end")
+                raise ValueError(
+                    "backfill mode requires both --backfill-start and --backfill-end"
+                )
             if self.backfill_start > self.backfill_end:
                 raise ValueError("--backfill-start must be on or before --backfill-end")
             if not self.period.is_period_start(self.backfill_start):
-                raise ValueError("backfill start must align to the selected period boundary")
+                raise ValueError(
+                    "backfill start must align to the selected period boundary"
+                )
             if not self.period.is_period_end(self.backfill_end):
-                raise ValueError("backfill end must align to the selected period boundary")
+                raise ValueError(
+                    "backfill end must align to the selected period boundary"
+                )
             if self.backfill_end >= self.active_period.start_date:
-                raise ValueError("backfill range must end before the current open period begins")
+                raise ValueError(
+                    "backfill range must end before the current open period begins"
+                )
         elif has_backfill_bounds:
-            raise ValueError("backfill date bounds are only valid when --mode backfill is selected")
+            raise ValueError(
+                "backfill date bounds are only valid when --mode backfill is selected"
+            )
 
         return self
 
@@ -297,11 +327,15 @@ class RunConfig(BaseModel):
     def requested_range(self) -> PeriodRange | None:
         if self.mode is not RunMode.BACKFILL:
             return None
+        assert self.backfill_start is not None
+        assert self.backfill_end is not None
         return PeriodRange(
             grain=self.period,
             start_date=self.backfill_start,
             end_date=self.backfill_end,
-            period_count=self.period.count_periods(self.backfill_start, self.backfill_end),
+            period_count=self.period.count_periods(
+                self.backfill_start, self.backfill_end
+            ),
         )
 
     @computed_field(return_type=CollectionWindow)
@@ -314,6 +348,8 @@ class RunConfig(BaseModel):
                 end_date=self.as_of,
             )
         if self.mode is RunMode.BACKFILL:
+            assert self.backfill_start is not None
+            assert self.backfill_end is not None
             return CollectionWindow(
                 scope=self.refresh_scope,
                 start_date=self.backfill_start,
@@ -385,7 +421,9 @@ def _next_week_start(value: date) -> date:
     return value + timedelta(days=7)
 
 
-def _count_periods(start_date: date, end_date: date, next_period_start: Callable[[date], date]) -> int:
+def _count_periods(
+    start_date: date, end_date: date, next_period_start: Callable[[date], date]
+) -> int:
     count = 0
     current = start_date
     while current <= end_date:
@@ -422,7 +460,9 @@ def canonicalize_repo_filter(value: str, *, org: str | None = None) -> str:
     return f"{org.lower()}/{normalized}"
 
 
-def repo_filter_matches(repo_filter: str, *, full_name: str, name: str, org: str) -> bool:
+def repo_filter_matches(
+    repo_filter: str, *, full_name: str, name: str, org: str
+) -> bool:
     canonical_filter = canonicalize_repo_filter(repo_filter, org=org)
     return canonical_filter in {
         canonicalize_repo_filter(full_name),

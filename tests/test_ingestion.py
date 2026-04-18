@@ -1,13 +1,22 @@
 from __future__ import annotations
 
 from collections import deque
+from collections.abc import Sequence
+from dataclasses import dataclass
 from datetime import datetime
-from types import SimpleNamespace
-from typing import Any, cast
+from typing import TypeVar, cast
 
 from github import GithubException
 
-from orgpulse.github_types import GitHubIngestionClientLike
+from orgpulse.github_types import (
+    GitHubActorLike,
+    GitHubIngestionClientLike,
+    GitHubPullRequestLike,
+    GitHubRepositoryLike,
+    GitHubReviewLike,
+    GitHubTeamLike,
+    GitHubTimelineEventLike,
+)
 from orgpulse.ingestion import GitHubIngestionService
 from orgpulse.models import (
     RepositoryInventory,
@@ -15,6 +24,17 @@ from orgpulse.models import (
     RunConfig,
     RunMode,
 )
+
+T = TypeVar("T")
+RepositoryBatch = Sequence[GitHubRepositoryLike]
+PullRequestBatch = Sequence[GitHubPullRequestLike]
+ReviewBatch = Sequence[GitHubReviewLike]
+TimelineEventBatch = Sequence[GitHubTimelineEventLike]
+RepositoryInventoryOutcome = RepositoryBatch | GithubException
+RepositoryFetchOutcome = GitHubRepositoryLike | GithubException
+PullRequestFetchOutcome = PullRequestBatch | GithubException
+ReviewFetchOutcome = ReviewBatch | GithubException
+TimelineFetchOutcome = TimelineEventBatch | GithubException
 
 
 class TestGitHubIngestionService:
@@ -406,12 +426,12 @@ class TestGitHubIngestionService:
         self,
         full_name: str,
         *,
-        pull_outcomes: list[Any] | None = None,
+        pull_outcomes: list[PullRequestFetchOutcome] | None = None,
     ) -> FakeRepository:
         """Build a fake repository with optional pull request outcomes."""
         return FakeRepository(
             full_name=full_name,
-            pull_outcomes=pull_outcomes or [],
+            pull_outcomes=[] if pull_outcomes is None else pull_outcomes,
         )
 
     def build_pull_request(
@@ -419,8 +439,8 @@ class TestGitHubIngestionService:
         *,
         number: int,
         updated_at: str,
-        review_outcomes: list[Any] | None = None,
-        timeline_outcomes: list[Any] | None = None,
+        review_outcomes: list[ReviewFetchOutcome] | None = None,
+        timeline_outcomes: list[TimelineFetchOutcome] | None = None,
     ) -> FakePullRequest:
         """Build a fake pull request object with deterministic metric fields."""
         timestamp = datetime.fromisoformat(updated_at)
@@ -430,7 +450,7 @@ class TestGitHubIngestionService:
             state="closed",
             draft=False,
             merged=True,
-            user=SimpleNamespace(login="alice"),
+            user=FakeActor(login="alice"),
             created_at=timestamp,
             updated_at=timestamp,
             closed_at=timestamp,
@@ -440,8 +460,8 @@ class TestGitHubIngestionService:
             changed_files=3,
             commits=2,
             html_url=f"https://example.test/pr/{number}",
-            review_outcomes=review_outcomes or [[]],
-            timeline_outcomes=timeline_outcomes or [[]],
+            review_outcomes=[()] if review_outcomes is None else review_outcomes,
+            timeline_outcomes=[()] if timeline_outcomes is None else timeline_outcomes,
         )
 
     def build_review(
@@ -451,13 +471,13 @@ class TestGitHubIngestionService:
         state: str,
         submitted_at: str,
         author_login: str | None,
-    ) -> SimpleNamespace:
+    ) -> FakeReview:
         """Build a fake pull request review record for enrichment tests."""
-        return SimpleNamespace(
+        return FakeReview(
             id=review_id,
             state=state,
             submitted_at=datetime.fromisoformat(submitted_at),
-            user=None if author_login is None else SimpleNamespace(login=author_login),
+            user=None if author_login is None else FakeActor(login=author_login),
             commit_id=f"commit-{review_id}",
         )
 
@@ -470,19 +490,19 @@ class TestGitHubIngestionService:
         actor_login: str | None,
         requested_reviewer_login: str | None = None,
         requested_team_name: str | None = None,
-    ) -> SimpleNamespace:
+    ) -> FakeTimelineEvent:
         """Build a fake timeline event record for review timing enrichment tests."""
-        return SimpleNamespace(
+        return FakeTimelineEvent(
             id=event_id,
             event=event,
             created_at=datetime.fromisoformat(created_at),
-            actor=None if actor_login is None else SimpleNamespace(login=actor_login),
+            actor=None if actor_login is None else FakeActor(login=actor_login),
             requested_reviewer=None
             if requested_reviewer_login is None
-            else SimpleNamespace(login=requested_reviewer_login),
+            else FakeActor(login=requested_reviewer_login),
             requested_team=None
             if requested_team_name is None
-            else SimpleNamespace(name=requested_team_name),
+            else FakeTeam(name=requested_team_name),
         )
 
     def build_github_exception(
@@ -501,7 +521,7 @@ class FakeGithubClient:
         self,
         *,
         organizations: dict[str, FakeOrganization],
-        repositories: dict[str, list[Any]],
+        repositories: dict[str, list[RepositoryFetchOutcome]],
     ) -> None:
         self._organizations = organizations
         self._repositories = {
@@ -511,23 +531,25 @@ class FakeGithubClient:
     def get_organization(self, org: str) -> FakeOrganization:
         return self._organizations[org]
 
-    def get_repo(self, full_name: str) -> FakeRepository:
+    def get_repo(self, full_name: str) -> GitHubRepositoryLike:
         return resolve_outcome(self._repositories[full_name])
 
 
 class FakeOrganization:
-    def __init__(self, *, login: str, repo_outcomes: list[Any]) -> None:
+    def __init__(
+        self, *, login: str, repo_outcomes: list[RepositoryInventoryOutcome]
+    ) -> None:
         self.login = login
         self._repo_outcomes = deque(repo_outcomes)
 
-    def get_repos(
-        self, *, type: str, sort: str, direction: str
-    ) -> list[FakeRepository]:
+    def get_repos(self, *, type: str, sort: str, direction: str) -> RepositoryBatch:
         return resolve_outcome(self._repo_outcomes)
 
 
 class FakeRepository:
-    def __init__(self, *, full_name: str, pull_outcomes: list[Any]) -> None:
+    def __init__(
+        self, *, full_name: str, pull_outcomes: list[PullRequestFetchOutcome]
+    ) -> None:
         self.name = full_name.split("/", 1)[1]
         self.full_name = full_name
         self.default_branch = "main"
@@ -536,20 +558,51 @@ class FakeRepository:
         self.disabled = False
         self._pull_outcomes = deque(pull_outcomes)
 
-    def get_pulls(
-        self, *, state: str, sort: str, direction: str
-    ) -> list[FakePullRequest]:
+    def get_pulls(self, *, state: str, sort: str, direction: str) -> PullRequestBatch:
         return resolve_outcome(self._pull_outcomes)
 
 
 class FakePullRequest:
-    def __init__(self, **payload: Any) -> None:
-        self._review_outcomes = deque(payload.pop("review_outcomes", [[]]))
-        self._timeline_outcomes = deque(payload.pop("timeline_outcomes", [[]]))
-        for key, value in payload.items():
-            setattr(self, key, value)
+    def __init__(
+        self,
+        *,
+        number: int,
+        title: str,
+        state: str,
+        draft: bool,
+        merged: bool,
+        user: GitHubActorLike | None,
+        created_at: datetime,
+        updated_at: datetime,
+        closed_at: datetime | None,
+        merged_at: datetime | None,
+        additions: int,
+        deletions: int,
+        changed_files: int,
+        commits: int,
+        html_url: str,
+        review_outcomes: list[ReviewFetchOutcome],
+        timeline_outcomes: list[TimelineFetchOutcome],
+    ) -> None:
+        self.number = number
+        self.title = title
+        self.state = state
+        self.draft = draft
+        self.merged = merged
+        self.user = user
+        self.created_at = created_at
+        self.updated_at = updated_at
+        self.closed_at = closed_at
+        self.merged_at = merged_at
+        self.additions = additions
+        self.deletions = deletions
+        self.changed_files = changed_files
+        self.commits = commits
+        self.html_url = html_url
+        self._review_outcomes = deque(review_outcomes)
+        self._timeline_outcomes = deque(timeline_outcomes)
 
-    def get_reviews(self) -> list[Any]:
+    def get_reviews(self) -> ReviewBatch:
         return resolve_outcome(self._review_outcomes)
 
     def as_issue(self) -> FakeIssue:
@@ -557,15 +610,44 @@ class FakePullRequest:
 
 
 class FakeIssue:
-    def __init__(self, timeline_outcomes: deque[Any]) -> None:
+    def __init__(self, timeline_outcomes: deque[TimelineFetchOutcome]) -> None:
         self._timeline_outcomes = timeline_outcomes
 
-    def get_timeline(self) -> list[Any]:
+    def get_timeline(self) -> TimelineEventBatch:
         return resolve_outcome(self._timeline_outcomes)
 
 
-def resolve_outcome(outcomes: deque[Any]) -> Any:
+@dataclass(frozen=True)
+class FakeActor:
+    login: str
+
+
+@dataclass(frozen=True)
+class FakeTeam:
+    name: str
+
+
+@dataclass(frozen=True)
+class FakeReview:
+    id: int
+    state: str
+    user: GitHubActorLike | None
+    submitted_at: datetime | None
+    commit_id: str | None
+
+
+@dataclass(frozen=True)
+class FakeTimelineEvent:
+    id: int
+    event: str
+    actor: GitHubActorLike | None
+    created_at: datetime | None
+    requested_reviewer: GitHubActorLike | None
+    requested_team: GitHubTeamLike | None
+
+
+def resolve_outcome(outcomes: deque[T | GithubException]) -> T:
     outcome = outcomes.popleft()
-    if isinstance(outcome, Exception):
+    if isinstance(outcome, GithubException):
         raise outcome
     return outcome

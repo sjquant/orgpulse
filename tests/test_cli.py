@@ -179,6 +179,10 @@ class FakeCliOrgSummaryWriter:
         return OrgSummaryWriteResult(
             target_org=org_metrics.target_org,
             root_dir=config.output_dir / "org_summary" / config.period.value,
+            contract_path=config.output_dir
+            / "org_summary"
+            / config.period.value
+            / "contract.json",
             periods=tuple(
                 OrgSummaryPeriodWriteResult(
                     key=period.key,
@@ -799,6 +803,8 @@ class TestRunCommandRuntime:
             "acme"
         )
         assert json.loads(org_summary_json_path.read_text(encoding="utf-8")) == {
+            "exclude_repos": [],
+            "include_repos": [],
             "period": {
                 "closed": False,
                 "end_date": "2026-04-30",
@@ -1661,6 +1667,8 @@ class TestRunCommandRuntime:
             ).read_text(encoding="utf-8")
         )
         assert summary_payload == {
+            "exclude_repos": [],
+            "include_repos": [],
             "period": {
                 "closed": True,
                 "end_date": "2026-01-31",

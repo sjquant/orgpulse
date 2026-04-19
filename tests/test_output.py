@@ -60,9 +60,18 @@ class TestOrgSummaryWriter:
 
         # Then
         assert result.root_dir == tmp_path / "org_summary" / "month"
+        assert result.contract_path == tmp_path / "org_summary" / "month" / "contract.json"
         assert [period.key for period in result.periods] == ["2026-04"]
+        assert json.loads(result.contract_path.read_text(encoding="utf-8")) == {
+            "exclude_repos": [],
+            "include_repos": [],
+            "period_grain": "month",
+            "target_org": "acme",
+        }
         period_result = result.periods[0]
         assert json.loads(period_result.json_path.read_text(encoding="utf-8")) == {
+            "exclude_repos": [],
+            "include_repos": [],
             "period": {
                 "closed": False,
                 "end_date": "2026-04-30",
@@ -127,6 +136,8 @@ class TestOrgSummaryWriter:
             "- Target org: acme\n"
             "- Period grain: month\n"
             "- Period key: 2026-04\n"
+            "- Include repos: all\n"
+            "- Exclude repos: none\n"
             "- Period start: 2026-04-01\n"
             "- Period end: 2026-04-30\n"
             "- Closed: false\n"
@@ -192,6 +203,73 @@ class TestOrgSummaryWriter:
         assert stale_period_dir.exists() is False
         assert result.periods[0].json_path.exists()
         assert result.periods[0].markdown_path.exists()
+
+    def test_prunes_existing_period_directories_when_the_export_contract_changes(
+        self,
+        tmp_path,
+    ) -> None:
+        """Prune org summary period directories before writing when the saved filter contract changes."""
+        # Given
+        initial_config = RunConfig.model_validate(
+            {
+                "org": "acme",
+                "as_of": "2026-04-18",
+                "output_dir": tmp_path,
+            }
+        )
+        current_config = RunConfig.model_validate(
+            {
+                "org": "acme",
+                "as_of": "2026-04-18",
+                "output_dir": tmp_path,
+                "include_repos": ("api",),
+            }
+        )
+        initial_metrics = OrganizationMetricCollection(
+            target_org="acme",
+            periods=(
+                OrganizationMetricPeriod(
+                    key="2026-03",
+                    start_date=date.fromisoformat("2026-03-01"),
+                    end_date=date.fromisoformat("2026-03-31"),
+                    closed=True,
+                    summary=self._build_rollup(),
+                ),
+            ),
+        )
+        current_metrics = OrganizationMetricCollection(
+            target_org="acme",
+            periods=(
+                OrganizationMetricPeriod(
+                    key="2026-04",
+                    start_date=date.fromisoformat("2026-04-01"),
+                    end_date=date.fromisoformat("2026-04-30"),
+                    closed=False,
+                    summary=self._build_rollup(),
+                ),
+            ),
+        )
+        writer = OrgSummaryWriter()
+        writer.write(initial_config, initial_metrics)
+
+        # When
+        result = writer.write(current_config, current_metrics)
+
+        # Then
+        assert (tmp_path / "org_summary" / "month" / "2026-03").exists() is False
+        assert result.periods[0].directory.exists()
+        assert json.loads(result.contract_path.read_text(encoding="utf-8")) == {
+            "exclude_repos": [],
+            "include_repos": ["acme/api"],
+            "period_grain": "month",
+            "target_org": "acme",
+        }
+        assert json.loads(result.periods[0].json_path.read_text(encoding="utf-8"))[
+            "include_repos"
+        ] == ["acme/api"]
+        assert "Include repos: acme/api" in result.periods[0].markdown_path.read_text(
+            encoding="utf-8"
+        )
 
     def _build_rollup(self) -> OrganizationMetricRollup:
         """Build a representative org rollup payload for summary writer tests."""

@@ -33,6 +33,7 @@ from orgpulse.models import (
 MANIFEST_FILENAME = "manifest.json"
 MANIFEST_DIRNAME = "manifest"
 ORG_SUMMARY_DIRNAME = "org_summary"
+ORG_SUMMARY_CONTRACT_FILENAME = "contract.json"
 ORG_SUMMARY_JSON_FILENAME = "summary.json"
 ORG_SUMMARY_MARKDOWN_FILENAME = "summary.md"
 REQUIRED_RAW_SNAPSHOT_HEADERS = {
@@ -53,16 +54,26 @@ class OrgSummaryWriter:
         org_metrics: OrganizationMetricCollection,
     ) -> OrgSummaryWriteResult:
         root_dir = self._org_summary_root_dir(config.output_dir, config.period.value)
+        contract_path = root_dir / ORG_SUMMARY_CONTRACT_FILENAME
+        contract = self._contract_payload(config)
+        self._prune_period_directories_for_contract_change(
+            contract=contract,
+            contract_path=contract_path,
+            root_dir=root_dir,
+        )
         self._prune_stale_period_directories(
             config=config,
             root_dir=root_dir,
             org_metrics=org_metrics,
         )
+        self._write_json_file(contract_path, contract)
         return OrgSummaryWriteResult(
             target_org=org_metrics.target_org,
             root_dir=root_dir,
+            contract_path=contract_path,
             periods=tuple(
                 self._write_period_summary(
+                    config=config,
                     root_dir=root_dir,
                     period=period,
                     period_grain=config.period.value,
@@ -75,6 +86,7 @@ class OrgSummaryWriter:
     def _write_period_summary(
         self,
         *,
+        config: RunConfig,
         root_dir: Path,
         period: OrganizationMetricPeriod,
         period_grain: str,
@@ -86,6 +98,7 @@ class OrgSummaryWriter:
         self._write_json_file(
             json_path,
             self._json_payload(
+                config=config,
                 period=period,
                 period_grain=period_grain,
                 target_org=target_org,
@@ -94,6 +107,7 @@ class OrgSummaryWriter:
         self._write_markdown_file(
             markdown_path,
             self._markdown_document(
+                config=config,
                 period=period,
                 period_grain=period_grain,
                 target_org=target_org,
@@ -112,13 +126,18 @@ class OrgSummaryWriter:
     def _json_payload(
         self,
         *,
+        config: RunConfig,
         period: OrganizationMetricPeriod,
         period_grain: str,
         target_org: str,
     ) -> dict[str, object]:
+        include_repos = self._canonical_repo_filters(config.include_repos, org=config.org)
+        exclude_repos = self._canonical_repo_filters(config.exclude_repos, org=config.org)
         return {
             "target_org": target_org,
             "period_grain": period_grain,
+            "include_repos": list(include_repos),
+            "exclude_repos": list(exclude_repos),
             "period": {
                 "key": period.key,
                 "start_date": period.start_date.isoformat(),
@@ -131,17 +150,22 @@ class OrgSummaryWriter:
     def _markdown_document(
         self,
         *,
+        config: RunConfig,
         period: OrganizationMetricPeriod,
         period_grain: str,
         target_org: str,
     ) -> str:
         summary = period.summary
+        include_repos = self._canonical_repo_filters(config.include_repos, org=config.org)
+        exclude_repos = self._canonical_repo_filters(config.exclude_repos, org=config.org)
         lines = [
             f"# Organization Summary: {target_org} {period.key}",
             "",
             f"- Target org: {target_org}",
             f"- Period grain: {period_grain}",
             f"- Period key: {period.key}",
+            f"- Include repos: {self._repo_filters_text(include_repos, empty='all')}",
+            f"- Exclude repos: {self._repo_filters_text(exclude_repos, empty='none')}",
             f"- Period start: {period.start_date.isoformat()}",
             f"- Period end: {period.end_date.isoformat()}",
             f"- Closed: {self._bool_text(period.closed)}",
@@ -199,6 +223,16 @@ class OrgSummaryWriter:
     ) -> str:
         return "true" if value else "false"
 
+    def _repo_filters_text(
+        self,
+        repo_filters: tuple[str, ...],
+        *,
+        empty: str,
+    ) -> str:
+        if not repo_filters:
+            return empty
+        return ", ".join(repo_filters)
+
     def _write_json_file(
         self,
         path: Path,
@@ -232,8 +266,68 @@ class OrgSummaryWriter:
                 continue
             shutil.rmtree(child)
 
+    def _prune_period_directories_for_contract_change(
+        self,
+        *,
+        contract: dict[str, object],
+        contract_path: Path,
+        root_dir: Path,
+    ) -> None:
+        existing_contract = self._load_contract(contract_path)
+        if existing_contract is None or existing_contract == contract:
+            return
+        for child in root_dir.iterdir():
+            if not child.is_dir():
+                continue
+            shutil.rmtree(child)
+
+    def _load_contract(
+        self,
+        contract_path: Path,
+    ) -> dict[str, object] | None:
+        if not contract_path.exists():
+            return None
+        try:
+            payload = json.loads(contract_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return None
+        if not isinstance(payload, dict):
+            return None
+        return payload
+
+    def _contract_payload(
+        self,
+        config: RunConfig,
+    ) -> dict[str, object]:
+        return {
+            "target_org": config.org.lower(),
+            "period_grain": config.period.value,
+            "include_repos": list(
+                self._canonical_repo_filters(config.include_repos, org=config.org)
+            ),
+            "exclude_repos": list(
+                self._canonical_repo_filters(config.exclude_repos, org=config.org)
+            ),
+        }
+
     def _org_summary_root_dir(self, output_dir: Path, period_grain: str) -> Path:
         return output_dir / ORG_SUMMARY_DIRNAME / period_grain
+
+    def _canonical_repo_filters(
+        self,
+        repo_filters: tuple[str, ...],
+        *,
+        org: str,
+    ) -> tuple[str, ...]:
+        return tuple(
+            sorted(
+                canonicalize_repo_filter(
+                    repo_filter,
+                    org=org,
+                )
+                for repo_filter in repo_filters
+            )
+        )
 
 
 class RunManifestWriter:

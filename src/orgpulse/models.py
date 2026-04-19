@@ -311,6 +311,7 @@ class OrgSummaryWriteResult(BaseModel):
 
     target_org: str
     root_dir: Path
+    contract_path: Path
     periods: tuple[OrgSummaryPeriodWriteResult, ...]
 
 

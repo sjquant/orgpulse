@@ -11,7 +11,7 @@ from typer.testing import CliRunner
 from orgpulse.cli import app, build_run_config
 from orgpulse.errors import AuthResolutionError, GitHubApiError
 from orgpulse.github_auth import GitHubAuthService
-from orgpulse.ingestion import NormalizedRawSnapshotWriter
+from orgpulse.ingestion import PULL_REQUEST_FIELDNAMES, NormalizedRawSnapshotWriter
 from orgpulse.models import (
     AuthSource,
     CollectionWindow,
@@ -19,9 +19,13 @@ from orgpulse.models import (
     LastSuccessfulRun,
     ManifestWatermarks,
     ManifestWriteResult,
+    OrgSummaryPeriodWriteResult,
+    OrgSummaryWriteResult,
     PeriodGrain,
     PullRequestCollection,
     PullRequestRecord,
+    PullRequestReviewRecord,
+    PullRequestTimelineEventRecord,
     RawSnapshotWriteResult,
     RepositoryCollectionFailure,
     RepositoryInventory,
@@ -30,7 +34,7 @@ from orgpulse.models import (
     RunMode,
     RunScope,
 )
-from orgpulse.output import RunManifestWriter
+from orgpulse.output import OrgSummaryWriter, RunManifestWriter
 
 
 @pytest.fixture(scope="module")
@@ -74,6 +78,10 @@ def github_auth_service(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         "orgpulse.cli.RunManifestWriter",
         lambda: FakeCliManifestWriter(),
+    )
+    monkeypatch.setattr(
+        "orgpulse.cli.OrgSummaryWriter",
+        lambda: FakeCliOrgSummaryWriter(),
     )
 
 
@@ -162,6 +170,41 @@ class FakeCliManifestWriter:
         )
 
 
+class FakeCliOrgSummaryWriter:
+    def write(
+        self,
+        config,
+        org_metrics,
+    ) -> OrgSummaryWriteResult:
+        return OrgSummaryWriteResult(
+            target_org=org_metrics.target_org,
+            root_dir=config.output_dir / "org_summary" / config.period.value,
+            periods=tuple(
+                OrgSummaryPeriodWriteResult(
+                    key=period.key,
+                    start_date=period.start_date,
+                    end_date=period.end_date,
+                    closed=period.closed,
+                    directory=config.output_dir
+                    / "org_summary"
+                    / config.period.value
+                    / period.key,
+                    markdown_path=config.output_dir
+                    / "org_summary"
+                    / config.period.value
+                    / period.key
+                    / "summary.md",
+                    json_path=config.output_dir
+                    / "org_summary"
+                    / config.period.value
+                    / period.key
+                    / "summary.json",
+                )
+                for period in org_metrics.periods
+            ),
+        )
+
+
 class UnexpectedSnapshotWriter:
     def write(
         self,
@@ -181,6 +224,15 @@ class UnexpectedManifestWriter:
         repository_count: int,
     ) -> None:
         raise AssertionError("manifest writer should not run")
+
+
+class UnexpectedOrgSummaryWriter:
+    def write(
+        self,
+        config,
+        org_metrics,
+    ) -> None:
+        raise AssertionError("org summary writer should not run")
 
 
 class TestRunConfigParsing:
@@ -679,6 +731,10 @@ class TestRunCommandRuntime:
                 now=lambda: datetime.fromisoformat("2026-04-18T00:00:00+00:00")
             ),
         )
+        monkeypatch.setattr(
+            "orgpulse.cli.OrgSummaryWriter",
+            lambda: OrgSummaryWriter(),
+        )
 
         # When
         result = runner.invoke(
@@ -715,6 +771,9 @@ class TestRunCommandRuntime:
             == 1
         )
         assert payload["org_metrics_skipped_reason"] is None
+        assert payload["org_summary"]["target_org"] == "acme"
+        assert payload["org_summary"]["periods"][0]["key"] == "2026-04"
+        assert payload["org_summary_skipped_reason"] is None
         assert payload["metric_validation"]["target_org"] == "acme"
         assert payload["metric_validation"]["periods"][0]["key"] == "2026-04"
         assert payload["metric_validation"]["periods"][0]["raw_pull_request_count"] == 1
@@ -725,11 +784,82 @@ class TestRunCommandRuntime:
             tmp_path / "raw" / "month" / "2026-04" / "pull_requests.csv"
         )
         manifest_path = tmp_path / "manifest" / "month" / "manifest.json"
+        org_summary_json_path = (
+            tmp_path / "org_summary" / "month" / "2026-04" / "summary.json"
+        )
+        org_summary_markdown_path = (
+            tmp_path / "org_summary" / "month" / "2026-04" / "summary.md"
+        )
         assert pull_requests_path.exists()
         assert manifest_path.exists()
+        assert org_summary_json_path.exists()
+        assert org_summary_markdown_path.exists()
         assert "acme/api" in pull_requests_path.read_text(encoding="utf-8")
         assert json.loads(manifest_path.read_text(encoding="utf-8"))["target_org"] == (
             "acme"
+        )
+        assert json.loads(org_summary_json_path.read_text(encoding="utf-8")) == {
+            "period": {
+                "closed": False,
+                "end_date": "2026-04-30",
+                "key": "2026-04",
+                "start_date": "2026-04-01",
+            },
+            "period_grain": "month",
+            "summary": {
+                "active_author_count": 1,
+                "additions": {
+                    "average": 25.0,
+                    "count": 1,
+                    "median": 25.0,
+                    "total": 25,
+                },
+                "changed_files": {
+                    "average": 4.0,
+                    "count": 1,
+                    "median": 4.0,
+                    "total": 4,
+                },
+                "changed_lines": {
+                    "average": 31.0,
+                    "count": 1,
+                    "median": 31.0,
+                    "total": 31,
+                },
+                "commits": {
+                    "average": 3.0,
+                    "count": 1,
+                    "median": 3.0,
+                    "total": 3,
+                },
+                "deletions": {
+                    "average": 6.0,
+                    "count": 1,
+                    "median": 6.0,
+                    "total": 6,
+                },
+                "merged_pull_request_count": 1,
+                "merged_pull_requests_per_active_author": 1.0,
+                "pull_request_count": 1,
+                "repository_count": 1,
+                "time_to_first_review_seconds": {
+                    "average": None,
+                    "count": 0,
+                    "median": None,
+                    "total": 0,
+                },
+                "time_to_merge_seconds": {
+                    "average": 255600.0,
+                    "count": 1,
+                    "median": 255600.0,
+                    "total": 255600,
+                },
+            },
+            "target_org": "acme",
+        }
+        assert (
+            org_summary_markdown_path.read_text(encoding="utf-8").splitlines()[0]
+            == "# Organization Summary: acme 2026-04"
         )
 
     def test_rewrites_identical_outputs_safely_on_rerun(
@@ -792,6 +922,10 @@ class TestRunCommandRuntime:
         monkeypatch.setattr(
             "orgpulse.cli.RunManifestWriter",
             lambda: RunManifestWriter(now=lambda: next(completed_at_values)),
+        )
+        monkeypatch.setattr(
+            "orgpulse.cli.OrgSummaryWriter",
+            lambda: OrgSummaryWriter(),
         )
 
         # When
@@ -939,6 +1073,10 @@ class TestRunCommandRuntime:
                 now=lambda: datetime.fromisoformat("2026-04-18T00:00:00+00:00")
             ),
         )
+        monkeypatch.setattr(
+            "orgpulse.cli.OrgSummaryWriter",
+            lambda: OrgSummaryWriter(),
+        )
 
         # When
         result = runner.invoke(
@@ -968,6 +1106,10 @@ class TestRunCommandRuntime:
         assert summaries["2026-03"]["merged_pull_request_count"] == 1
         assert summaries["2026-04"]["repository_count"] == 1
         assert summaries["2026-04"]["merged_pull_request_count"] == 1
+        assert [period["key"] for period in payload["org_summary"]["periods"]] == [
+            "2026-03",
+            "2026-04",
+        ]
         assert [period["key"] for period in payload["manifest"]["locked_periods"]] == [
             "2026-03"
         ]
@@ -980,6 +1122,606 @@ class TestRunCommandRuntime:
             1,
         ]
         assert all(period["valid"] for period in payload["metric_validation"]["periods"])
+        assert json.loads(
+            (
+                tmp_path / "org_summary" / "month" / "2026-03" / "summary.json"
+            ).read_text(encoding="utf-8")
+        )["summary"]["merged_pull_request_count"] == 1
+
+    def test_reuses_manifest_backed_locked_snapshot_counts_on_incremental_refresh(
+        self,
+        runner: CliRunner,
+        github_auth_service: None,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path,
+    ) -> None:
+        """Reuse locked snapshot files and row counts from the manifest when incremental runs refresh only the active period."""
+        # Given
+        previous_config = build_run_config(
+            org="acme",
+            as_of="2026-03-18",
+            output_dir=tmp_path,
+        )
+        previous_pull_request = PullRequestRecord(
+            repository_full_name="acme/api",
+            number=12,
+            title="Lock March history",
+            state="closed",
+            draft=False,
+            merged=True,
+            author_login="alice",
+            created_at=datetime.fromisoformat("2026-03-10T09:00:00"),
+            updated_at=datetime.fromisoformat("2026-03-14T12:00:00"),
+            closed_at=datetime.fromisoformat("2026-03-14T12:00:00"),
+            merged_at=datetime.fromisoformat("2026-03-14T12:00:00"),
+            additions=14,
+            deletions=2,
+            changed_files=3,
+            commits=2,
+            html_url="https://example.test/pr/12",
+            reviews=(
+                PullRequestReviewRecord(
+                    review_id=501,
+                    state="APPROVED",
+                    author_login="reviewer-a",
+                    submitted_at=datetime.fromisoformat("2026-03-11T10:00:00"),
+                    commit_id="commit-501",
+                ),
+            ),
+            timeline_events=(
+                PullRequestTimelineEventRecord(
+                    event_id=601,
+                    event="review_requested",
+                    actor_login="alice",
+                    created_at=datetime.fromisoformat("2026-03-10T10:00:00"),
+                    requested_reviewer_login="reviewer-a",
+                    requested_team_name=None,
+                ),
+            ),
+        )
+        previous_collection = PullRequestCollection(
+            window=previous_config.collection_window,
+            pull_requests=(previous_pull_request,),
+            failures=(),
+        )
+        previous_snapshot = NormalizedRawSnapshotWriter().write(
+            previous_config,
+            previous_collection,
+        )
+        RunManifestWriter(
+            now=lambda: datetime.fromisoformat("2026-03-18T00:00:00+00:00")
+        ).write(
+            previous_config,
+            previous_collection,
+            previous_snapshot,
+            repository_count=1,
+        )
+        locked_period_dir = tmp_path / "raw" / "month" / "2026-03"
+        locked_pull_requests_path = locked_period_dir / "pull_requests.csv"
+        locked_reviews_path = locked_period_dir / "pull_request_reviews.csv"
+        locked_timeline_events_path = (
+            locked_period_dir / "pull_request_timeline_events.csv"
+        )
+        locked_pull_requests_csv = locked_pull_requests_path.read_text(
+            encoding="utf-8"
+        )
+        locked_reviews_csv = locked_reviews_path.read_text(encoding="utf-8")
+        locked_timeline_events_csv = locked_timeline_events_path.read_text(
+            encoding="utf-8"
+        )
+        current_pull_request = PullRequestRecord(
+            repository_full_name="acme/web",
+            number=22,
+            title="Refresh April work",
+            state="closed",
+            draft=False,
+            merged=True,
+            author_login="bob",
+            created_at=datetime.fromisoformat("2026-04-09T10:00:00"),
+            updated_at=datetime.fromisoformat("2026-04-12T11:00:00"),
+            closed_at=datetime.fromisoformat("2026-04-12T11:00:00"),
+            merged_at=datetime.fromisoformat("2026-04-12T11:00:00"),
+            additions=18,
+            deletions=4,
+            changed_files=3,
+            commits=3,
+            html_url="https://example.test/pr/22",
+        )
+        inventory = RepositoryInventory(
+            organization_login="acme",
+            repositories=(),
+        )
+        collection = PullRequestCollection(
+            window=CollectionWindow(
+                scope=RunScope.OPEN_PERIOD,
+                start_date=datetime.fromisoformat("2026-04-01T00:00:00").date(),
+                end_date=datetime.fromisoformat("2026-04-18T00:00:00").date(),
+            ),
+            pull_requests=(current_pull_request,),
+            failures=(),
+        )
+        monkeypatch.setattr(
+            "orgpulse.cli.GitHubIngestionService",
+            lambda github_client: FakeCliIngestionService(
+                inventory=inventory,
+                collection=collection,
+            ),
+        )
+        monkeypatch.setattr(
+            "orgpulse.cli.NormalizedRawSnapshotWriter",
+            lambda: NormalizedRawSnapshotWriter(),
+        )
+        monkeypatch.setattr(
+            "orgpulse.cli.RunManifestWriter",
+            lambda: RunManifestWriter(
+                now=lambda: datetime.fromisoformat("2026-04-18T00:00:00+00:00")
+            ),
+        )
+        monkeypatch.setattr(
+            "orgpulse.cli.OrgSummaryWriter",
+            lambda: OrgSummaryWriter(),
+        )
+
+        # When
+        result = runner.invoke(
+            app,
+            [
+                "run",
+                "--org",
+                "acme",
+                "--as-of",
+                "2026-04-18",
+                "--output-dir",
+                str(tmp_path),
+            ],
+        )
+
+        # Then
+        assert result.exit_code == 0
+        payload = json.loads(result.stdout)
+        assert payload["collection"]["window"] == {
+            "scope": "open_period",
+            "start_date": "2026-04-01",
+            "end_date": "2026-04-18",
+        }
+        assert [period["key"] for period in payload["raw_snapshot"]["periods"]] == [
+            "2026-04"
+        ]
+        assert [period["key"] for period in payload["manifest"]["refreshed_periods"]] == [
+            "2026-04"
+        ]
+        assert [period["key"] for period in payload["manifest"]["locked_periods"]] == [
+            "2026-03"
+        ]
+        assert locked_pull_requests_path.read_text(encoding="utf-8") == locked_pull_requests_csv
+        assert locked_reviews_path.read_text(encoding="utf-8") == locked_reviews_csv
+        assert (
+            locked_timeline_events_path.read_text(encoding="utf-8")
+            == locked_timeline_events_csv
+        )
+        validation_periods = {
+            period["key"]: period for period in payload["metric_validation"]["periods"]
+        }
+        assert validation_periods["2026-03"]["raw_pull_request_count"] == 1
+        assert validation_periods["2026-03"]["raw_review_count"] == 1
+        assert validation_periods["2026-03"]["raw_timeline_event_count"] == 1
+        assert validation_periods["2026-04"]["raw_pull_request_count"] == 1
+        assert validation_periods["2026-04"]["raw_review_count"] == 0
+        assert validation_periods["2026-04"]["raw_timeline_event_count"] == 0
+        assert [period["key"] for period in payload["org_metrics"]["periods"]] == [
+            "2026-03",
+            "2026-04",
+        ]
+        assert all(period["valid"] for period in payload["metric_validation"]["periods"])
+
+    def test_recalculates_only_requested_periods_on_backfill_runs(
+        self,
+        runner: CliRunner,
+        github_auth_service: None,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path,
+    ) -> None:
+        """Recalculate only the requested closed periods on backfill while preserving other locked history."""
+        # Given
+        previous_config = build_run_config(
+            org="acme",
+            as_of="2026-05-18",
+            mode=RunMode.BACKFILL,
+            backfill_start="2026-02-01",
+            backfill_end="2026-04-30",
+            output_dir=tmp_path,
+        )
+        previous_collection = PullRequestCollection(
+            window=previous_config.collection_window,
+            pull_requests=(
+                PullRequestRecord(
+                    repository_full_name="acme/api",
+                    number=31,
+                    title="Keep February locked",
+                    state="closed",
+                    draft=False,
+                    merged=True,
+                    author_login="alice",
+                    created_at=datetime.fromisoformat("2026-02-10T09:00:00"),
+                    updated_at=datetime.fromisoformat("2026-02-12T09:00:00"),
+                    closed_at=datetime.fromisoformat("2026-02-12T09:00:00"),
+                    merged_at=datetime.fromisoformat("2026-02-12T09:00:00"),
+                    additions=9,
+                    deletions=2,
+                    changed_files=2,
+                    commits=2,
+                    html_url="https://example.test/pr/31",
+                    reviews=(
+                        PullRequestReviewRecord(
+                            review_id=701,
+                            state="APPROVED",
+                            author_login="reviewer-a",
+                            submitted_at=datetime.fromisoformat(
+                                "2026-02-10T12:00:00"
+                            ),
+                            commit_id="commit-701",
+                        ),
+                    ),
+                ),
+                PullRequestRecord(
+                    repository_full_name="acme/api",
+                    number=32,
+                    title="Overwrite stale March work",
+                    state="closed",
+                    draft=False,
+                    merged=True,
+                    author_login="alice",
+                    created_at=datetime.fromisoformat("2026-03-10T09:00:00"),
+                    updated_at=datetime.fromisoformat("2026-03-12T09:00:00"),
+                    closed_at=datetime.fromisoformat("2026-03-12T09:00:00"),
+                    merged_at=datetime.fromisoformat("2026-03-12T09:00:00"),
+                    additions=11,
+                    deletions=3,
+                    changed_files=2,
+                    commits=2,
+                    html_url="https://example.test/pr/32",
+                ),
+                PullRequestRecord(
+                    repository_full_name="acme/web",
+                    number=33,
+                    title="Overwrite stale April work",
+                    state="closed",
+                    draft=False,
+                    merged=True,
+                    author_login="bob",
+                    created_at=datetime.fromisoformat("2026-04-10T09:00:00"),
+                    updated_at=datetime.fromisoformat("2026-04-12T09:00:00"),
+                    closed_at=datetime.fromisoformat("2026-04-12T09:00:00"),
+                    merged_at=datetime.fromisoformat("2026-04-12T09:00:00"),
+                    additions=12,
+                    deletions=4,
+                    changed_files=3,
+                    commits=2,
+                    html_url="https://example.test/pr/33",
+                ),
+            ),
+            failures=(),
+        )
+        previous_snapshot = NormalizedRawSnapshotWriter().write(
+            previous_config,
+            previous_collection,
+        )
+        RunManifestWriter(
+            now=lambda: datetime.fromisoformat("2026-05-18T00:00:00+00:00")
+        ).write(
+            previous_config,
+            previous_collection,
+            previous_snapshot,
+            repository_count=2,
+        )
+        february_pull_requests_path = (
+            tmp_path / "raw" / "month" / "2026-02" / "pull_requests.csv"
+        )
+        march_pull_requests_path = (
+            tmp_path / "raw" / "month" / "2026-03" / "pull_requests.csv"
+        )
+        april_pull_requests_path = (
+            tmp_path / "raw" / "month" / "2026-04" / "pull_requests.csv"
+        )
+        february_pull_requests_csv = february_pull_requests_path.read_text(
+            encoding="utf-8"
+        )
+        march_pull_requests_csv = march_pull_requests_path.read_text(encoding="utf-8")
+        april_pull_requests_csv = april_pull_requests_path.read_text(encoding="utf-8")
+        refreshed_april_pull_request = PullRequestRecord(
+            repository_full_name="acme/web",
+            number=44,
+            title="Refresh April work",
+            state="closed",
+            draft=False,
+            merged=True,
+            author_login="carol",
+            created_at=datetime.fromisoformat("2026-04-18T09:00:00"),
+            updated_at=datetime.fromisoformat("2026-04-20T09:00:00"),
+            closed_at=datetime.fromisoformat("2026-04-20T09:00:00"),
+            merged_at=datetime.fromisoformat("2026-04-20T09:00:00"),
+            additions=20,
+            deletions=5,
+            changed_files=4,
+            commits=3,
+            html_url="https://example.test/pr/44",
+            reviews=(
+                PullRequestReviewRecord(
+                    review_id=801,
+                    state="APPROVED",
+                    author_login="reviewer-b",
+                    submitted_at=datetime.fromisoformat("2026-04-18T12:00:00"),
+                    commit_id="commit-801",
+                ),
+            ),
+            timeline_events=(
+                PullRequestTimelineEventRecord(
+                    event_id=901,
+                    event="review_requested",
+                    actor_login="carol",
+                    created_at=datetime.fromisoformat("2026-04-18T10:00:00"),
+                    requested_reviewer_login="reviewer-b",
+                    requested_team_name=None,
+                ),
+            ),
+        )
+        inventory = RepositoryInventory(
+            organization_login="acme",
+            repositories=(),
+        )
+        collection = PullRequestCollection(
+            window=CollectionWindow(
+                scope=RunScope.BOUNDED_BACKFILL,
+                start_date=datetime.fromisoformat("2026-03-01T00:00:00").date(),
+                end_date=datetime.fromisoformat("2026-04-30T00:00:00").date(),
+            ),
+            pull_requests=(refreshed_april_pull_request,),
+            failures=(),
+        )
+        monkeypatch.setattr(
+            "orgpulse.cli.GitHubIngestionService",
+            lambda github_client: FakeCliIngestionService(
+                inventory=inventory,
+                collection=collection,
+            ),
+        )
+        monkeypatch.setattr(
+            "orgpulse.cli.NormalizedRawSnapshotWriter",
+            lambda: NormalizedRawSnapshotWriter(),
+        )
+        monkeypatch.setattr(
+            "orgpulse.cli.RunManifestWriter",
+            lambda: RunManifestWriter(
+                now=lambda: datetime.fromisoformat("2026-05-19T00:00:00+00:00")
+            ),
+        )
+        monkeypatch.setattr(
+            "orgpulse.cli.OrgSummaryWriter",
+            lambda: OrgSummaryWriter(),
+        )
+
+        # When
+        result = runner.invoke(
+            app,
+            [
+                "run",
+                "--org",
+                "acme",
+                "--as-of",
+                "2026-05-18",
+                "--mode",
+                "backfill",
+                "--backfill-start",
+                "2026-03-01",
+                "--backfill-end",
+                "2026-04-30",
+                "--output-dir",
+                str(tmp_path),
+            ],
+        )
+
+        # Then
+        assert result.exit_code == 0
+        payload = json.loads(result.stdout)
+        assert payload["collection"]["window"] == {
+            "scope": "bounded_backfill",
+            "start_date": "2026-03-01",
+            "end_date": "2026-04-30",
+        }
+        assert [period["key"] for period in payload["raw_snapshot"]["periods"]] == [
+            "2026-03",
+            "2026-04",
+        ]
+        assert [period["pull_request_count"] for period in payload["raw_snapshot"]["periods"]] == [
+            0,
+            1,
+        ]
+        assert [period["key"] for period in payload["manifest"]["refreshed_periods"]] == [
+            "2026-03",
+            "2026-04",
+        ]
+        assert [period["key"] for period in payload["manifest"]["locked_periods"]] == [
+            "2026-02",
+            "2026-03",
+            "2026-04",
+        ]
+        assert (
+            february_pull_requests_path.read_text(encoding="utf-8")
+            == february_pull_requests_csv
+        )
+        assert (
+            march_pull_requests_path.read_text(encoding="utf-8")
+            == f"{','.join(PULL_REQUEST_FIELDNAMES)}\n"
+        )
+        assert march_pull_requests_path.read_text(encoding="utf-8") != march_pull_requests_csv
+        refreshed_april_csv = april_pull_requests_path.read_text(encoding="utf-8")
+        assert refreshed_april_csv != april_pull_requests_csv
+        assert "Refresh April work" in refreshed_april_csv
+        assert "Overwrite stale April work" not in refreshed_april_csv
+        assert [period["key"] for period in payload["org_metrics"]["periods"]] == [
+            "2026-02",
+            "2026-03",
+            "2026-04",
+        ]
+        summaries = {
+            period["key"]: period["summary"] for period in payload["org_metrics"]["periods"]
+        }
+        assert summaries["2026-02"]["merged_pull_request_count"] == 1
+        assert summaries["2026-03"]["pull_request_count"] == 0
+        assert summaries["2026-04"]["merged_pull_request_count"] == 1
+        validation_periods = {
+            period["key"]: period for period in payload["metric_validation"]["periods"]
+        }
+        assert validation_periods["2026-02"]["raw_pull_request_count"] == 1
+        assert validation_periods["2026-02"]["raw_review_count"] == 1
+        assert validation_periods["2026-03"]["raw_pull_request_count"] == 0
+        assert validation_periods["2026-03"]["raw_review_count"] == 0
+        assert validation_periods["2026-04"]["raw_pull_request_count"] == 1
+        assert validation_periods["2026-04"]["raw_review_count"] == 1
+        assert validation_periods["2026-04"]["raw_timeline_event_count"] == 1
+        assert all(period["valid"] for period in payload["metric_validation"]["periods"])
+
+    def test_writes_empty_org_summary_exports_for_backfill_periods_without_pull_requests(
+        self,
+        runner: CliRunner,
+        github_auth_service: None,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path,
+    ) -> None:
+        """Write zero-valued org summary files when a backfill period has no pull requests to export."""
+        # Given
+        inventory = RepositoryInventory(
+            organization_login="acme",
+            repositories=(),
+        )
+        collection = PullRequestCollection(
+            window=CollectionWindow(
+                scope=RunScope.BOUNDED_BACKFILL,
+                start_date=datetime.fromisoformat("2026-01-01T00:00:00").date(),
+                end_date=datetime.fromisoformat("2026-01-31T00:00:00").date(),
+            ),
+            pull_requests=(),
+            failures=(),
+        )
+        monkeypatch.setattr(
+            "orgpulse.cli.GitHubIngestionService",
+            lambda github_client: FakeCliIngestionService(
+                inventory=inventory,
+                collection=collection,
+            ),
+        )
+        monkeypatch.setattr(
+            "orgpulse.cli.NormalizedRawSnapshotWriter",
+            lambda: NormalizedRawSnapshotWriter(),
+        )
+        monkeypatch.setattr(
+            "orgpulse.cli.RunManifestWriter",
+            lambda: RunManifestWriter(
+                now=lambda: datetime.fromisoformat("2026-04-18T00:00:00+00:00")
+            ),
+        )
+        monkeypatch.setattr(
+            "orgpulse.cli.OrgSummaryWriter",
+            lambda: OrgSummaryWriter(),
+        )
+
+        # When
+        result = runner.invoke(
+            app,
+            [
+                "run",
+                "--org",
+                "acme",
+                "--as-of",
+                "2026-04-18",
+                "--mode",
+                "backfill",
+                "--backfill-start",
+                "2026-01-01",
+                "--backfill-end",
+                "2026-01-31",
+                "--output-dir",
+                str(tmp_path),
+            ],
+        )
+
+        # Then
+        assert result.exit_code == 0
+        payload = json.loads(result.stdout)
+        assert [period["key"] for period in payload["raw_snapshot"]["periods"]] == [
+            "2026-01"
+        ]
+        assert payload["raw_snapshot"]["periods"][0]["pull_request_count"] == 0
+        assert [period["key"] for period in payload["org_summary"]["periods"]] == [
+            "2026-01"
+        ]
+        summary_payload = json.loads(
+            (
+                tmp_path / "org_summary" / "month" / "2026-01" / "summary.json"
+            ).read_text(encoding="utf-8")
+        )
+        assert summary_payload == {
+            "period": {
+                "closed": True,
+                "end_date": "2026-01-31",
+                "key": "2026-01",
+                "start_date": "2026-01-01",
+            },
+            "period_grain": "month",
+            "summary": {
+                "active_author_count": 0,
+                "additions": {
+                    "average": None,
+                    "count": 0,
+                    "median": None,
+                    "total": 0,
+                },
+                "changed_files": {
+                    "average": None,
+                    "count": 0,
+                    "median": None,
+                    "total": 0,
+                },
+                "changed_lines": {
+                    "average": None,
+                    "count": 0,
+                    "median": None,
+                    "total": 0,
+                },
+                "commits": {
+                    "average": None,
+                    "count": 0,
+                    "median": None,
+                    "total": 0,
+                },
+                "deletions": {
+                    "average": None,
+                    "count": 0,
+                    "median": None,
+                    "total": 0,
+                },
+                "merged_pull_request_count": 0,
+                "merged_pull_requests_per_active_author": None,
+                "pull_request_count": 0,
+                "repository_count": 0,
+                "time_to_first_review_seconds": {
+                    "average": None,
+                    "count": 0,
+                    "median": None,
+                    "total": 0,
+                },
+                "time_to_merge_seconds": {
+                    "average": None,
+                    "count": 0,
+                    "median": None,
+                    "total": 0,
+                },
+            },
+            "target_org": "acme",
+        }
+        assert "Merged pull requests per active author: n/a" in (
+            tmp_path / "org_summary" / "month" / "2026-01" / "summary.md"
+        ).read_text(encoding="utf-8")
 
     def test_reports_metric_validation_failures_without_skipping_outputs(
         self,
@@ -1038,6 +1780,10 @@ class TestRunCommandRuntime:
                 now=lambda: datetime.fromisoformat("2026-04-18T00:00:00+00:00")
             ),
         )
+        monkeypatch.setattr(
+            "orgpulse.cli.OrgSummaryWriter",
+            lambda: OrgSummaryWriter(),
+        )
 
         # When
         result = runner.invoke(
@@ -1077,6 +1823,12 @@ class TestRunCommandRuntime:
         stale_period_dir.mkdir(parents=True)
         (stale_period_dir / "pull_requests.csv").write_text(
             "stale snapshot\n",
+            encoding="utf-8",
+        )
+        stale_org_summary_dir = tmp_path / "org_summary" / "month" / "2026-03"
+        stale_org_summary_dir.mkdir(parents=True)
+        (stale_org_summary_dir / "summary.json").write_text(
+            json.dumps({"target_org": "stale"}),
             encoding="utf-8",
         )
         stale_manifest_path = tmp_path / "manifest" / "month" / "manifest.json"
@@ -1133,6 +1885,10 @@ class TestRunCommandRuntime:
                 now=lambda: datetime.fromisoformat("2026-04-18T00:00:00+00:00")
             ),
         )
+        monkeypatch.setattr(
+            "orgpulse.cli.OrgSummaryWriter",
+            lambda: OrgSummaryWriter(),
+        )
 
         # When
         result = runner.invoke(
@@ -1154,6 +1910,7 @@ class TestRunCommandRuntime:
         assert result.exit_code == 0
         payload = json.loads(result.stdout)
         assert stale_period_dir.exists() is False
+        assert stale_org_summary_dir.exists() is False
         assert [period["key"] for period in payload["manifest"]["refreshed_periods"]] == [
             "2026-04"
         ]
@@ -1204,6 +1961,10 @@ class TestRunCommandRuntime:
             "orgpulse.cli.RunManifestWriter",
             lambda: UnexpectedManifestWriter(),
         )
+        monkeypatch.setattr(
+            "orgpulse.cli.OrgSummaryWriter",
+            lambda: UnexpectedOrgSummaryWriter(),
+        )
         existing_manifest = tmp_path / "manifest" / "month" / "manifest.json"
         existing_manifest.parent.mkdir(parents=True)
         existing_manifest.write_text(
@@ -1237,6 +1998,8 @@ class TestRunCommandRuntime:
         assert payload["manifest_skipped_reason"] == "repository_collection_failures"
         assert payload["org_metrics"] is None
         assert payload["org_metrics_skipped_reason"] == "repository_collection_failures"
+        assert payload["org_summary"] is None
+        assert payload["org_summary_skipped_reason"] == "repository_collection_failures"
         assert existing_snapshot.read_text(encoding="utf-8") == "existing snapshot\n"
         assert json.loads(existing_manifest.read_text(encoding="utf-8")) == {
             "target_org": "acme",

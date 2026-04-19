@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 from collections.abc import Callable, Sequence
 from datetime import UTC, date, datetime
 from pathlib import Path
@@ -14,17 +15,26 @@ from orgpulse.models import (
     LastSuccessfulRun,
     ManifestWatermarks,
     ManifestWriteResult,
+    MetricValueSummary,
+    OrganizationMetricCollection,
+    OrganizationMetricPeriod,
+    OrgSummaryPeriodWriteResult,
+    OrgSummaryWriteResult,
     PullRequestCollection,
     RawSnapshotPeriod,
     RawSnapshotWriteResult,
     ReportingPeriod,
     RunConfig,
     RunManifest,
+    RunMode,
     canonicalize_repo_filter,
 )
 
 MANIFEST_FILENAME = "manifest.json"
 MANIFEST_DIRNAME = "manifest"
+ORG_SUMMARY_DIRNAME = "org_summary"
+ORG_SUMMARY_JSON_FILENAME = "summary.json"
+ORG_SUMMARY_MARKDOWN_FILENAME = "summary.md"
 REQUIRED_RAW_SNAPSHOT_HEADERS = {
     "pull_requests.csv": ",".join(PULL_REQUEST_FIELDNAMES),
     "pull_request_reviews.csv": ",".join(PULL_REQUEST_REVIEW_FIELDNAMES),
@@ -32,6 +42,198 @@ REQUIRED_RAW_SNAPSHOT_HEADERS = {
         PULL_REQUEST_TIMELINE_EVENT_FIELDNAMES
     ),
 }
+
+
+class OrgSummaryWriter:
+    """Persist deterministic org-level summary files for each reporting period."""
+
+    def write(
+        self,
+        config: RunConfig,
+        org_metrics: OrganizationMetricCollection,
+    ) -> OrgSummaryWriteResult:
+        root_dir = self._org_summary_root_dir(config.output_dir, config.period.value)
+        self._prune_stale_period_directories(
+            config=config,
+            root_dir=root_dir,
+            org_metrics=org_metrics,
+        )
+        return OrgSummaryWriteResult(
+            target_org=org_metrics.target_org,
+            root_dir=root_dir,
+            periods=tuple(
+                self._write_period_summary(
+                    root_dir=root_dir,
+                    period=period,
+                    period_grain=config.period.value,
+                    target_org=org_metrics.target_org,
+                )
+                for period in org_metrics.periods
+            ),
+        )
+
+    def _write_period_summary(
+        self,
+        *,
+        root_dir: Path,
+        period: OrganizationMetricPeriod,
+        period_grain: str,
+        target_org: str,
+    ) -> OrgSummaryPeriodWriteResult:
+        period_dir = root_dir / period.key
+        markdown_path = period_dir / ORG_SUMMARY_MARKDOWN_FILENAME
+        json_path = period_dir / ORG_SUMMARY_JSON_FILENAME
+        self._write_json_file(
+            json_path,
+            self._json_payload(
+                period=period,
+                period_grain=period_grain,
+                target_org=target_org,
+            ),
+        )
+        self._write_markdown_file(
+            markdown_path,
+            self._markdown_document(
+                period=period,
+                period_grain=period_grain,
+                target_org=target_org,
+            ),
+        )
+        return OrgSummaryPeriodWriteResult(
+            key=period.key,
+            start_date=period.start_date,
+            end_date=period.end_date,
+            closed=period.closed,
+            directory=period_dir,
+            markdown_path=markdown_path,
+            json_path=json_path,
+        )
+
+    def _json_payload(
+        self,
+        *,
+        period: OrganizationMetricPeriod,
+        period_grain: str,
+        target_org: str,
+    ) -> dict[str, object]:
+        return {
+            "target_org": target_org,
+            "period_grain": period_grain,
+            "period": {
+                "key": period.key,
+                "start_date": period.start_date.isoformat(),
+                "end_date": period.end_date.isoformat(),
+                "closed": period.closed,
+            },
+            "summary": period.summary.model_dump(mode="json"),
+        }
+
+    def _markdown_document(
+        self,
+        *,
+        period: OrganizationMetricPeriod,
+        period_grain: str,
+        target_org: str,
+    ) -> str:
+        summary = period.summary
+        lines = [
+            f"# Organization Summary: {target_org} {period.key}",
+            "",
+            f"- Target org: {target_org}",
+            f"- Period grain: {period_grain}",
+            f"- Period key: {period.key}",
+            f"- Period start: {period.start_date.isoformat()}",
+            f"- Period end: {period.end_date.isoformat()}",
+            f"- Closed: {self._bool_text(period.closed)}",
+            "",
+            "## Totals",
+            "",
+            f"- Repository count: {summary.repository_count}",
+            f"- Pull request count: {summary.pull_request_count}",
+            f"- Merged pull request count: {summary.merged_pull_request_count}",
+            f"- Active author count: {summary.active_author_count}",
+            (
+                "- Merged pull requests per active author: "
+                f"{self._float_text(summary.merged_pull_requests_per_active_author)}"
+            ),
+            "",
+            "## Value Summaries",
+            "",
+            "| Metric | Count | Total | Average | Median |",
+            "| --- | ---: | ---: | ---: | ---: |",
+            self._summary_row("Time to merge (seconds)", summary.time_to_merge_seconds),
+            self._summary_row(
+                "Time to first review (seconds)",
+                summary.time_to_first_review_seconds,
+            ),
+            self._summary_row("Additions", summary.additions),
+            self._summary_row("Deletions", summary.deletions),
+            self._summary_row("Changed lines", summary.changed_lines),
+            self._summary_row("Changed files", summary.changed_files),
+            self._summary_row("Commits", summary.commits),
+            "",
+        ]
+        return "\n".join(lines)
+
+    def _summary_row(
+        self,
+        label: str,
+        summary: MetricValueSummary,
+    ) -> str:
+        return (
+            f"| {label} | {summary.count} | {summary.total} | "
+            f"{self._float_text(summary.average)} | {self._float_text(summary.median)} |"
+        )
+
+    def _float_text(
+        self,
+        value: float | None,
+    ) -> str:
+        if value is None:
+            return "n/a"
+        return f"{value:.2f}"
+
+    def _bool_text(
+        self,
+        value: bool,
+    ) -> str:
+        return "true" if value else "false"
+
+    def _write_json_file(
+        self,
+        path: Path,
+        payload: dict[str, object],
+    ) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("w", encoding="utf-8", newline="\n") as handle:
+            json.dump(payload, handle, indent=2, sort_keys=True)
+            handle.write("\n")
+
+    def _write_markdown_file(
+        self,
+        path: Path,
+        document: str,
+    ) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(document, encoding="utf-8", newline="\n")
+
+    def _prune_stale_period_directories(
+        self,
+        *,
+        config: RunConfig,
+        root_dir: Path,
+        org_metrics: OrganizationMetricCollection,
+    ) -> None:
+        if config.mode is not RunMode.FULL or not root_dir.exists():
+            return
+        active_period_keys = {period.key for period in org_metrics.periods}
+        for child in root_dir.iterdir():
+            if not child.is_dir() or child.name in active_period_keys:
+                continue
+            shutil.rmtree(child)
+
+    def _org_summary_root_dir(self, output_dir: Path, period_grain: str) -> Path:
+        return output_dir / ORG_SUMMARY_DIRNAME / period_grain
 
 
 class RunManifestWriter:

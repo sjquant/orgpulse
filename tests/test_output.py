@@ -12,6 +12,10 @@ from orgpulse.models import (
     CollectionWindow,
     LastSuccessfulRun,
     ManifestWatermarks,
+    MetricValueSummary,
+    OrganizationMetricCollection,
+    OrganizationMetricPeriod,
+    OrganizationMetricRollup,
     PullRequestCollection,
     RawSnapshotPeriod,
     RawSnapshotWriteResult,
@@ -21,7 +25,205 @@ from orgpulse.models import (
     RunMode,
     RunScope,
 )
-from orgpulse.output import RunManifestWriter
+from orgpulse.output import OrgSummaryWriter, RunManifestWriter
+
+
+class TestOrgSummaryWriter:
+    def test_writes_deterministic_markdown_and_json_per_period(
+        self,
+        tmp_path,
+    ) -> None:
+        """Write stable Markdown and JSON org summaries under a period-scoped directory layout."""
+        # Given
+        config = RunConfig.model_validate(
+            {
+                "org": "acme",
+                "as_of": "2026-04-18",
+                "output_dir": tmp_path,
+            }
+        )
+        org_metrics = OrganizationMetricCollection(
+            target_org="acme",
+            periods=(
+                OrganizationMetricPeriod(
+                    key="2026-04",
+                    start_date=date.fromisoformat("2026-04-01"),
+                    end_date=date.fromisoformat("2026-04-30"),
+                    closed=False,
+                    summary=self._build_rollup(),
+                ),
+            ),
+        )
+
+        # When
+        result = OrgSummaryWriter().write(config, org_metrics)
+
+        # Then
+        assert result.root_dir == tmp_path / "org_summary" / "month"
+        assert [period.key for period in result.periods] == ["2026-04"]
+        period_result = result.periods[0]
+        assert json.loads(period_result.json_path.read_text(encoding="utf-8")) == {
+            "period": {
+                "closed": False,
+                "end_date": "2026-04-30",
+                "key": "2026-04",
+                "start_date": "2026-04-01",
+            },
+            "period_grain": "month",
+            "summary": {
+                "active_author_count": 2,
+                "additions": {
+                    "average": 20.0,
+                    "count": 2,
+                    "median": 20.0,
+                    "total": 40,
+                },
+                "changed_files": {
+                    "average": 3.0,
+                    "count": 2,
+                    "median": 3.0,
+                    "total": 6,
+                },
+                "changed_lines": {
+                    "average": 25.0,
+                    "count": 2,
+                    "median": 25.0,
+                    "total": 50,
+                },
+                "commits": {
+                    "average": 4.0,
+                    "count": 2,
+                    "median": 4.0,
+                    "total": 8,
+                },
+                "deletions": {
+                    "average": 5.0,
+                    "count": 2,
+                    "median": 5.0,
+                    "total": 10,
+                },
+                "merged_pull_request_count": 2,
+                "merged_pull_requests_per_active_author": 1.0,
+                "pull_request_count": 3,
+                "repository_count": 2,
+                "time_to_first_review_seconds": {
+                    "average": 150.0,
+                    "count": 2,
+                    "median": 150.0,
+                    "total": 300,
+                },
+                "time_to_merge_seconds": {
+                    "average": 90.0,
+                    "count": 2,
+                    "median": 90.0,
+                    "total": 180,
+                },
+            },
+            "target_org": "acme",
+        }
+        assert period_result.markdown_path.read_text(encoding="utf-8") == (
+            "# Organization Summary: acme 2026-04\n"
+            "\n"
+            "- Target org: acme\n"
+            "- Period grain: month\n"
+            "- Period key: 2026-04\n"
+            "- Period start: 2026-04-01\n"
+            "- Period end: 2026-04-30\n"
+            "- Closed: false\n"
+            "\n"
+            "## Totals\n"
+            "\n"
+            "- Repository count: 2\n"
+            "- Pull request count: 3\n"
+            "- Merged pull request count: 2\n"
+            "- Active author count: 2\n"
+            "- Merged pull requests per active author: 1.00\n"
+            "\n"
+            "## Value Summaries\n"
+            "\n"
+            "| Metric | Count | Total | Average | Median |\n"
+            "| --- | ---: | ---: | ---: | ---: |\n"
+            "| Time to merge (seconds) | 2 | 180 | 90.00 | 90.00 |\n"
+            "| Time to first review (seconds) | 2 | 300 | 150.00 | 150.00 |\n"
+            "| Additions | 2 | 40 | 20.00 | 20.00 |\n"
+            "| Deletions | 2 | 10 | 5.00 | 5.00 |\n"
+            "| Changed lines | 2 | 50 | 25.00 | 25.00 |\n"
+            "| Changed files | 2 | 6 | 3.00 | 3.00 |\n"
+            "| Commits | 2 | 8 | 4.00 | 4.00 |\n"
+        )
+
+    def test_prunes_stale_period_directories_on_full_runs(
+        self,
+        tmp_path,
+    ) -> None:
+        """Prune stale org summary period directories only during full-history reruns."""
+        # Given
+        config = RunConfig.model_validate(
+            {
+                "org": "acme",
+                "as_of": "2026-04-18",
+                "mode": RunMode.FULL,
+                "output_dir": tmp_path,
+            }
+        )
+        stale_period_dir = tmp_path / "org_summary" / "month" / "2026-03"
+        stale_period_dir.mkdir(parents=True)
+        (stale_period_dir / "summary.json").write_text(
+            json.dumps({"target_org": "stale"}),
+            encoding="utf-8",
+        )
+        org_metrics = OrganizationMetricCollection(
+            target_org="acme",
+            periods=(
+                OrganizationMetricPeriod(
+                    key="2026-04",
+                    start_date=date.fromisoformat("2026-04-01"),
+                    end_date=date.fromisoformat("2026-04-30"),
+                    closed=False,
+                    summary=self._build_rollup(),
+                ),
+            ),
+        )
+
+        # When
+        result = OrgSummaryWriter().write(config, org_metrics)
+
+        # Then
+        assert stale_period_dir.exists() is False
+        assert result.periods[0].json_path.exists()
+        assert result.periods[0].markdown_path.exists()
+
+    def _build_rollup(self) -> OrganizationMetricRollup:
+        """Build a representative org rollup payload for summary writer tests."""
+        return OrganizationMetricRollup(
+            repository_count=2,
+            pull_request_count=3,
+            merged_pull_request_count=2,
+            active_author_count=2,
+            merged_pull_requests_per_active_author=1.0,
+            time_to_merge_seconds=self._build_summary(count=2, total=180),
+            time_to_first_review_seconds=self._build_summary(count=2, total=300),
+            additions=self._build_summary(count=2, total=40),
+            deletions=self._build_summary(count=2, total=10),
+            changed_lines=self._build_summary(count=2, total=50),
+            changed_files=self._build_summary(count=2, total=6),
+            commits=self._build_summary(count=2, total=8),
+        )
+
+    def _build_summary(
+        self,
+        *,
+        count: int,
+        total: int,
+    ) -> MetricValueSummary:
+        """Build a deterministic value summary for org summary export tests."""
+        average = None if count == 0 else float(total / count)
+        return MetricValueSummary(
+            count=count,
+            total=total,
+            average=average,
+            median=average,
+        )
 
 
 class TestRunManifestWriter:

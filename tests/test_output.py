@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import csv
 import json
 from datetime import date, datetime
 
@@ -7,12 +8,19 @@ from orgpulse.ingestion import (
     PULL_REQUEST_FIELDNAMES,
     PULL_REQUEST_REVIEW_FIELDNAMES,
     PULL_REQUEST_TIMELINE_EVENT_FIELDNAMES,
+    NormalizedRawSnapshotWriter,
+)
+from orgpulse.metrics import (
+    PullRequestMetricCollectionBuilder,
+    RepositoryMetricCollectionBuilder,
 )
 from orgpulse.models import (
     CollectionWindow,
     LastSuccessfulRun,
     ManifestWatermarks,
     PullRequestCollection,
+    PullRequestRecord,
+    PullRequestReviewRecord,
     RawSnapshotPeriod,
     RawSnapshotWriteResult,
     ReportingPeriod,
@@ -21,7 +29,7 @@ from orgpulse.models import (
     RunMode,
     RunScope,
 )
-from orgpulse.output import RunManifestWriter
+from orgpulse.output import RepositorySummaryCsvWriter, RunManifestWriter
 
 
 class TestRunManifestWriter:
@@ -467,3 +475,232 @@ class TestRunManifestWriter:
         start_date = datetime.fromisoformat(f"{period_key}-01T00:00:00").date()
         end_date = datetime.fromisoformat(f"{period_key}-28T00:00:00").date()
         return start_date, end_date
+
+
+class TestRepositorySummaryCsvWriter:
+    def test_writes_deterministic_repo_summary_rows_per_period(
+        self,
+        tmp_path,
+    ) -> None:
+        """Write one deterministic repo-summary CSV row per repository in the reporting period."""
+        # Given
+        config = self._build_run_config(
+            as_of="2026-04-18",
+            output_dir=tmp_path,
+        )
+        raw_snapshot = self._write_raw_snapshot(
+            config,
+            pull_requests=(
+                PullRequestRecord(
+                    repository_full_name="acme/web",
+                    number=31,
+                    title="Ship dashboard layout",
+                    state="closed",
+                    draft=False,
+                    merged=True,
+                    author_login="bob",
+                    created_at=datetime.fromisoformat("2026-04-08T09:00:00"),
+                    updated_at=datetime.fromisoformat("2026-04-09T13:00:00"),
+                    closed_at=datetime.fromisoformat("2026-04-09T13:00:00"),
+                    merged_at=datetime.fromisoformat("2026-04-09T12:00:00"),
+                    additions=20,
+                    deletions=10,
+                    changed_files=4,
+                    commits=5,
+                    html_url="https://example.test/pr/31",
+                    reviews=(
+                        PullRequestReviewRecord(
+                            review_id=601,
+                            state="APPROVED",
+                            author_login="reviewer-b",
+                            submitted_at=datetime.fromisoformat(
+                                "2026-04-08T15:00:00"
+                            ),
+                            commit_id="commit-601",
+                        ),
+                    ),
+                ),
+                PullRequestRecord(
+                    repository_full_name="acme/api",
+                    number=21,
+                    title="Ship API endpoint",
+                    state="closed",
+                    draft=False,
+                    merged=True,
+                    author_login="alice",
+                    created_at=datetime.fromisoformat("2026-04-05T09:00:00"),
+                    updated_at=datetime.fromisoformat("2026-04-06T12:00:00"),
+                    closed_at=datetime.fromisoformat("2026-04-06T12:00:00"),
+                    merged_at=datetime.fromisoformat("2026-04-06T12:00:00"),
+                    additions=10,
+                    deletions=4,
+                    changed_files=2,
+                    commits=2,
+                    html_url="https://example.test/pr/21",
+                    reviews=(
+                        PullRequestReviewRecord(
+                            review_id=501,
+                            state="APPROVED",
+                            author_login="reviewer-a",
+                            submitted_at=datetime.fromisoformat(
+                                "2026-04-05T12:00:00"
+                            ),
+                            commit_id="commit-501",
+                        ),
+                    ),
+                ),
+            ),
+        )
+        pull_request_metrics = PullRequestMetricCollectionBuilder().build(
+            config,
+            raw_snapshot,
+        )
+        repository_metrics = RepositoryMetricCollectionBuilder().build(
+            config,
+            pull_request_metrics,
+        )
+
+        # When
+        result = RepositorySummaryCsvWriter().write(
+            config,
+            repository_metrics,
+        )
+
+        # Then
+        assert result.root_dir == tmp_path / "repo_summary" / "month"
+        assert [period.key for period in result.periods] == ["2026-04"]
+        assert result.periods[0].repository_count == 2
+        rows = self._read_rows(result.periods[0].path)
+        assert [row["repository_full_name"] for row in rows] == [
+            "acme/api",
+            "acme/web",
+        ]
+        assert rows[0]["period_key"] == "2026-04"
+        assert rows[0]["period_closed"] == "false"
+        assert rows[0]["pull_request_count"] == "1"
+        assert rows[0]["merged_pull_request_count"] == "1"
+        assert rows[0]["active_author_count"] == "1"
+        assert rows[0]["time_to_merge_total_seconds"] == "97200"
+        assert rows[0]["time_to_first_review_total_seconds"] == "10800"
+        assert rows[1]["time_to_merge_total_seconds"] == "97200"
+        assert rows[1]["time_to_first_review_total_seconds"] == "21600"
+
+    def test_preserves_empty_backfill_periods_as_header_only_csvs(
+        self,
+        tmp_path,
+    ) -> None:
+        """Preserve explicit empty backfill periods by writing header-only repo summary CSVs."""
+        # Given
+        config = self._build_run_config(
+            as_of="2026-05-18",
+            mode=RunMode.BACKFILL,
+            backfill_start="2026-03-01",
+            backfill_end="2026-04-30",
+            output_dir=tmp_path,
+        )
+        raw_snapshot = self._write_raw_snapshot(config, pull_requests=())
+        pull_request_metrics = PullRequestMetricCollectionBuilder().build(
+            config,
+            raw_snapshot,
+        )
+        repository_metrics = RepositoryMetricCollectionBuilder().build(
+            config,
+            pull_request_metrics,
+        )
+
+        # When
+        result = RepositorySummaryCsvWriter().write(
+            config,
+            repository_metrics,
+        )
+
+        # Then
+        assert [period.key for period in result.periods] == ["2026-03", "2026-04"]
+        assert [period.repository_count for period in result.periods] == [0, 0]
+        assert all(period.path.exists() for period in result.periods)
+        assert all(self._read_rows(period.path) == [] for period in result.periods)
+
+    def test_prunes_stale_period_exports_on_full_rerun(
+        self,
+        tmp_path,
+    ) -> None:
+        """Prune stale repo summary period directories when a full rerun no longer emits them."""
+        # Given
+        stale_period_dir = tmp_path / "repo_summary" / "month" / "2026-03"
+        stale_period_dir.mkdir(parents=True)
+        (stale_period_dir / "repo_summary.csv").write_text(
+            "stale export\n",
+            encoding="utf-8",
+        )
+        config = self._build_run_config(
+            as_of="2026-04-18",
+            mode=RunMode.FULL,
+            output_dir=tmp_path,
+        )
+        raw_snapshot = self._write_raw_snapshot(
+            config,
+            pull_requests=(
+                PullRequestRecord(
+                    repository_full_name="acme/api",
+                    number=21,
+                    title="Ship API endpoint",
+                    state="closed",
+                    draft=False,
+                    merged=True,
+                    author_login="alice",
+                    created_at=datetime.fromisoformat("2026-04-05T09:00:00"),
+                    updated_at=datetime.fromisoformat("2026-04-06T12:00:00"),
+                    closed_at=datetime.fromisoformat("2026-04-06T12:00:00"),
+                    merged_at=datetime.fromisoformat("2026-04-06T12:00:00"),
+                    additions=10,
+                    deletions=4,
+                    changed_files=2,
+                    commits=2,
+                    html_url="https://example.test/pr/21",
+                ),
+            ),
+        )
+        pull_request_metrics = PullRequestMetricCollectionBuilder().build(
+            config,
+            raw_snapshot,
+        )
+        repository_metrics = RepositoryMetricCollectionBuilder().build(
+            config,
+            pull_request_metrics,
+        )
+
+        # When
+        result = RepositorySummaryCsvWriter().write(
+            config,
+            repository_metrics,
+        )
+
+        # Then
+        assert stale_period_dir.exists() is False
+        assert [period.key for period in result.periods] == ["2026-04"]
+        assert result.periods[0].path.exists()
+
+    def _build_run_config(self, **overrides: object) -> RunConfig:
+        """Build the minimal run configuration needed for repo summary export tests."""
+        return RunConfig.model_validate({"org": "acme", **overrides})
+
+    def _write_raw_snapshot(
+        self,
+        config: RunConfig,
+        *,
+        pull_requests: tuple[PullRequestRecord, ...],
+    ) -> RawSnapshotWriteResult:
+        """Write raw snapshot fixtures through the production snapshot writer."""
+        return NormalizedRawSnapshotWriter().write(
+            config,
+            PullRequestCollection(
+                window=config.collection_window,
+                pull_requests=pull_requests,
+                failures=(),
+            ),
+        )
+
+    def _read_rows(self, path) -> list[dict[str, str]]:
+        """Read repo summary CSV rows into dictionaries for assertions."""
+        with path.open(newline="", encoding="utf-8") as handle:
+            return list(csv.DictReader(handle))

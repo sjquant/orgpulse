@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import csv
 import json
+import shutil
 from collections.abc import Callable, Sequence
 from datetime import UTC, date, datetime
 from pathlib import Path
@@ -18,13 +20,60 @@ from orgpulse.models import (
     RawSnapshotPeriod,
     RawSnapshotWriteResult,
     ReportingPeriod,
+    RepositoryMetricCollection,
+    RepositoryMetricPeriod,
+    RepositoryMetricRollup,
+    RepositorySummaryCsvPeriod,
+    RepositorySummaryCsvWriteResult,
     RunConfig,
     RunManifest,
+    RunMode,
     canonicalize_repo_filter,
 )
 
 MANIFEST_FILENAME = "manifest.json"
 MANIFEST_DIRNAME = "manifest"
+REPOSITORY_SUMMARY_CSV_DIRNAME = "repo_summary"
+REPOSITORY_SUMMARY_CSV_FILENAME = "repo_summary.csv"
+REPOSITORY_SUMMARY_CSV_FIELDNAMES = (
+    "period_key",
+    "period_start_date",
+    "period_end_date",
+    "period_closed",
+    "repository_full_name",
+    "pull_request_count",
+    "merged_pull_request_count",
+    "active_author_count",
+    "merged_pull_requests_per_active_author",
+    "time_to_merge_count",
+    "time_to_merge_total_seconds",
+    "time_to_merge_average_seconds",
+    "time_to_merge_median_seconds",
+    "time_to_first_review_count",
+    "time_to_first_review_total_seconds",
+    "time_to_first_review_average_seconds",
+    "time_to_first_review_median_seconds",
+    "additions_count",
+    "additions_total",
+    "additions_average",
+    "additions_median",
+    "deletions_count",
+    "deletions_total",
+    "deletions_average",
+    "deletions_median",
+    "changed_lines_count",
+    "changed_lines_total",
+    "changed_lines_average",
+    "changed_lines_median",
+    "changed_files_count",
+    "changed_files_total",
+    "changed_files_average",
+    "changed_files_median",
+    "commits_count",
+    "commits_total",
+    "commits_average",
+    "commits_median",
+)
 REQUIRED_RAW_SNAPSHOT_HEADERS = {
     "pull_requests.csv": ",".join(PULL_REQUEST_FIELDNAMES),
     "pull_request_reviews.csv": ",".join(PULL_REQUEST_REVIEW_FIELDNAMES),
@@ -32,6 +81,128 @@ REQUIRED_RAW_SNAPSHOT_HEADERS = {
         PULL_REQUEST_TIMELINE_EVENT_FIELDNAMES
     ),
 }
+
+
+class RepositorySummaryCsvWriter:
+    """Persist repo-level metric rollups into deterministic period-scoped CSV files."""
+
+    def write(
+        self,
+        config: RunConfig,
+        repository_metrics: RepositoryMetricCollection,
+    ) -> RepositorySummaryCsvWriteResult:
+        root_dir = self._root_dir(config.output_dir, config.period.value)
+        self._prune_stale_period_directories(
+            config=config,
+            root_dir=root_dir,
+            repository_metrics=repository_metrics,
+        )
+        return RepositorySummaryCsvWriteResult(
+            root_dir=root_dir,
+            periods=tuple(
+                self._write_period_summary(root_dir, metric_period)
+                for metric_period in repository_metrics.periods
+            ),
+        )
+
+    def _write_period_summary(
+        self,
+        root_dir: Path,
+        metric_period: RepositoryMetricPeriod,
+    ) -> RepositorySummaryCsvPeriod:
+        path = root_dir / metric_period.key / REPOSITORY_SUMMARY_CSV_FILENAME
+        rows = [
+            self._csv_row(metric_period, repository)
+            for repository in metric_period.repositories
+        ]
+        self._write_rows(path=path, rows=rows)
+        return RepositorySummaryCsvPeriod(
+            key=metric_period.key,
+            start_date=metric_period.start_date,
+            end_date=metric_period.end_date,
+            closed=metric_period.closed,
+            path=path,
+            repository_count=len(metric_period.repositories),
+        )
+
+    def _csv_row(
+        self,
+        metric_period: RepositoryMetricPeriod,
+        repository: RepositoryMetricRollup,
+    ) -> dict[str, object]:
+        return {
+            "period_key": metric_period.key,
+            "period_start_date": metric_period.start_date.isoformat(),
+            "period_end_date": metric_period.end_date.isoformat(),
+            "period_closed": str(metric_period.closed).lower(),
+            "repository_full_name": repository.repository_full_name,
+            "pull_request_count": repository.pull_request_count,
+            "merged_pull_request_count": repository.merged_pull_request_count,
+            "active_author_count": repository.active_author_count,
+            "merged_pull_requests_per_active_author": repository.merged_pull_requests_per_active_author,
+            "time_to_merge_count": repository.time_to_merge_seconds.count,
+            "time_to_merge_total_seconds": repository.time_to_merge_seconds.total,
+            "time_to_merge_average_seconds": repository.time_to_merge_seconds.average,
+            "time_to_merge_median_seconds": repository.time_to_merge_seconds.median,
+            "time_to_first_review_count": repository.time_to_first_review_seconds.count,
+            "time_to_first_review_total_seconds": repository.time_to_first_review_seconds.total,
+            "time_to_first_review_average_seconds": repository.time_to_first_review_seconds.average,
+            "time_to_first_review_median_seconds": repository.time_to_first_review_seconds.median,
+            "additions_count": repository.additions.count,
+            "additions_total": repository.additions.total,
+            "additions_average": repository.additions.average,
+            "additions_median": repository.additions.median,
+            "deletions_count": repository.deletions.count,
+            "deletions_total": repository.deletions.total,
+            "deletions_average": repository.deletions.average,
+            "deletions_median": repository.deletions.median,
+            "changed_lines_count": repository.changed_lines.count,
+            "changed_lines_total": repository.changed_lines.total,
+            "changed_lines_average": repository.changed_lines.average,
+            "changed_lines_median": repository.changed_lines.median,
+            "changed_files_count": repository.changed_files.count,
+            "changed_files_total": repository.changed_files.total,
+            "changed_files_average": repository.changed_files.average,
+            "changed_files_median": repository.changed_files.median,
+            "commits_count": repository.commits.count,
+            "commits_total": repository.commits.total,
+            "commits_average": repository.commits.average,
+            "commits_median": repository.commits.median,
+        }
+
+    def _write_rows(
+        self,
+        *,
+        path: Path,
+        rows: list[dict[str, object]],
+    ) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("w", encoding="utf-8", newline="") as handle:
+            writer = csv.DictWriter(
+                handle,
+                fieldnames=REPOSITORY_SUMMARY_CSV_FIELDNAMES,
+                lineterminator="\n",
+            )
+            writer.writeheader()
+            writer.writerows(rows)
+
+    def _prune_stale_period_directories(
+        self,
+        *,
+        config: RunConfig,
+        root_dir: Path,
+        repository_metrics: RepositoryMetricCollection,
+    ) -> None:
+        if not root_dir.exists() or config.mode is not RunMode.FULL:
+            return
+        active_period_keys = {period.key for period in repository_metrics.periods}
+        for child in root_dir.iterdir():
+            if not child.is_dir() or child.name in active_period_keys:
+                continue
+            shutil.rmtree(child)
+
+    def _root_dir(self, output_dir: Path, period_grain: str) -> Path:
+        return output_dir / REPOSITORY_SUMMARY_CSV_DIRNAME / period_grain
 
 
 class RunManifestWriter:

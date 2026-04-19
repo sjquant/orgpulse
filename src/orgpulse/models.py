@@ -294,6 +294,58 @@ class OrganizationMetricCollection(BaseModel):
     periods: tuple[OrganizationMetricPeriod, ...]
 
 
+class MetricValidationIssue(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    code: str
+    message: str
+    repository_full_name: str | None = None
+    pull_request_number: int | None = None
+
+
+class RepositoryMetricValidationSummary(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    repository_full_name: str
+    pull_request_count: int
+    merged_pull_request_count: int
+    time_to_merge_count: int
+    time_to_first_review_count: int
+
+
+class OrganizationMetricValidationSummary(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    repository_count: int
+    pull_request_count: int
+    merged_pull_request_count: int
+    time_to_merge_count: int
+    time_to_first_review_count: int
+
+
+class MetricValidationPeriod(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    key: str
+    start_date: date
+    end_date: date
+    closed: bool
+    raw_pull_request_count: int
+    raw_review_count: int
+    raw_timeline_event_count: int
+    repository_summaries: tuple[RepositoryMetricValidationSummary, ...]
+    org_summary: OrganizationMetricValidationSummary
+    valid: bool
+    issues: tuple[MetricValidationIssue, ...]
+
+
+class MetricValidationCollection(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    target_org: str
+    periods: tuple[MetricValidationPeriod, ...]
+
+
 class ManifestWatermarks(BaseModel):
     model_config = ConfigDict(frozen=True)
 

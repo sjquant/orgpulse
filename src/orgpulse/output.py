@@ -90,18 +90,24 @@ class RepositorySummaryCsvWriter:
         self,
         config: RunConfig,
         repository_metrics: RepositoryMetricCollection,
+        *,
+        refreshed_period_keys: tuple[str, ...],
     ) -> RepositorySummaryCsvWriteResult:
         root_dir = self._root_dir(config.output_dir, config.period.value)
+        refreshed_periods = self._refreshed_periods(
+            repository_metrics,
+            refreshed_period_keys=refreshed_period_keys,
+        )
         self._prune_stale_period_directories(
             config=config,
             root_dir=root_dir,
-            repository_metrics=repository_metrics,
+            refreshed_periods=refreshed_periods,
         )
         return RepositorySummaryCsvWriteResult(
             root_dir=root_dir,
             periods=tuple(
                 self._write_period_summary(root_dir, metric_period)
-                for metric_period in repository_metrics.periods
+                for metric_period in refreshed_periods
             ),
         )
 
@@ -191,11 +197,11 @@ class RepositorySummaryCsvWriter:
         *,
         config: RunConfig,
         root_dir: Path,
-        repository_metrics: RepositoryMetricCollection,
+        refreshed_periods: tuple[RepositoryMetricPeriod, ...],
     ) -> None:
         if not root_dir.exists() or config.mode is not RunMode.FULL:
             return
-        active_period_keys = {period.key for period in repository_metrics.periods}
+        active_period_keys = {period.key for period in refreshed_periods}
         for child in root_dir.iterdir():
             if not child.is_dir() or child.name in active_period_keys:
                 continue
@@ -203,6 +209,19 @@ class RepositorySummaryCsvWriter:
 
     def _root_dir(self, output_dir: Path, period_grain: str) -> Path:
         return output_dir / REPOSITORY_SUMMARY_CSV_DIRNAME / period_grain
+
+    def _refreshed_periods(
+        self,
+        repository_metrics: RepositoryMetricCollection,
+        *,
+        refreshed_period_keys: tuple[str, ...],
+    ) -> tuple[RepositoryMetricPeriod, ...]:
+        refreshed_period_key_set = set(refreshed_period_keys)
+        return tuple(
+            period
+            for period in repository_metrics.periods
+            if period.key in refreshed_period_key_set
+        )
 
 
 class RunManifestWriter:

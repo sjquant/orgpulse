@@ -564,6 +564,7 @@ class TestRepositorySummaryCsvWriter:
         result = RepositorySummaryCsvWriter().write(
             config,
             repository_metrics,
+            refreshed_period_keys=tuple(period.key for period in raw_snapshot.periods),
         )
 
         # Then
@@ -612,6 +613,7 @@ class TestRepositorySummaryCsvWriter:
         result = RepositorySummaryCsvWriter().write(
             config,
             repository_metrics,
+            refreshed_period_keys=tuple(period.key for period in raw_snapshot.periods),
         )
 
         # Then
@@ -673,11 +675,117 @@ class TestRepositorySummaryCsvWriter:
         result = RepositorySummaryCsvWriter().write(
             config,
             repository_metrics,
+            refreshed_period_keys=tuple(period.key for period in raw_snapshot.periods),
         )
 
         # Then
         assert stale_period_dir.exists() is False
         assert [period.key for period in result.periods] == ["2026-04"]
+        assert result.periods[0].path.exists()
+
+    def test_writes_only_refreshed_periods_and_preserves_locked_exports(
+        self,
+        tmp_path,
+    ) -> None:
+        """Write only refreshed periods during incremental runs and leave locked exports untouched."""
+        # Given
+        previous_config = self._build_run_config(
+            as_of="2026-03-18",
+            output_dir=tmp_path,
+        )
+        previous_raw_snapshot = self._write_raw_snapshot(
+            previous_config,
+            pull_requests=(
+                PullRequestRecord(
+                    repository_full_name="acme/api",
+                    number=11,
+                    title="Close March work",
+                    state="closed",
+                    draft=False,
+                    merged=True,
+                    author_login="alice",
+                    created_at=datetime.fromisoformat("2026-03-10T09:00:00"),
+                    updated_at=datetime.fromisoformat("2026-03-14T12:00:00"),
+                    closed_at=datetime.fromisoformat("2026-03-14T12:00:00"),
+                    merged_at=datetime.fromisoformat("2026-03-14T12:00:00"),
+                    additions=12,
+                    deletions=3,
+                    changed_files=2,
+                    commits=2,
+                    html_url="https://example.test/pr/11",
+                ),
+            ),
+        )
+        previous_pull_request_metrics = PullRequestMetricCollectionBuilder().build(
+            previous_config,
+            previous_raw_snapshot,
+        )
+        previous_repository_metrics = RepositoryMetricCollectionBuilder().build(
+            previous_config,
+            previous_pull_request_metrics,
+        )
+        RepositorySummaryCsvWriter().write(
+            previous_config,
+            previous_repository_metrics,
+            refreshed_period_keys=tuple(
+                period.key for period in previous_raw_snapshot.periods
+            ),
+        )
+        locked_repo_summary_path = (
+            tmp_path / "repo_summary" / "month" / "2026-03" / "repo_summary.csv"
+        )
+        locked_repo_summary_csv = locked_repo_summary_path.read_text(encoding="utf-8")
+        current_config = self._build_run_config(
+            as_of="2026-04-18",
+            output_dir=tmp_path,
+        )
+        current_raw_snapshot = self._write_raw_snapshot(
+            current_config,
+            pull_requests=(
+                PullRequestRecord(
+                    repository_full_name="acme/web",
+                    number=21,
+                    title="Open April work",
+                    state="closed",
+                    draft=False,
+                    merged=True,
+                    author_login="bob",
+                    created_at=datetime.fromisoformat("2026-04-09T10:00:00"),
+                    updated_at=datetime.fromisoformat("2026-04-12T11:00:00"),
+                    closed_at=datetime.fromisoformat("2026-04-12T11:00:00"),
+                    merged_at=datetime.fromisoformat("2026-04-12T11:00:00"),
+                    additions=18,
+                    deletions=4,
+                    changed_files=3,
+                    commits=3,
+                    html_url="https://example.test/pr/21",
+                ),
+            ),
+        )
+        repository_metrics = RepositoryMetricCollectionBuilder().build(
+            current_config,
+            PullRequestMetricCollectionBuilder().build(
+                current_config,
+                RawSnapshotWriteResult(
+                    root_dir=current_raw_snapshot.root_dir,
+                    periods=(
+                        previous_raw_snapshot.periods[0],
+                        current_raw_snapshot.periods[0],
+                    ),
+                ),
+            ),
+        )
+
+        # When
+        result = RepositorySummaryCsvWriter().write(
+            current_config,
+            repository_metrics,
+            refreshed_period_keys=tuple(period.key for period in current_raw_snapshot.periods),
+        )
+
+        # Then
+        assert [period.key for period in result.periods] == ["2026-04"]
+        assert locked_repo_summary_path.read_text(encoding="utf-8") == locked_repo_summary_csv
         assert result.periods[0].path.exists()
 
     def _build_run_config(self, **overrides: object) -> RunConfig:

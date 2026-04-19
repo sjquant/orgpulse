@@ -320,6 +320,7 @@ def _build_metric_outputs(
     repo_summary = RepositorySummaryCsvWriter().write(
         config,
         repository_metrics,
+        refreshed_period_keys=tuple(period.key for period in raw_snapshot.periods),
     )
     org_metrics = OrganizationMetricCollectionBuilder().build(
         config,

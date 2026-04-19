@@ -12,6 +12,10 @@ from orgpulse.cli import app, build_run_config
 from orgpulse.errors import AuthResolutionError, GitHubApiError
 from orgpulse.github_auth import GitHubAuthService
 from orgpulse.ingestion import NormalizedRawSnapshotWriter
+from orgpulse.metrics import (
+    PullRequestMetricCollectionBuilder,
+    RepositoryMetricCollectionBuilder,
+)
 from orgpulse.models import (
     AuthSource,
     CollectionWindow,
@@ -172,6 +176,8 @@ class FakeCliRepositorySummaryWriter:
         self,
         config,
         repository_metrics,
+        *,
+        refreshed_period_keys,
     ) -> RepositorySummaryCsvWriteResult:
         return RepositorySummaryCsvWriteResult(
             root_dir=config.output_dir / "repo_summary" / config.period.value,
@@ -205,6 +211,8 @@ class UnexpectedRepositorySummaryWriter:
         self,
         config,
         repository_metrics,
+        *,
+        refreshed_period_keys,
     ) -> None:
         raise AssertionError("repo summary writer should not run")
 
@@ -938,6 +946,21 @@ class TestRunCommandRuntime:
             previous_snapshot,
             repository_count=1,
         )
+        RepositorySummaryCsvWriter().write(
+            previous_config,
+            RepositoryMetricCollectionBuilder().build(
+                previous_config,
+                PullRequestMetricCollectionBuilder().build(
+                    previous_config,
+                    previous_snapshot,
+                ),
+            ),
+            refreshed_period_keys=tuple(period.key for period in previous_snapshot.periods),
+        )
+        march_repo_summary = (
+            tmp_path / "repo_summary" / "month" / "2026-03" / "repo_summary.csv"
+        )
+        march_repo_summary_csv = march_repo_summary.read_text(encoding="utf-8")
         current_pull_request = PullRequestRecord(
             repository_full_name="acme/web",
             number=21,
@@ -1008,14 +1031,8 @@ class TestRunCommandRuntime:
         # Then
         assert result.exit_code == 0
         payload = json.loads(result.stdout)
-        assert [period["key"] for period in payload["repo_summary"]["periods"]] == [
-            "2026-03",
-            "2026-04",
-        ]
-        assert [period["repository_count"] for period in payload["repo_summary"]["periods"]] == [
-            1,
-            1,
-        ]
+        assert [period["key"] for period in payload["repo_summary"]["periods"]] == ["2026-04"]
+        assert [period["repository_count"] for period in payload["repo_summary"]["periods"]] == [1]
         assert [period["key"] for period in payload["org_metrics"]["periods"]] == [
             "2026-03",
             "2026-04",
@@ -1039,13 +1056,10 @@ class TestRunCommandRuntime:
             1,
         ]
         assert all(period["valid"] for period in payload["metric_validation"]["periods"])
-        march_repo_summary = (
-            tmp_path / "repo_summary" / "month" / "2026-03" / "repo_summary.csv"
-        )
         april_repo_summary = (
             tmp_path / "repo_summary" / "month" / "2026-04" / "repo_summary.csv"
         )
-        assert "acme/api" in march_repo_summary.read_text(encoding="utf-8")
+        assert march_repo_summary.read_text(encoding="utf-8") == march_repo_summary_csv
         assert "acme/web" in april_repo_summary.read_text(encoding="utf-8")
 
     def test_reports_metric_validation_failures_without_skipping_outputs(

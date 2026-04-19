@@ -23,6 +23,7 @@ from orgpulse.metrics import (
     MetricValidationCollectionBuilder,
     OrganizationMetricCollectionBuilder,
     PullRequestMetricCollectionBuilder,
+    RepositoryMetricCollectionBuilder,
 )
 from orgpulse.models import (
     ManifestWriteResult,
@@ -34,11 +35,16 @@ from orgpulse.models import (
     RawSnapshotPeriod,
     RawSnapshotWriteResult,
     ReportingPeriod,
+    RepositorySummaryCsvWriteResult,
     RunConfig,
     RunManifest,
     RunMode,
 )
-from orgpulse.output import OrgSummaryWriter, RunManifestWriter
+from orgpulse.output import (
+    OrgSummaryWriter,
+    RepositorySummaryCsvWriter,
+    RunManifestWriter,
+)
 
 app = typer.Typer(
     add_completion=False,
@@ -152,6 +158,8 @@ def run_command(
             collection,
         )
         (
+            repo_summary,
+            repo_summary_skipped_reason,
             org_metrics,
             org_metrics_skipped_reason,
             metric_validation,
@@ -206,6 +214,10 @@ def run_command(
                 if manifest is None
                 else str(manifest.path),
                 "manifest_skipped_reason": manifest_skipped_reason,
+                "repo_summary": None
+                if repo_summary is None
+                else repo_summary.model_dump(mode="json"),
+                "repo_summary_skipped_reason": repo_summary_skipped_reason,
                 "org_metrics": None
                 if org_metrics is None
                 else org_metrics.model_dump(mode="json"),
@@ -291,6 +303,8 @@ def _build_metric_outputs(
     raw_snapshot: RawSnapshotWriteResult | None,
     raw_snapshot_skipped_reason: str | None,
 ) -> tuple[
+    RepositorySummaryCsvWriteResult | None,
+    str | None,
     OrganizationMetricCollection | None,
     str | None,
     MetricValidationCollection | None,
@@ -298,6 +312,8 @@ def _build_metric_outputs(
 ]:
     if raw_snapshot is None or manifest is None:
         return (
+            None,
+            raw_snapshot_skipped_reason,
             None,
             raw_snapshot_skipped_reason,
             None,
@@ -311,6 +327,15 @@ def _build_metric_outputs(
         config,
         metric_snapshot,
     )
+    repository_metrics = RepositoryMetricCollectionBuilder().build(
+        config,
+        pull_request_metrics,
+    )
+    repo_summary = RepositorySummaryCsvWriter().write(
+        config,
+        repository_metrics,
+        refreshed_period_keys=tuple(period.key for period in raw_snapshot.periods),
+    )
     org_metrics = OrganizationMetricCollectionBuilder().build(
         config,
         pull_request_metrics,
@@ -321,7 +346,7 @@ def _build_metric_outputs(
         pull_request_metrics=pull_request_metrics,
         org_metrics=org_metrics,
     )
-    return org_metrics, None, metric_validation, None
+    return repo_summary, None, org_metrics, None, metric_validation, None
 
 
 def _write_org_summary(

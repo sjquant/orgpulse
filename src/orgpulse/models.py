@@ -260,6 +260,40 @@ class MetricValueSummary(BaseModel):
     median: float | None
 
 
+class RepositoryMetricRollup(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    repository_full_name: str
+    pull_request_count: int
+    merged_pull_request_count: int
+    active_author_count: int
+    merged_pull_requests_per_active_author: float | None
+    time_to_merge_seconds: MetricValueSummary
+    time_to_first_review_seconds: MetricValueSummary
+    additions: MetricValueSummary
+    deletions: MetricValueSummary
+    changed_lines: MetricValueSummary
+    changed_files: MetricValueSummary
+    commits: MetricValueSummary
+
+
+class RepositoryMetricPeriod(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    key: str
+    start_date: date
+    end_date: date
+    closed: bool
+    repositories: tuple[RepositoryMetricRollup, ...]
+
+
+class RepositoryMetricCollection(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    target_org: str
+    periods: tuple[RepositoryMetricPeriod, ...]
+
+
 class OrganizationMetricRollup(BaseModel):
     model_config = ConfigDict(frozen=True)
 
@@ -406,6 +440,24 @@ class ManifestWriteResult(BaseModel):
 
     path: Path
     manifest: RunManifest
+
+
+class RepositorySummaryCsvPeriod(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    key: str
+    start_date: date
+    end_date: date
+    closed: bool
+    path: Path
+    repository_count: int
+
+
+class RepositorySummaryCsvWriteResult(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    root_dir: Path
+    periods: tuple[RepositorySummaryCsvPeriod, ...]
 
 
 class CheckpointPolicy(BaseModel):

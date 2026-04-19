@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import csv
 import json
 import shutil
 from collections.abc import Callable, Sequence
@@ -24,6 +25,11 @@ from orgpulse.models import (
     RawSnapshotPeriod,
     RawSnapshotWriteResult,
     ReportingPeriod,
+    RepositoryMetricCollection,
+    RepositoryMetricPeriod,
+    RepositoryMetricRollup,
+    RepositorySummaryCsvPeriod,
+    RepositorySummaryCsvWriteResult,
     RunConfig,
     RunManifest,
     RunMode,
@@ -32,10 +38,54 @@ from orgpulse.models import (
 
 MANIFEST_FILENAME = "manifest.json"
 MANIFEST_DIRNAME = "manifest"
+
 ORG_SUMMARY_DIRNAME = "org_summary"
 ORG_SUMMARY_CONTRACT_FILENAME = "contract.json"
 ORG_SUMMARY_JSON_FILENAME = "summary.json"
 ORG_SUMMARY_MARKDOWN_FILENAME = "summary.md"
+
+REPOSITORY_SUMMARY_CSV_DIRNAME = "repo_summary"
+REPOSITORY_SUMMARY_CSV_FILENAME = "repo_summary.csv"
+REPOSITORY_SUMMARY_CSV_FIELDNAMES = (
+    "period_key",
+    "period_start_date",
+    "period_end_date",
+    "period_closed",
+    "repository_full_name",
+    "pull_request_count",
+    "merged_pull_request_count",
+    "active_author_count",
+    "merged_pull_requests_per_active_author",
+    "time_to_merge_count",
+    "time_to_merge_total_seconds",
+    "time_to_merge_average_seconds",
+    "time_to_merge_median_seconds",
+    "time_to_first_review_count",
+    "time_to_first_review_total_seconds",
+    "time_to_first_review_average_seconds",
+    "time_to_first_review_median_seconds",
+    "additions_count",
+    "additions_total",
+    "additions_average",
+    "additions_median",
+    "deletions_count",
+    "deletions_total",
+    "deletions_average",
+    "deletions_median",
+    "changed_lines_count",
+    "changed_lines_total",
+    "changed_lines_average",
+    "changed_lines_median",
+    "changed_files_count",
+    "changed_files_total",
+    "changed_files_average",
+    "changed_files_median",
+    "commits_count",
+    "commits_total",
+    "commits_average",
+    "commits_median",
+)
+
 REQUIRED_RAW_SNAPSHOT_HEADERS = {
     "pull_requests.csv": ",".join(PULL_REQUEST_FIELDNAMES),
     "pull_request_reviews.csv": ",".join(PULL_REQUEST_REVIEW_FIELDNAMES),
@@ -43,6 +93,107 @@ REQUIRED_RAW_SNAPSHOT_HEADERS = {
         PULL_REQUEST_TIMELINE_EVENT_FIELDNAMES
     ),
 }
+
+
+class RepositorySummaryCsvWriter:
+    """Persist repo-level metric rollups into deterministic period-scoped CSV files."""
+
+    def write(
+        self,
+        config: RunConfig,
+        repository_metrics: RepositoryMetricCollection,
+        *,
+        refreshed_period_keys: tuple[str, ...],
+    ) -> RepositorySummaryCsvWriteResult:
+        root_dir = self._root_dir(config.output_dir, config.period.value)
+        refreshed_periods = tuple(
+            period
+            for period in repository_metrics.periods
+            if period.key in set(refreshed_period_keys)
+        )
+        _prune_stale_period_directories(
+            config=config,
+            root_dir=root_dir,
+            active_period_keys=tuple(period.key for period in refreshed_periods),
+        )
+        return RepositorySummaryCsvWriteResult(
+            root_dir=root_dir,
+            periods=tuple(
+                self._write_period_summary(root_dir, metric_period)
+                for metric_period in refreshed_periods
+            ),
+        )
+
+    def _write_period_summary(
+        self,
+        root_dir: Path,
+        metric_period: RepositoryMetricPeriod,
+    ) -> RepositorySummaryCsvPeriod:
+        path = root_dir / metric_period.key / REPOSITORY_SUMMARY_CSV_FILENAME
+        _write_csv_file(
+            path=path,
+            fieldnames=REPOSITORY_SUMMARY_CSV_FIELDNAMES,
+            rows=[
+                self._csv_row(metric_period, repository)
+                for repository in metric_period.repositories
+            ],
+        )
+        return RepositorySummaryCsvPeriod(
+            key=metric_period.key,
+            start_date=metric_period.start_date,
+            end_date=metric_period.end_date,
+            closed=metric_period.closed,
+            path=path,
+            repository_count=len(metric_period.repositories),
+        )
+
+    def _csv_row(
+        self,
+        metric_period: RepositoryMetricPeriod,
+        repository: RepositoryMetricRollup,
+    ) -> dict[str, object]:
+        return {
+            "period_key": metric_period.key,
+            "period_start_date": metric_period.start_date.isoformat(),
+            "period_end_date": metric_period.end_date.isoformat(),
+            "period_closed": str(metric_period.closed).lower(),
+            "repository_full_name": repository.repository_full_name,
+            "pull_request_count": repository.pull_request_count,
+            "merged_pull_request_count": repository.merged_pull_request_count,
+            "active_author_count": repository.active_author_count,
+            "merged_pull_requests_per_active_author": repository.merged_pull_requests_per_active_author,
+            "time_to_merge_count": repository.time_to_merge_seconds.count,
+            "time_to_merge_total_seconds": repository.time_to_merge_seconds.total,
+            "time_to_merge_average_seconds": repository.time_to_merge_seconds.average,
+            "time_to_merge_median_seconds": repository.time_to_merge_seconds.median,
+            "time_to_first_review_count": repository.time_to_first_review_seconds.count,
+            "time_to_first_review_total_seconds": repository.time_to_first_review_seconds.total,
+            "time_to_first_review_average_seconds": repository.time_to_first_review_seconds.average,
+            "time_to_first_review_median_seconds": repository.time_to_first_review_seconds.median,
+            "additions_count": repository.additions.count,
+            "additions_total": repository.additions.total,
+            "additions_average": repository.additions.average,
+            "additions_median": repository.additions.median,
+            "deletions_count": repository.deletions.count,
+            "deletions_total": repository.deletions.total,
+            "deletions_average": repository.deletions.average,
+            "deletions_median": repository.deletions.median,
+            "changed_lines_count": repository.changed_lines.count,
+            "changed_lines_total": repository.changed_lines.total,
+            "changed_lines_average": repository.changed_lines.average,
+            "changed_lines_median": repository.changed_lines.median,
+            "changed_files_count": repository.changed_files.count,
+            "changed_files_total": repository.changed_files.total,
+            "changed_files_average": repository.changed_files.average,
+            "changed_files_median": repository.changed_files.median,
+            "commits_count": repository.commits.count,
+            "commits_total": repository.commits.total,
+            "commits_average": repository.commits.average,
+            "commits_median": repository.commits.median,
+        }
+
+    def _root_dir(self, output_dir: Path, period_grain: str) -> Path:
+        return output_dir / REPOSITORY_SUMMARY_CSV_DIRNAME / period_grain
 
 
 class OrgSummaryWriter:
@@ -53,20 +204,20 @@ class OrgSummaryWriter:
         config: RunConfig,
         org_metrics: OrganizationMetricCollection,
     ) -> OrgSummaryWriteResult:
-        root_dir = self._org_summary_root_dir(config.output_dir, config.period.value)
+        root_dir = self._root_dir(config.output_dir, config.period.value)
         contract_path = root_dir / ORG_SUMMARY_CONTRACT_FILENAME
         contract = self._contract_payload(config)
-        self._prune_period_directories_for_contract_change(
-            contract=contract,
-            contract_path=contract_path,
+        _prune_period_directories_for_contract_change(
             root_dir=root_dir,
+            contract_path=contract_path,
+            contract=contract,
         )
-        self._prune_stale_period_directories(
+        _prune_stale_period_directories(
             config=config,
             root_dir=root_dir,
-            org_metrics=org_metrics,
+            active_period_keys=tuple(period.key for period in org_metrics.periods),
         )
-        self._write_json_file(contract_path, contract)
+        _write_json_file(contract_path, contract)
         return OrgSummaryWriteResult(
             target_org=org_metrics.target_org,
             root_dir=root_dir,
@@ -76,7 +227,6 @@ class OrgSummaryWriter:
                     config=config,
                     root_dir=root_dir,
                     period=period,
-                    period_grain=config.period.value,
                     target_org=org_metrics.target_org,
                 )
                 for period in org_metrics.periods
@@ -89,27 +239,20 @@ class OrgSummaryWriter:
         config: RunConfig,
         root_dir: Path,
         period: OrganizationMetricPeriod,
-        period_grain: str,
         target_org: str,
     ) -> OrgSummaryPeriodWriteResult:
         period_dir = root_dir / period.key
         markdown_path = period_dir / ORG_SUMMARY_MARKDOWN_FILENAME
         json_path = period_dir / ORG_SUMMARY_JSON_FILENAME
-        self._write_json_file(
+        _write_json_file(
             json_path,
-            self._json_payload(
-                config=config,
-                period=period,
-                period_grain=period_grain,
-                target_org=target_org,
-            ),
+            self._json_payload(config=config, period=period, target_org=target_org),
         )
-        self._write_markdown_file(
+        _write_text_file(
             markdown_path,
             self._markdown_document(
                 config=config,
                 period=period,
-                period_grain=period_grain,
                 target_org=target_org,
             ),
         )
@@ -128,14 +271,13 @@ class OrgSummaryWriter:
         *,
         config: RunConfig,
         period: OrganizationMetricPeriod,
-        period_grain: str,
         target_org: str,
     ) -> dict[str, object]:
-        include_repos = self._canonical_repo_filters(config.include_repos, org=config.org)
-        exclude_repos = self._canonical_repo_filters(config.exclude_repos, org=config.org)
+        include_repos = _canonical_repo_filters(config.include_repos, org=config.org)
+        exclude_repos = _canonical_repo_filters(config.exclude_repos, org=config.org)
         return {
             "target_org": target_org,
-            "period_grain": period_grain,
+            "period_grain": config.period.value,
             "include_repos": list(include_repos),
             "exclude_repos": list(exclude_repos),
             "period": {
@@ -152,182 +294,70 @@ class OrgSummaryWriter:
         *,
         config: RunConfig,
         period: OrganizationMetricPeriod,
-        period_grain: str,
         target_org: str,
     ) -> str:
+        include_repos = _canonical_repo_filters(config.include_repos, org=config.org)
+        exclude_repos = _canonical_repo_filters(config.exclude_repos, org=config.org)
         summary = period.summary
-        include_repos = self._canonical_repo_filters(config.include_repos, org=config.org)
-        exclude_repos = self._canonical_repo_filters(config.exclude_repos, org=config.org)
-        lines = [
-            f"# Organization Summary: {target_org} {period.key}",
-            "",
-            f"- Target org: {target_org}",
-            f"- Period grain: {period_grain}",
-            f"- Period key: {period.key}",
-            f"- Include repos: {self._repo_filters_text(include_repos, empty='all')}",
-            f"- Exclude repos: {self._repo_filters_text(exclude_repos, empty='none')}",
-            f"- Period start: {period.start_date.isoformat()}",
-            f"- Period end: {period.end_date.isoformat()}",
-            f"- Closed: {self._bool_text(period.closed)}",
-            "",
-            "## Totals",
-            "",
-            f"- Repository count: {summary.repository_count}",
-            f"- Pull request count: {summary.pull_request_count}",
-            f"- Merged pull request count: {summary.merged_pull_request_count}",
-            f"- Active author count: {summary.active_author_count}",
+        return "\n".join(
             (
-                "- Merged pull requests per active author: "
-                f"{self._float_text(summary.merged_pull_requests_per_active_author)}"
-            ),
-            "",
-            "## Value Summaries",
-            "",
-            "| Metric | Count | Total | Average | Median |",
-            "| --- | ---: | ---: | ---: | ---: |",
-            self._summary_row("Time to merge (seconds)", summary.time_to_merge_seconds),
-            self._summary_row(
-                "Time to first review (seconds)",
-                summary.time_to_first_review_seconds,
-            ),
-            self._summary_row("Additions", summary.additions),
-            self._summary_row("Deletions", summary.deletions),
-            self._summary_row("Changed lines", summary.changed_lines),
-            self._summary_row("Changed files", summary.changed_files),
-            self._summary_row("Commits", summary.commits),
-            "",
-        ]
-        return "\n".join(lines)
-
-    def _summary_row(
-        self,
-        label: str,
-        summary: MetricValueSummary,
-    ) -> str:
-        return (
-            f"| {label} | {summary.count} | {summary.total} | "
-            f"{self._float_text(summary.average)} | {self._float_text(summary.median)} |"
+                f"# Organization Summary: {target_org} {period.key}",
+                "",
+                f"- Target org: {target_org}",
+                f"- Period grain: {config.period.value}",
+                f"- Period key: {period.key}",
+                f"- Include repos: {_repo_filters_text(include_repos, empty='all')}",
+                f"- Exclude repos: {_repo_filters_text(exclude_repos, empty='none')}",
+                f"- Period start: {period.start_date.isoformat()}",
+                f"- Period end: {period.end_date.isoformat()}",
+                f"- Closed: {_bool_text(period.closed)}",
+                "",
+                "## Totals",
+                "",
+                f"- Repository count: {summary.repository_count}",
+                f"- Pull request count: {summary.pull_request_count}",
+                f"- Merged pull request count: {summary.merged_pull_request_count}",
+                f"- Active author count: {summary.active_author_count}",
+                (
+                    "- Merged pull requests per active author: "
+                    f"{_float_text(summary.merged_pull_requests_per_active_author)}"
+                ),
+                "",
+                "## Value Summaries",
+                "",
+                "| Metric | Count | Total | Average | Median |",
+                "| --- | ---: | ---: | ---: | ---: |",
+                _summary_row("Time to merge (seconds)", summary.time_to_merge_seconds),
+                _summary_row(
+                    "Time to first review (seconds)",
+                    summary.time_to_first_review_seconds,
+                ),
+                _summary_row("Additions", summary.additions),
+                _summary_row("Deletions", summary.deletions),
+                _summary_row("Changed lines", summary.changed_lines),
+                _summary_row("Changed files", summary.changed_files),
+                _summary_row("Commits", summary.commits),
+                "",
+            )
         )
-
-    def _float_text(
-        self,
-        value: float | None,
-    ) -> str:
-        if value is None:
-            return "n/a"
-        return f"{value:.2f}"
-
-    def _bool_text(
-        self,
-        value: bool,
-    ) -> str:
-        return "true" if value else "false"
-
-    def _repo_filters_text(
-        self,
-        repo_filters: tuple[str, ...],
-        *,
-        empty: str,
-    ) -> str:
-        if not repo_filters:
-            return empty
-        return ", ".join(repo_filters)
-
-    def _write_json_file(
-        self,
-        path: Path,
-        payload: dict[str, object],
-    ) -> None:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        with path.open("w", encoding="utf-8", newline="\n") as handle:
-            json.dump(payload, handle, indent=2, sort_keys=True)
-            handle.write("\n")
-
-    def _write_markdown_file(
-        self,
-        path: Path,
-        document: str,
-    ) -> None:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(document, encoding="utf-8", newline="\n")
-
-    def _prune_stale_period_directories(
-        self,
-        *,
-        config: RunConfig,
-        root_dir: Path,
-        org_metrics: OrganizationMetricCollection,
-    ) -> None:
-        if config.mode is not RunMode.FULL or not root_dir.exists():
-            return
-        active_period_keys = {period.key for period in org_metrics.periods}
-        for child in root_dir.iterdir():
-            if not child.is_dir() or child.name in active_period_keys:
-                continue
-            shutil.rmtree(child)
-
-    def _prune_period_directories_for_contract_change(
-        self,
-        *,
-        contract: dict[str, object],
-        contract_path: Path,
-        root_dir: Path,
-    ) -> None:
-        existing_contract = self._load_contract(contract_path)
-        if existing_contract is None or existing_contract == contract:
-            return
-        for child in root_dir.iterdir():
-            if not child.is_dir():
-                continue
-            shutil.rmtree(child)
-
-    def _load_contract(
-        self,
-        contract_path: Path,
-    ) -> dict[str, object] | None:
-        if not contract_path.exists():
-            return None
-        try:
-            payload = json.loads(contract_path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            return None
-        if not isinstance(payload, dict):
-            return None
-        return payload
 
     def _contract_payload(
         self,
         config: RunConfig,
     ) -> dict[str, object]:
         return {
-            "target_org": config.org.lower(),
+            "target_org": config.org,
             "period_grain": config.period.value,
             "include_repos": list(
-                self._canonical_repo_filters(config.include_repos, org=config.org)
+                _canonical_repo_filters(config.include_repos, org=config.org)
             ),
             "exclude_repos": list(
-                self._canonical_repo_filters(config.exclude_repos, org=config.org)
+                _canonical_repo_filters(config.exclude_repos, org=config.org)
             ),
         }
 
-    def _org_summary_root_dir(self, output_dir: Path, period_grain: str) -> Path:
+    def _root_dir(self, output_dir: Path, period_grain: str) -> Path:
         return output_dir / ORG_SUMMARY_DIRNAME / period_grain
-
-    def _canonical_repo_filters(
-        self,
-        repo_filters: tuple[str, ...],
-        *,
-        org: str,
-    ) -> tuple[str, ...]:
-        return tuple(
-            sorted(
-                canonicalize_repo_filter(
-                    repo_filter,
-                    org=org,
-                )
-                for repo_filter in repo_filters
-            )
-        )
 
 
 class RunManifestWriter:
@@ -484,10 +514,10 @@ class RunManifestWriter:
         return (
             manifest.target_org.lower() == config.org.lower()
             and manifest.period_grain == config.period
-            and self._canonical_repo_filters(manifest.include_repos, org=config.org)
-            == self._canonical_repo_filters(config.include_repos, org=config.org)
-            and self._canonical_repo_filters(manifest.exclude_repos, org=config.org)
-            == self._canonical_repo_filters(config.exclude_repos, org=config.org)
+            and _canonical_repo_filters(manifest.include_repos, org=config.org)
+            == _canonical_repo_filters(config.include_repos, org=config.org)
+            and _canonical_repo_filters(manifest.exclude_repos, org=config.org)
+            == _canonical_repo_filters(config.exclude_repos, org=config.org)
             and manifest.raw_snapshot_root_dir == raw_snapshot_root_dir
         )
 
@@ -550,32 +580,124 @@ class RunManifestWriter:
             return False
         return header == expected_header
 
-    def _canonical_repo_filters(
-        self,
-        repo_filters: tuple[str, ...],
-        *,
-        org: str,
-    ) -> tuple[str, ...]:
-        return tuple(
-            sorted(
-                canonicalize_repo_filter(
-                    repo_filter,
-                    org=org,
-                )
-                for repo_filter in repo_filters
-            )
-        )
-
     def _write_manifest_file(self, path: Path, manifest: RunManifest) -> None:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        with path.open("w", encoding="utf-8", newline="\n") as handle:
-            json.dump(
-                manifest.model_dump(mode="json"),
-                handle,
-                indent=2,
-                sort_keys=True,
-            )
-            handle.write("\n")
+        _write_json_file(path, manifest.model_dump(mode="json"))
 
     def _current_time(self) -> datetime:
         return datetime.now(UTC).replace(microsecond=0)
+
+
+def _write_csv_file(
+    *,
+    path: Path,
+    fieldnames: tuple[str, ...],
+    rows: list[dict[str, object]],
+) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fieldnames, lineterminator="\n")
+        writer.writeheader()
+        writer.writerows(rows)
+
+
+def _write_json_file(
+    path: Path,
+    payload: dict[str, object],
+) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8", newline="\n") as handle:
+        json.dump(payload, handle, indent=2, sort_keys=True)
+        handle.write("\n")
+
+
+def _write_text_file(
+    path: Path,
+    document: str,
+) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(document, encoding="utf-8", newline="\n")
+
+
+def _prune_stale_period_directories(
+    *,
+    config: RunConfig,
+    root_dir: Path,
+    active_period_keys: tuple[str, ...],
+) -> None:
+    if config.mode is not RunMode.FULL or not root_dir.exists():
+        return
+    active_period_key_set = set(active_period_keys)
+    for child in root_dir.iterdir():
+        if not child.is_dir() or child.name in active_period_key_set:
+            continue
+        shutil.rmtree(child)
+
+
+def _prune_period_directories_for_contract_change(
+    *,
+    root_dir: Path,
+    contract_path: Path,
+    contract: dict[str, object],
+) -> None:
+    if _load_json_payload(contract_path) == contract:
+        return
+    if not root_dir.exists():
+        return
+    for child in root_dir.iterdir():
+        if child == contract_path or child.name == ORG_SUMMARY_CONTRACT_FILENAME:
+            continue
+        if child.is_dir():
+            shutil.rmtree(child)
+
+
+def _load_json_payload(path: Path) -> dict[str, object] | None:
+    if not path.exists():
+        return None
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+
+
+def _summary_row(
+    label: str,
+    summary: MetricValueSummary,
+) -> str:
+    return (
+        f"| {label} | {summary.count} | {summary.total} | "
+        f"{_float_text(summary.average)} | {_float_text(summary.median)} |"
+    )
+
+
+def _float_text(
+    value: float | None,
+) -> str:
+    if value is None:
+        return "n/a"
+    return f"{value:.2f}"
+
+
+def _bool_text(
+    value: bool,
+) -> str:
+    return "true" if value else "false"
+
+
+def _repo_filters_text(
+    repo_filters: tuple[str, ...],
+    *,
+    empty: str,
+) -> str:
+    if not repo_filters:
+        return empty
+    return ", ".join(repo_filters)
+
+
+def _canonical_repo_filters(
+    repo_filters: tuple[str, ...],
+    *,
+    org: str,
+) -> tuple[str, ...]:
+    return tuple(
+        sorted(canonicalize_repo_filter(repo_filter, org=org) for repo_filter in repo_filters)
+    )

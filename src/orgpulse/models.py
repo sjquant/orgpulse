@@ -328,6 +328,27 @@ class OrganizationMetricCollection(BaseModel):
     periods: tuple[OrganizationMetricPeriod, ...]
 
 
+class OrgSummaryPeriodWriteResult(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    key: str
+    start_date: date
+    end_date: date
+    closed: bool
+    directory: Path
+    markdown_path: Path
+    json_path: Path
+
+
+class OrgSummaryWriteResult(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    target_org: str
+    root_dir: Path
+    contract_path: Path
+    periods: tuple[OrgSummaryPeriodWriteResult, ...]
+
+
 class MetricValidationIssue(BaseModel):
     model_config = ConfigDict(frozen=True)
 

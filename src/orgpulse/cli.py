@@ -29,6 +29,7 @@ from orgpulse.models import (
     ManifestWriteResult,
     MetricValidationCollection,
     OrganizationMetricCollection,
+    OrgSummaryWriteResult,
     PeriodGrain,
     PullRequestCollection,
     RawSnapshotPeriod,
@@ -39,7 +40,11 @@ from orgpulse.models import (
     RunManifest,
     RunMode,
 )
-from orgpulse.output import RepositorySummaryCsvWriter, RunManifestWriter
+from orgpulse.output import (
+    OrgSummaryWriter,
+    RepositorySummaryCsvWriter,
+    RunManifestWriter,
+)
 
 app = typer.Typer(
     add_completion=False,
@@ -165,6 +170,14 @@ def run_command(
             raw_snapshot=raw_snapshot,
             raw_snapshot_skipped_reason=raw_snapshot_skipped_reason,
         )
+        org_summary, org_summary_skipped_reason = _write_org_summary(
+            config,
+            org_metrics=org_metrics,
+            org_metrics_skipped_reason=org_metrics_skipped_reason,
+            refreshed_period_keys=()
+            if raw_snapshot is None
+            else tuple(period.key for period in raw_snapshot.periods),
+        )
     except AuthResolutionError as exc:
         typer.echo(f"orgpulse: GitHub authentication failed\n{exc}", err=True)
         raise typer.Exit(code=1) from exc
@@ -212,6 +225,10 @@ def run_command(
                 if org_metrics is None
                 else org_metrics.model_dump(mode="json"),
                 "org_metrics_skipped_reason": org_metrics_skipped_reason,
+                "org_summary": None
+                if org_summary is None
+                else org_summary.model_dump(mode="json"),
+                "org_summary_skipped_reason": org_summary_skipped_reason,
                 "metric_validation": None
                 if metric_validation is None
                 else metric_validation.model_dump(mode="json"),
@@ -333,6 +350,25 @@ def _build_metric_outputs(
         org_metrics=org_metrics,
     )
     return repo_summary, None, org_metrics, None, metric_validation, None
+
+
+def _write_org_summary(
+    config: RunConfig,
+    *,
+    org_metrics: OrganizationMetricCollection | None,
+    org_metrics_skipped_reason: str | None,
+    refreshed_period_keys: tuple[str, ...],
+) -> tuple[OrgSummaryWriteResult | None, str | None]:
+    if org_metrics is None:
+        return None, org_metrics_skipped_reason
+    return (
+        OrgSummaryWriter().write(
+            config,
+            org_metrics,
+            refreshed_period_keys=refreshed_period_keys,
+        ),
+        None,
+    )
 
 
 def _build_metric_snapshot(

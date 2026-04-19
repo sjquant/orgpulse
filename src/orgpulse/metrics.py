@@ -21,6 +21,9 @@ from orgpulse.models import (
     PullRequestTimelineEventRecord,
     RawSnapshotPeriod,
     RawSnapshotWriteResult,
+    RepositoryMetricCollection,
+    RepositoryMetricPeriod,
+    RepositoryMetricRollup,
     RepositoryMetricValidationSummary,
     RunConfig,
 )
@@ -415,6 +418,138 @@ class PullRequestMetricCollectionBuilder:
         if not normalized:
             return None
         return normalized
+
+
+class RepositoryMetricCollectionBuilder:
+    """Build repo-level rollups from periodized pull request metric facts."""
+
+    def build(
+        self,
+        config: RunConfig,
+        pull_request_metrics: PullRequestMetricCollection,
+    ) -> RepositoryMetricCollection:
+        return RepositoryMetricCollection(
+            target_org=config.org,
+            periods=tuple(
+                self._build_metric_period(metric_period)
+                for metric_period in pull_request_metrics.periods
+            ),
+        )
+
+    def _build_metric_period(
+        self,
+        metric_period: PullRequestMetricPeriod,
+    ) -> RepositoryMetricPeriod:
+        return RepositoryMetricPeriod(
+            key=metric_period.key,
+            start_date=metric_period.start_date,
+            end_date=metric_period.end_date,
+            closed=metric_period.closed,
+            repositories=self._build_rollups(metric_period.pull_request_metrics),
+        )
+
+    def _build_rollups(
+        self,
+        pull_request_metrics: tuple[PullRequestMetricRecord, ...],
+    ) -> tuple[RepositoryMetricRollup, ...]:
+        metrics_by_repository: dict[str, list[PullRequestMetricRecord]] = {}
+        for metric in pull_request_metrics:
+            metrics_by_repository.setdefault(metric.repository_full_name, []).append(metric)
+        return tuple(
+            self._build_rollup(repository_full_name, tuple(repository_metrics))
+            for repository_full_name, repository_metrics in sorted(
+                metrics_by_repository.items()
+            )
+        )
+
+    def _build_rollup(
+        self,
+        repository_full_name: str,
+        repository_metrics: tuple[PullRequestMetricRecord, ...],
+    ) -> RepositoryMetricRollup:
+        merged_pull_requests = tuple(
+            metric for metric in repository_metrics if metric.merged
+        )
+        active_author_count = self._active_author_count(repository_metrics)
+        merged_pull_request_count = len(merged_pull_requests)
+        return RepositoryMetricRollup(
+            repository_full_name=repository_full_name,
+            pull_request_count=len(repository_metrics),
+            merged_pull_request_count=merged_pull_request_count,
+            active_author_count=active_author_count,
+            merged_pull_requests_per_active_author=self._per_active_author(
+                merged_pull_request_count,
+                active_author_count,
+            ),
+            time_to_merge_seconds=self._build_summary(
+                tuple(
+                    metric.time_to_merge_seconds
+                    for metric in merged_pull_requests
+                    if metric.time_to_merge_seconds is not None
+                )
+            ),
+            time_to_first_review_seconds=self._build_summary(
+                tuple(
+                    metric.time_to_first_review_seconds
+                    for metric in repository_metrics
+                    if metric.time_to_first_review_seconds is not None
+                )
+            ),
+            additions=self._build_summary(
+                tuple(metric.additions for metric in repository_metrics)
+            ),
+            deletions=self._build_summary(
+                tuple(metric.deletions for metric in repository_metrics)
+            ),
+            changed_lines=self._build_summary(
+                tuple(metric.changed_lines for metric in repository_metrics)
+            ),
+            changed_files=self._build_summary(
+                tuple(metric.changed_files for metric in repository_metrics)
+            ),
+            commits=self._build_summary(
+                tuple(metric.commits for metric in repository_metrics)
+            ),
+        )
+
+    def _active_author_count(
+        self,
+        repository_metrics: tuple[PullRequestMetricRecord, ...],
+    ) -> int:
+        return len(
+            {
+                metric.author_login.lower()
+                for metric in repository_metrics
+                if metric.author_login is not None
+            }
+        )
+
+    def _per_active_author(
+        self,
+        merged_pull_request_count: int,
+        active_author_count: int,
+    ) -> float | None:
+        if active_author_count == 0:
+            return None
+        return merged_pull_request_count / active_author_count
+
+    def _build_summary(
+        self,
+        values: tuple[int, ...],
+    ) -> MetricValueSummary:
+        if not values:
+            return MetricValueSummary(
+                count=0,
+                total=0,
+                average=None,
+                median=None,
+            )
+        return MetricValueSummary(
+            count=len(values),
+            total=sum(values),
+            average=float(fmean(values)),
+            median=float(median(values)),
+        )
 
 
 class OrganizationMetricCollectionBuilder:

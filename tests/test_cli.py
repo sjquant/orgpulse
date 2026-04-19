@@ -12,6 +12,10 @@ from orgpulse.cli import app, build_run_config
 from orgpulse.errors import AuthResolutionError, GitHubApiError
 from orgpulse.github_auth import GitHubAuthService
 from orgpulse.ingestion import NormalizedRawSnapshotWriter
+from orgpulse.metrics import (
+    PullRequestMetricCollectionBuilder,
+    RepositoryMetricCollectionBuilder,
+)
 from orgpulse.models import (
     AuthSource,
     CollectionWindow,
@@ -25,12 +29,13 @@ from orgpulse.models import (
     RawSnapshotWriteResult,
     RepositoryCollectionFailure,
     RepositoryInventory,
+    RepositorySummaryCsvWriteResult,
     ResolvedToken,
     RunManifest,
     RunMode,
     RunScope,
 )
-from orgpulse.output import RunManifestWriter
+from orgpulse.output import RepositorySummaryCsvWriter, RunManifestWriter
 
 
 @pytest.fixture(scope="module")
@@ -74,6 +79,10 @@ def github_auth_service(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         "orgpulse.cli.RunManifestWriter",
         lambda: FakeCliManifestWriter(),
+    )
+    monkeypatch.setattr(
+        "orgpulse.cli.RepositorySummaryCsvWriter",
+        lambda: FakeCliRepositorySummaryWriter(),
     )
 
 
@@ -162,6 +171,20 @@ class FakeCliManifestWriter:
         )
 
 
+class FakeCliRepositorySummaryWriter:
+    def write(
+        self,
+        config,
+        repository_metrics,
+        *,
+        refreshed_period_keys,
+    ) -> RepositorySummaryCsvWriteResult:
+        return RepositorySummaryCsvWriteResult(
+            root_dir=config.output_dir / "repo_summary" / config.period.value,
+            periods=(),
+        )
+
+
 class UnexpectedSnapshotWriter:
     def write(
         self,
@@ -181,6 +204,17 @@ class UnexpectedManifestWriter:
         repository_count: int,
     ) -> None:
         raise AssertionError("manifest writer should not run")
+
+
+class UnexpectedRepositorySummaryWriter:
+    def write(
+        self,
+        config,
+        repository_metrics,
+        *,
+        refreshed_period_keys,
+    ) -> None:
+        raise AssertionError("repo summary writer should not run")
 
 
 class TestRunConfigParsing:
@@ -679,6 +713,10 @@ class TestRunCommandRuntime:
                 now=lambda: datetime.fromisoformat("2026-04-18T00:00:00+00:00")
             ),
         )
+        monkeypatch.setattr(
+            "orgpulse.cli.RepositorySummaryCsvWriter",
+            lambda: RepositorySummaryCsvWriter(),
+        )
 
         # When
         result = runner.invoke(
@@ -708,6 +746,9 @@ class TestRunCommandRuntime:
             "2026-04-18"
         )
         assert payload["manifest_skipped_reason"] is None
+        assert payload["repo_summary"]["periods"][0]["key"] == "2026-04"
+        assert payload["repo_summary"]["periods"][0]["repository_count"] == 1
+        assert payload["repo_summary_skipped_reason"] is None
         assert payload["org_metrics"]["target_org"] == "acme"
         assert payload["org_metrics"]["periods"][0]["key"] == "2026-04"
         assert (
@@ -725,9 +766,14 @@ class TestRunCommandRuntime:
             tmp_path / "raw" / "month" / "2026-04" / "pull_requests.csv"
         )
         manifest_path = tmp_path / "manifest" / "month" / "manifest.json"
+        repo_summary_path = (
+            tmp_path / "repo_summary" / "month" / "2026-04" / "repo_summary.csv"
+        )
         assert pull_requests_path.exists()
         assert manifest_path.exists()
+        assert repo_summary_path.exists()
         assert "acme/api" in pull_requests_path.read_text(encoding="utf-8")
+        assert "acme/api" in repo_summary_path.read_text(encoding="utf-8")
         assert json.loads(manifest_path.read_text(encoding="utf-8"))["target_org"] == (
             "acme"
         )
@@ -793,6 +839,10 @@ class TestRunCommandRuntime:
             "orgpulse.cli.RunManifestWriter",
             lambda: RunManifestWriter(now=lambda: next(completed_at_values)),
         )
+        monkeypatch.setattr(
+            "orgpulse.cli.RepositorySummaryCsvWriter",
+            lambda: RepositorySummaryCsvWriter(),
+        )
 
         # When
         first_result = runner.invoke(
@@ -811,7 +861,11 @@ class TestRunCommandRuntime:
             tmp_path / "raw" / "month" / "2026-04" / "pull_requests.csv"
         )
         manifest_path = tmp_path / "manifest" / "month" / "manifest.json"
+        repo_summary_path = (
+            tmp_path / "repo_summary" / "month" / "2026-04" / "repo_summary.csv"
+        )
         first_pull_requests_csv = pull_requests_path.read_text(encoding="utf-8")
+        first_repo_summary_csv = repo_summary_path.read_text(encoding="utf-8")
         first_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
         second_result = runner.invoke(
             app,
@@ -830,6 +884,7 @@ class TestRunCommandRuntime:
         assert first_result.exit_code == 0
         assert second_result.exit_code == 0
         assert pull_requests_path.read_text(encoding="utf-8") == first_pull_requests_csv
+        assert repo_summary_path.read_text(encoding="utf-8") == first_repo_summary_csv
         second_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
         assert first_manifest["refreshed_periods"] == second_manifest["refreshed_periods"]
         assert first_manifest["locked_periods"] == second_manifest["locked_periods"]
@@ -891,6 +946,21 @@ class TestRunCommandRuntime:
             previous_snapshot,
             repository_count=1,
         )
+        RepositorySummaryCsvWriter().write(
+            previous_config,
+            RepositoryMetricCollectionBuilder().build(
+                previous_config,
+                PullRequestMetricCollectionBuilder().build(
+                    previous_config,
+                    previous_snapshot,
+                ),
+            ),
+            refreshed_period_keys=tuple(period.key for period in previous_snapshot.periods),
+        )
+        march_repo_summary = (
+            tmp_path / "repo_summary" / "month" / "2026-03" / "repo_summary.csv"
+        )
+        march_repo_summary_csv = march_repo_summary.read_text(encoding="utf-8")
         current_pull_request = PullRequestRecord(
             repository_full_name="acme/web",
             number=21,
@@ -939,6 +1009,10 @@ class TestRunCommandRuntime:
                 now=lambda: datetime.fromisoformat("2026-04-18T00:00:00+00:00")
             ),
         )
+        monkeypatch.setattr(
+            "orgpulse.cli.RepositorySummaryCsvWriter",
+            lambda: RepositorySummaryCsvWriter(),
+        )
 
         # When
         result = runner.invoke(
@@ -957,6 +1031,8 @@ class TestRunCommandRuntime:
         # Then
         assert result.exit_code == 0
         payload = json.loads(result.stdout)
+        assert [period["key"] for period in payload["repo_summary"]["periods"]] == ["2026-04"]
+        assert [period["repository_count"] for period in payload["repo_summary"]["periods"]] == [1]
         assert [period["key"] for period in payload["org_metrics"]["periods"]] == [
             "2026-03",
             "2026-04",
@@ -980,6 +1056,11 @@ class TestRunCommandRuntime:
             1,
         ]
         assert all(period["valid"] for period in payload["metric_validation"]["periods"])
+        april_repo_summary = (
+            tmp_path / "repo_summary" / "month" / "2026-04" / "repo_summary.csv"
+        )
+        assert march_repo_summary.read_text(encoding="utf-8") == march_repo_summary_csv
+        assert "acme/web" in april_repo_summary.read_text(encoding="utf-8")
 
     def test_reports_metric_validation_failures_without_skipping_outputs(
         self,
@@ -1038,6 +1119,10 @@ class TestRunCommandRuntime:
                 now=lambda: datetime.fromisoformat("2026-04-18T00:00:00+00:00")
             ),
         )
+        monkeypatch.setattr(
+            "orgpulse.cli.RepositorySummaryCsvWriter",
+            lambda: RepositorySummaryCsvWriter(),
+        )
 
         # When
         result = runner.invoke(
@@ -1056,6 +1141,8 @@ class TestRunCommandRuntime:
         # Then
         assert result.exit_code == 0
         payload = json.loads(result.stdout)
+        assert payload["repo_summary"]["periods"][0]["repository_count"] == 1
+        assert payload["repo_summary_skipped_reason"] is None
         assert payload["org_metrics"]["periods"][0]["summary"]["merged_pull_request_count"] == 1
         assert payload["metric_validation_skipped_reason"] is None
         assert payload["metric_validation"]["periods"][0]["valid"] is False
@@ -1133,6 +1220,10 @@ class TestRunCommandRuntime:
                 now=lambda: datetime.fromisoformat("2026-04-18T00:00:00+00:00")
             ),
         )
+        monkeypatch.setattr(
+            "orgpulse.cli.RepositorySummaryCsvWriter",
+            lambda: RepositorySummaryCsvWriter(),
+        )
 
         # When
         result = runner.invoke(
@@ -1159,6 +1250,9 @@ class TestRunCommandRuntime:
         ]
         assert payload["manifest"]["locked_periods"] == []
         assert payload["manifest"]["watermarks"]["latest_locked_period_end_date"] is None
+        assert [period["key"] for period in payload["repo_summary"]["periods"]] == [
+            "2026-04"
+        ]
         assert json.loads(stale_manifest_path.read_text(encoding="utf-8"))[
             "target_org"
         ] == "acme"
@@ -1204,6 +1298,10 @@ class TestRunCommandRuntime:
             "orgpulse.cli.RunManifestWriter",
             lambda: UnexpectedManifestWriter(),
         )
+        monkeypatch.setattr(
+            "orgpulse.cli.RepositorySummaryCsvWriter",
+            lambda: UnexpectedRepositorySummaryWriter(),
+        )
         existing_manifest = tmp_path / "manifest" / "month" / "manifest.json"
         existing_manifest.parent.mkdir(parents=True)
         existing_manifest.write_text(
@@ -1235,6 +1333,8 @@ class TestRunCommandRuntime:
         )
         assert payload["manifest"] is None
         assert payload["manifest_skipped_reason"] == "repository_collection_failures"
+        assert payload["repo_summary"] is None
+        assert payload["repo_summary_skipped_reason"] == "repository_collection_failures"
         assert payload["org_metrics"] is None
         assert payload["org_metrics_skipped_reason"] == "repository_collection_failures"
         assert existing_snapshot.read_text(encoding="utf-8") == "existing snapshot\n"

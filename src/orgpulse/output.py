@@ -203,8 +203,15 @@ class OrgSummaryWriter:
         self,
         config: RunConfig,
         org_metrics: OrganizationMetricCollection,
+        *,
+        refreshed_period_keys: tuple[str, ...],
     ) -> OrgSummaryWriteResult:
         root_dir = self._root_dir(config.output_dir, config.period.value)
+        refreshed_periods = tuple(
+            period
+            for period in org_metrics.periods
+            if period.key in set(refreshed_period_keys)
+        )
         contract_path = root_dir / ORG_SUMMARY_CONTRACT_FILENAME
         contract = self._contract_payload(config)
         _prune_period_directories_for_contract_change(
@@ -215,7 +222,7 @@ class OrgSummaryWriter:
         _prune_stale_period_directories(
             config=config,
             root_dir=root_dir,
-            active_period_keys=tuple(period.key for period in org_metrics.periods),
+            active_period_keys=tuple(period.key for period in refreshed_periods),
         )
         _write_json_file(contract_path, contract)
         return OrgSummaryWriteResult(
@@ -229,7 +236,7 @@ class OrgSummaryWriter:
                     period=period,
                     target_org=org_metrics.target_org,
                 )
-                for period in org_metrics.periods
+                for period in refreshed_periods
             ),
         )
 

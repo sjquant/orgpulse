@@ -68,7 +68,11 @@ class TestOrgSummaryWriter:
         )
 
         # When
-        result = OrgSummaryWriter().write(config, org_metrics)
+        result = OrgSummaryWriter().write(
+            config,
+            org_metrics,
+            refreshed_period_keys=("2026-04",),
+        )
 
         # Then
         assert result.root_dir == tmp_path / "org_summary" / "month"
@@ -209,7 +213,11 @@ class TestOrgSummaryWriter:
         )
 
         # When
-        result = OrgSummaryWriter().write(config, org_metrics)
+        result = OrgSummaryWriter().write(
+            config,
+            org_metrics,
+            refreshed_period_keys=("2026-04",),
+        )
 
         # Then
         assert stale_period_dir.exists() is False
@@ -262,10 +270,18 @@ class TestOrgSummaryWriter:
             ),
         )
         writer = OrgSummaryWriter()
-        writer.write(initial_config, initial_metrics)
+        writer.write(
+            initial_config,
+            initial_metrics,
+            refreshed_period_keys=("2026-03",),
+        )
 
         # When
-        result = writer.write(current_config, current_metrics)
+        result = writer.write(
+            current_config,
+            current_metrics,
+            refreshed_period_keys=("2026-04",),
+        )
 
         # Then
         assert (tmp_path / "org_summary" / "month" / "2026-03").exists() is False
@@ -282,6 +298,81 @@ class TestOrgSummaryWriter:
         assert "Include repos: acme/api" in result.periods[0].markdown_path.read_text(
             encoding="utf-8"
         )
+
+    def test_writes_only_refreshed_periods_and_preserves_locked_exports(
+        self,
+        tmp_path,
+    ) -> None:
+        """Write only refreshed org-summary periods during incremental runs and leave locked exports untouched."""
+        # Given
+        previous_config = RunConfig.model_validate(
+            {
+                "org": "acme",
+                "as_of": "2026-03-18",
+                "output_dir": tmp_path,
+            }
+        )
+        current_config = RunConfig.model_validate(
+            {
+                "org": "acme",
+                "as_of": "2026-04-18",
+                "output_dir": tmp_path,
+            }
+        )
+        previous_metrics = OrganizationMetricCollection(
+            target_org="acme",
+            periods=(
+                OrganizationMetricPeriod(
+                    key="2026-03",
+                    start_date=date.fromisoformat("2026-03-01"),
+                    end_date=date.fromisoformat("2026-03-31"),
+                    closed=False,
+                    summary=self._build_rollup(),
+                ),
+            ),
+        )
+        current_metrics = OrganizationMetricCollection(
+            target_org="acme",
+            periods=(
+                OrganizationMetricPeriod(
+                    key="2026-03",
+                    start_date=date.fromisoformat("2026-03-01"),
+                    end_date=date.fromisoformat("2026-03-31"),
+                    closed=True,
+                    summary=self._build_rollup(),
+                ),
+                OrganizationMetricPeriod(
+                    key="2026-04",
+                    start_date=date.fromisoformat("2026-04-01"),
+                    end_date=date.fromisoformat("2026-04-30"),
+                    closed=False,
+                    summary=self._build_rollup(),
+                ),
+            ),
+        )
+        writer = OrgSummaryWriter()
+        writer.write(
+            previous_config,
+            previous_metrics,
+            refreshed_period_keys=("2026-03",),
+        )
+        locked_summary_path = (
+            tmp_path / "org_summary" / "month" / "2026-03" / "summary.json"
+        )
+        locked_summary_payload = locked_summary_path.read_text(encoding="utf-8")
+
+        # When
+        result = writer.write(
+            current_config,
+            current_metrics,
+            refreshed_period_keys=("2026-04",),
+        )
+
+        # Then
+        assert [period.key for period in result.periods] == ["2026-04"]
+        assert locked_summary_path.read_text(encoding="utf-8") == locked_summary_payload
+        assert result.periods[0].json_path.exists()
+        assert result.periods[0].markdown_path.exists()
 
     def _build_rollup(self) -> OrganizationMetricRollup:
         """Build a representative org rollup payload for summary writer tests."""

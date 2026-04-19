@@ -13,6 +13,7 @@ from orgpulse.errors import AuthResolutionError, GitHubApiError
 from orgpulse.github_auth import GitHubAuthService
 from orgpulse.ingestion import PULL_REQUEST_FIELDNAMES, NormalizedRawSnapshotWriter
 from orgpulse.metrics import (
+    OrganizationMetricCollectionBuilder,
     PullRequestMetricCollectionBuilder,
     RepositoryMetricCollectionBuilder,
 )
@@ -188,6 +189,8 @@ class FakeCliOrgSummaryWriter:
         self,
         config,
         org_metrics,
+        *,
+        refreshed_period_keys,
     ) -> OrgSummaryWriteResult:
         return OrgSummaryWriteResult(
             target_org=org_metrics.target_org,
@@ -262,6 +265,8 @@ class UnexpectedOrgSummaryWriter:
         self,
         config,
         org_metrics,
+        *,
+        refreshed_period_keys,
     ) -> None:
         raise AssertionError("org summary writer should not run")
 
@@ -1101,10 +1106,25 @@ class TestRunCommandRuntime:
             ),
             refreshed_period_keys=tuple(period.key for period in previous_snapshot.periods),
         )
+        OrgSummaryWriter().write(
+            previous_config,
+            OrganizationMetricCollectionBuilder().build(
+                previous_config,
+                PullRequestMetricCollectionBuilder().build(
+                    previous_config,
+                    previous_snapshot,
+                ),
+            ),
+            refreshed_period_keys=tuple(period.key for period in previous_snapshot.periods),
+        )
         march_repo_summary = (
             tmp_path / "repo_summary" / "month" / "2026-03" / "repo_summary.csv"
         )
         march_repo_summary_csv = march_repo_summary.read_text(encoding="utf-8")
+        march_org_summary = (
+            tmp_path / "org_summary" / "month" / "2026-03" / "summary.json"
+        )
+        march_org_summary_json = march_org_summary.read_text(encoding="utf-8")
         current_pull_request = PullRequestRecord(
             repository_full_name="acme/web",
             number=21,
@@ -1192,10 +1212,7 @@ class TestRunCommandRuntime:
         assert summaries["2026-03"]["merged_pull_request_count"] == 1
         assert summaries["2026-04"]["repository_count"] == 1
         assert summaries["2026-04"]["merged_pull_request_count"] == 1
-        assert [period["key"] for period in payload["org_summary"]["periods"]] == [
-            "2026-03",
-            "2026-04",
-        ]
+        assert [period["key"] for period in payload["org_summary"]["periods"]] == ["2026-04"]
         assert [period["key"] for period in payload["manifest"]["locked_periods"]] == [
             "2026-03"
         ]
@@ -1208,11 +1225,7 @@ class TestRunCommandRuntime:
             1,
         ]
         assert all(period["valid"] for period in payload["metric_validation"]["periods"])
-        assert json.loads(
-            (
-                tmp_path / "org_summary" / "month" / "2026-03" / "summary.json"
-            ).read_text(encoding="utf-8")
-        )["summary"]["merged_pull_request_count"] == 1
+        assert march_org_summary.read_text(encoding="utf-8") == march_org_summary_json
         april_repo_summary = (
             tmp_path / "repo_summary" / "month" / "2026-04" / "repo_summary.csv"
         )

@@ -174,6 +174,9 @@ def run_command(
             config,
             org_metrics=org_metrics,
             org_metrics_skipped_reason=org_metrics_skipped_reason,
+            refreshed_period_keys=()
+            if raw_snapshot is None
+            else tuple(period.key for period in raw_snapshot.periods),
         )
     except AuthResolutionError as exc:
         typer.echo(f"orgpulse: GitHub authentication failed\n{exc}", err=True)
@@ -354,10 +357,18 @@ def _write_org_summary(
     *,
     org_metrics: OrganizationMetricCollection | None,
     org_metrics_skipped_reason: str | None,
+    refreshed_period_keys: tuple[str, ...],
 ) -> tuple[OrgSummaryWriteResult | None, str | None]:
     if org_metrics is None:
         return None, org_metrics_skipped_reason
-    return OrgSummaryWriter().write(config, org_metrics), None
+    return (
+        OrgSummaryWriter().write(
+            config,
+            org_metrics,
+            refreshed_period_keys=refreshed_period_keys,
+        ),
+        None,
+    )
 
 
 def _build_metric_snapshot(

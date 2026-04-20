@@ -6,6 +6,7 @@ import shutil
 from collections.abc import Callable, Sequence
 from datetime import UTC, date, datetime
 from pathlib import Path
+from typing import cast
 
 from orgpulse.ingestion import (
     PULL_REQUEST_FIELDNAMES,
@@ -39,8 +40,12 @@ from orgpulse.models import (
 MANIFEST_FILENAME = "manifest.json"
 MANIFEST_DIRNAME = "manifest"
 
+INDEX_FILENAME = "index.json"
+README_FILENAME = "README.md"
+LATEST_DIRNAME = "latest"
+
 ORG_SUMMARY_DIRNAME = "org_summary"
-ORG_SUMMARY_CONTRACT_FILENAME = "contract.json"
+SUMMARY_CONTRACT_FILENAME = "contract.json"
 ORG_SUMMARY_JSON_FILENAME = "summary.json"
 ORG_SUMMARY_MARKDOWN_FILENAME = "summary.md"
 
@@ -111,17 +116,49 @@ class RepositorySummaryCsvWriter:
             for period in repository_metrics.periods
             if period.key in set(refreshed_period_keys)
         )
+        contract_path = root_dir / SUMMARY_CONTRACT_FILENAME
+        index_path = root_dir / INDEX_FILENAME
+        readme_path = root_dir / README_FILENAME
+        contract = self._contract_payload(config)
+        _prune_output_entries_for_contract_change(
+            root_dir=root_dir,
+            contract_path=contract_path,
+            contract=contract,
+        )
         _prune_stale_period_directories(
             config=config,
             root_dir=root_dir,
             active_period_keys=tuple(period.key for period in refreshed_periods),
         )
+        _write_json_file(contract_path, contract)
+        period_results = tuple(
+            self._write_period_summary(root_dir, metric_period)
+            for metric_period in refreshed_periods
+        )
+        history_entries = self._history_entries(
+            root_dir=root_dir,
+            periods=repository_metrics.periods,
+            index_path=index_path,
+        )
+        latest_path = self._write_latest_summary(
+            root_dir=root_dir,
+            history_entries=history_entries,
+        )
+        _write_json_file(
+            index_path,
+            self._index_payload(config=config, history_entries=history_entries),
+        )
+        _write_text_file(
+            readme_path,
+            self._readme_document(config=config, history_entries=history_entries),
+        )
         return RepositorySummaryCsvWriteResult(
             root_dir=root_dir,
-            periods=tuple(
-                self._write_period_summary(root_dir, metric_period)
-                for metric_period in refreshed_periods
-            ),
+            contract_path=contract_path,
+            index_path=index_path,
+            readme_path=readme_path,
+            latest_path=latest_path,
+            periods=period_results,
         )
 
     def _write_period_summary(
@@ -192,6 +229,151 @@ class RepositorySummaryCsvWriter:
             "commits_median": repository.commits.median,
         }
 
+    def _history_entries(
+        self,
+        *,
+        root_dir: Path,
+        periods: tuple[RepositoryMetricPeriod, ...],
+        index_path: Path,
+    ) -> tuple[dict[str, object], ...]:
+        saved_history = _load_index_history(index_path)
+        history_entries: list[dict[str, object]] = []
+        period_index = {period.key: period for period in periods}
+        for period_key in _history_period_keys(root_dir):
+            if period_key in period_index:
+                period = period_index[period_key]
+                history_entries.append(
+                    {
+                        "key": period.key,
+                        "start_date": period.start_date.isoformat(),
+                        "end_date": period.end_date.isoformat(),
+                        "closed": period.closed,
+                        "path": _relative_path(
+                            root_dir,
+                            root_dir / period.key / REPOSITORY_SUMMARY_CSV_FILENAME,
+                        ),
+                    }
+                )
+                continue
+            saved_entry = saved_history.get(period_key)
+            if saved_entry is not None:
+                history_entries.append(saved_entry)
+        return tuple(sorted(history_entries, key=_history_entry_sort_key))
+
+    def _write_latest_summary(
+        self,
+        *,
+        root_dir: Path,
+        history_entries: tuple[dict[str, object], ...],
+    ) -> Path | None:
+        latest_entry = _latest_history_entry(history_entries)
+        if latest_entry is None:
+            _remove_directory(root_dir / LATEST_DIRNAME)
+            return None
+        latest_dir = root_dir / LATEST_DIRNAME
+        _reset_directory(latest_dir)
+        source_path = root_dir / str(latest_entry["path"])
+        latest_path = latest_dir / REPOSITORY_SUMMARY_CSV_FILENAME
+        shutil.copyfile(source_path, latest_path)
+        return latest_path
+
+    def _index_payload(
+        self,
+        *,
+        config: RunConfig,
+        history_entries: tuple[dict[str, object], ...],
+    ) -> dict[str, object]:
+        latest_entry = _latest_history_entry(history_entries)
+        latest_payload = None
+        if latest_entry is not None:
+            latest_payload = {
+                "key": latest_entry["key"],
+                "start_date": latest_entry["start_date"],
+                "end_date": latest_entry["end_date"],
+                "closed": latest_entry["closed"],
+                "path": _relative_path(
+                    self._root_dir(config.output_dir, config.period.value),
+                    self._root_dir(config.output_dir, config.period.value)
+                    / LATEST_DIRNAME
+                    / REPOSITORY_SUMMARY_CSV_FILENAME,
+                ),
+                "source_path": latest_entry["path"],
+            }
+        return {
+            "target_org": config.org,
+            "period_grain": config.period.value,
+            "include_repos": list(
+                _canonical_repo_filters(config.include_repos, org=config.org)
+            ),
+            "exclude_repos": list(
+                _canonical_repo_filters(config.exclude_repos, org=config.org)
+            ),
+            "latest": latest_payload,
+            "history": list(history_entries),
+        }
+
+    def _readme_document(
+        self,
+        *,
+        config: RunConfig,
+        history_entries: tuple[dict[str, object], ...],
+    ) -> str:
+        latest_entry = _latest_history_entry(history_entries)
+        history_rows = (
+            ["| Period | Start | End | Closed | CSV |", "| --- | --- | --- | --- | --- |"]
+            + [
+                (
+                    f"| {entry['key']} | {entry['start_date']} | {entry['end_date']} | "
+                    f"{_bool_text(bool(entry['closed']))} | {entry['path']} |"
+                )
+                for entry in history_entries
+            ]
+            if history_entries
+            else ["No history files are available."]
+        )
+        latest_lines = (
+            [
+                f"- Latest period: {latest_entry['key']}",
+                (
+                    "- Latest CSV: "
+                    f"{LATEST_DIRNAME}/{REPOSITORY_SUMMARY_CSV_FILENAME}"
+                ),
+            ]
+            if latest_entry is not None
+            else ["- Latest period: none", "- Latest CSV: none"]
+        )
+        return "\n".join(
+            (
+                f"# Repository Summary Index: {config.org} {config.period.value}",
+                "",
+                f"- Target org: {config.org}",
+                f"- Period grain: {config.period.value}",
+                f"- Include repos: {_repo_filters_text(_canonical_repo_filters(config.include_repos, org=config.org), empty='all')}",
+                f"- Exclude repos: {_repo_filters_text(_canonical_repo_filters(config.exclude_repos, org=config.org), empty='none')}",
+                *latest_lines,
+                "",
+                "## History",
+                "",
+                *history_rows,
+                "",
+            )
+        )
+
+    def _contract_payload(
+        self,
+        config: RunConfig,
+    ) -> dict[str, object]:
+        return {
+            "target_org": config.org,
+            "period_grain": config.period.value,
+            "include_repos": list(
+                _canonical_repo_filters(config.include_repos, org=config.org)
+            ),
+            "exclude_repos": list(
+                _canonical_repo_filters(config.exclude_repos, org=config.org)
+            ),
+        }
+
     def _root_dir(self, output_dir: Path, period_grain: str) -> Path:
         return output_dir / REPOSITORY_SUMMARY_CSV_DIRNAME / period_grain
 
@@ -208,13 +390,13 @@ class OrgSummaryWriter:
     ) -> OrgSummaryWriteResult:
         root_dir = self._root_dir(config.output_dir, config.period.value)
         refreshed_periods = tuple(
-            period
-            for period in org_metrics.periods
-            if period.key in set(refreshed_period_keys)
+            period for period in org_metrics.periods if period.key in set(refreshed_period_keys)
         )
-        contract_path = root_dir / ORG_SUMMARY_CONTRACT_FILENAME
+        contract_path = root_dir / SUMMARY_CONTRACT_FILENAME
+        index_path = root_dir / INDEX_FILENAME
+        readme_path = root_dir / README_FILENAME
         contract = self._contract_payload(config)
-        _prune_period_directories_for_contract_change(
+        _prune_output_entries_for_contract_change(
             root_dir=root_dir,
             contract_path=contract_path,
             contract=contract,
@@ -225,19 +407,47 @@ class OrgSummaryWriter:
             active_period_keys=tuple(period.key for period in refreshed_periods),
         )
         _write_json_file(contract_path, contract)
+        period_results = tuple(
+            self._write_period_summary(
+                config=config,
+                root_dir=root_dir,
+                period=period,
+                target_org=org_metrics.target_org,
+            )
+            for period in refreshed_periods
+        )
+        history_entries = self._history_entries(
+            root_dir=root_dir,
+            periods=org_metrics.periods,
+            index_path=index_path,
+        )
+        latest_directory, latest_markdown_path, latest_json_path = self._write_latest_summary(
+            root_dir=root_dir,
+            history_entries=history_entries,
+        )
+        _write_json_file(
+            index_path,
+            self._index_payload(
+                config=config,
+                history_entries=history_entries,
+                latest_markdown_path=latest_markdown_path,
+                latest_json_path=latest_json_path,
+            ),
+        )
+        _write_text_file(
+            readme_path,
+            self._readme_document(config=config, history_entries=history_entries),
+        )
         return OrgSummaryWriteResult(
             target_org=org_metrics.target_org,
             root_dir=root_dir,
             contract_path=contract_path,
-            periods=tuple(
-                self._write_period_summary(
-                    config=config,
-                    root_dir=root_dir,
-                    period=period,
-                    target_org=org_metrics.target_org,
-                )
-                for period in refreshed_periods
-            ),
+            index_path=index_path,
+            readme_path=readme_path,
+            latest_directory=latest_directory,
+            latest_markdown_path=latest_markdown_path,
+            latest_json_path=latest_json_path,
+            periods=period_results,
         )
 
     def _write_period_summary(
@@ -348,6 +558,149 @@ class OrgSummaryWriter:
             )
         )
 
+    def _history_entries(
+        self,
+        *,
+        root_dir: Path,
+        periods: tuple[OrganizationMetricPeriod, ...],
+        index_path: Path,
+    ) -> tuple[dict[str, object], ...]:
+        saved_history = _load_index_history(index_path)
+        history_entries: list[dict[str, object]] = []
+        period_index = {period.key: period for period in periods}
+        for period_key in _history_period_keys(root_dir):
+            if period_key in period_index:
+                period = period_index[period_key]
+                history_entries.append(
+                    {
+                        "key": period.key,
+                        "start_date": period.start_date.isoformat(),
+                        "end_date": period.end_date.isoformat(),
+                        "closed": period.closed,
+                        "markdown_path": _relative_path(
+                            root_dir,
+                            root_dir / period.key / ORG_SUMMARY_MARKDOWN_FILENAME,
+                        ),
+                        "json_path": _relative_path(
+                            root_dir,
+                            root_dir / period.key / ORG_SUMMARY_JSON_FILENAME,
+                        ),
+                    }
+                )
+                continue
+            saved_entry = saved_history.get(period_key)
+            if saved_entry is not None:
+                history_entries.append(saved_entry)
+        return tuple(sorted(history_entries, key=_history_entry_sort_key))
+
+    def _write_latest_summary(
+        self,
+        *,
+        root_dir: Path,
+        history_entries: tuple[dict[str, object], ...],
+    ) -> tuple[Path | None, Path | None, Path | None]:
+        latest_entry = _latest_history_entry(history_entries)
+        if latest_entry is None:
+            _remove_directory(root_dir / LATEST_DIRNAME)
+            return None, None, None
+        latest_dir = root_dir / LATEST_DIRNAME
+        _reset_directory(latest_dir)
+        source_markdown_path = root_dir / str(latest_entry["markdown_path"])
+        source_json_path = root_dir / str(latest_entry["json_path"])
+        latest_markdown_path = latest_dir / ORG_SUMMARY_MARKDOWN_FILENAME
+        latest_json_path = latest_dir / ORG_SUMMARY_JSON_FILENAME
+        shutil.copyfile(source_markdown_path, latest_markdown_path)
+        shutil.copyfile(source_json_path, latest_json_path)
+        return latest_dir, latest_markdown_path, latest_json_path
+
+    def _index_payload(
+        self,
+        *,
+        config: RunConfig,
+        history_entries: tuple[dict[str, object], ...],
+        latest_markdown_path: Path | None,
+        latest_json_path: Path | None,
+    ) -> dict[str, object]:
+        latest_entry = _latest_history_entry(history_entries)
+        latest_payload = None
+        if latest_entry is not None and latest_markdown_path is not None and latest_json_path is not None:
+            root_dir = self._root_dir(config.output_dir, config.period.value)
+            latest_payload = {
+                "key": latest_entry["key"],
+                "start_date": latest_entry["start_date"],
+                "end_date": latest_entry["end_date"],
+                "closed": latest_entry["closed"],
+                "markdown_path": _relative_path(root_dir, latest_markdown_path),
+                "json_path": _relative_path(root_dir, latest_json_path),
+                "source_markdown_path": latest_entry["markdown_path"],
+                "source_json_path": latest_entry["json_path"],
+            }
+        return {
+            "target_org": config.org,
+            "period_grain": config.period.value,
+            "include_repos": list(
+                _canonical_repo_filters(config.include_repos, org=config.org)
+            ),
+            "exclude_repos": list(
+                _canonical_repo_filters(config.exclude_repos, org=config.org)
+            ),
+            "latest": latest_payload,
+            "history": list(history_entries),
+        }
+
+    def _readme_document(
+        self,
+        *,
+        config: RunConfig,
+        history_entries: tuple[dict[str, object], ...],
+    ) -> str:
+        latest_entry = _latest_history_entry(history_entries)
+        history_rows = (
+            [
+                "| Period | Start | End | Closed | JSON | Markdown |",
+                "| --- | --- | --- | --- | --- | --- |",
+            ]
+            + [
+                (
+                    f"| {entry['key']} | {entry['start_date']} | {entry['end_date']} | "
+                    f"{_bool_text(bool(entry['closed']))} | {entry['json_path']} | "
+                    f"{entry['markdown_path']} |"
+                )
+                for entry in history_entries
+            ]
+            if history_entries
+            else ["No history files are available."]
+        )
+        latest_lines = (
+            [
+                f"- Latest period: {latest_entry['key']}",
+                f"- Latest JSON: {LATEST_DIRNAME}/{ORG_SUMMARY_JSON_FILENAME}",
+                f"- Latest Markdown: {LATEST_DIRNAME}/{ORG_SUMMARY_MARKDOWN_FILENAME}",
+            ]
+            if latest_entry is not None
+            else [
+                "- Latest period: none",
+                "- Latest JSON: none",
+                "- Latest Markdown: none",
+            ]
+        )
+        return "\n".join(
+            (
+                f"# Organization Summary Index: {config.org} {config.period.value}",
+                "",
+                f"- Target org: {config.org}",
+                f"- Period grain: {config.period.value}",
+                f"- Include repos: {_repo_filters_text(_canonical_repo_filters(config.include_repos, org=config.org), empty='all')}",
+                f"- Exclude repos: {_repo_filters_text(_canonical_repo_filters(config.exclude_repos, org=config.org), empty='none')}",
+                *latest_lines,
+                "",
+                "## History",
+                "",
+                *history_rows,
+                "",
+            )
+        )
+
     def _contract_payload(
         self,
         config: RunConfig,
@@ -392,8 +745,17 @@ class RunManifestWriter:
             repository_count=repository_count,
         )
         path = self._manifest_path(config.output_dir, config.period.value)
+        index_path = path.parent / INDEX_FILENAME
+        readme_path = path.parent / README_FILENAME
         self._write_manifest_file(path, manifest)
-        return ManifestWriteResult(path=path, manifest=manifest)
+        _write_json_file(index_path, self._index_payload(manifest))
+        _write_text_file(readme_path, self._readme_document(manifest))
+        return ManifestWriteResult(
+            path=path,
+            index_path=index_path,
+            readme_path=readme_path,
+            manifest=manifest,
+        )
 
     def _build_manifest(
         self,
@@ -568,6 +930,81 @@ class RunManifestWriter:
             return None
         return max(period.end_date for period in periods)
 
+    def _index_payload(
+        self,
+        manifest: RunManifest,
+    ) -> dict[str, object]:
+        locked_period_keys = {period.key for period in manifest.locked_periods}
+        return {
+            "target_org": manifest.target_org,
+            "period_grain": manifest.period_grain.value,
+            "include_repos": list(
+                _canonical_repo_filters(manifest.include_repos, org=manifest.target_org)
+            ),
+            "exclude_repos": list(
+                _canonical_repo_filters(manifest.exclude_repos, org=manifest.target_org)
+            ),
+            "latest": {
+                "manifest_path": MANIFEST_FILENAME,
+                "completed_at": manifest.last_successful_run.completed_at.isoformat(),
+                "as_of": manifest.last_successful_run.as_of.isoformat(),
+                "mode": manifest.last_successful_run.mode.value,
+                "refresh_scope": manifest.last_successful_run.refresh_scope.value,
+            },
+            "history": {
+                "refreshed_periods": [
+                    _manifest_period_payload(
+                        period,
+                        closed=period.key in locked_period_keys,
+                    )
+                    for period in manifest.refreshed_periods
+                ],
+                "locked_periods": [
+                    _manifest_period_payload(period, closed=period.closed)
+                    for period in manifest.locked_periods
+                ],
+            },
+            "watermarks": manifest.watermarks.model_dump(mode="json"),
+        }
+
+    def _readme_document(
+        self,
+        manifest: RunManifest,
+    ) -> str:
+        locked_period_keys = {period.key for period in manifest.locked_periods}
+        refreshed_rows = _manifest_period_table_rows(
+            manifest.refreshed_periods,
+            closed_period_keys=locked_period_keys,
+        )
+        locked_rows = _manifest_period_table_rows(
+            manifest.locked_periods,
+            closed_period_keys=locked_period_keys,
+        )
+        return "\n".join(
+            (
+                f"# Manifest Index: {manifest.target_org} {manifest.period_grain.value}",
+                "",
+                f"- Target org: {manifest.target_org}",
+                f"- Period grain: {manifest.period_grain.value}",
+                f"- Include repos: {_repo_filters_text(_canonical_repo_filters(manifest.include_repos, org=manifest.target_org), empty='all')}",
+                f"- Exclude repos: {_repo_filters_text(_canonical_repo_filters(manifest.exclude_repos, org=manifest.target_org), empty='none')}",
+                f"- Latest manifest: {MANIFEST_FILENAME}",
+                f"- Completed at: {manifest.last_successful_run.completed_at.isoformat()}",
+                f"- As of: {manifest.last_successful_run.as_of.isoformat()}",
+                f"- Mode: {manifest.last_successful_run.mode.value}",
+                f"- Refresh scope: {manifest.last_successful_run.refresh_scope.value}",
+                "",
+                "## Refreshed Periods",
+                "",
+                *refreshed_rows,
+                "",
+                "## Locked Periods",
+                "",
+                *locked_rows,
+                "",
+            )
+        )
+
     def _manifest_path(self, output_dir: Path, period_grain: str) -> Path:
         return output_dir / MANIFEST_DIRNAME / period_grain / MANIFEST_FILENAME
 
@@ -640,7 +1077,7 @@ def _prune_stale_period_directories(
         shutil.rmtree(child)
 
 
-def _prune_period_directories_for_contract_change(
+def _prune_output_entries_for_contract_change(
     *,
     root_dir: Path,
     contract_path: Path,
@@ -651,10 +1088,12 @@ def _prune_period_directories_for_contract_change(
     if not root_dir.exists():
         return
     for child in root_dir.iterdir():
-        if child == contract_path or child.name == ORG_SUMMARY_CONTRACT_FILENAME:
+        if child == contract_path or child.name == contract_path.name:
             continue
         if child.is_dir():
             shutil.rmtree(child)
+            continue
+        child.unlink(missing_ok=True)
 
 
 def _load_json_payload(path: Path) -> dict[str, object] | None:
@@ -664,6 +1103,93 @@ def _load_json_payload(path: Path) -> dict[str, object] | None:
         return json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return None
+
+
+def _load_index_history(index_path: Path) -> dict[str, dict[str, object]]:
+    payload = _load_json_payload(index_path)
+    if payload is None:
+        return {}
+    history = payload.get("history")
+    if not isinstance(history, list):
+        return {}
+    entries: dict[str, dict[str, object]] = {}
+    for entry in history:
+        if not isinstance(entry, dict):
+            continue
+        typed_entry = cast(dict[str, object], entry)
+        key = typed_entry.get("key")
+        if not isinstance(key, str):
+            continue
+        entries[key] = typed_entry
+    return entries
+
+
+def _history_period_keys(root_dir: Path) -> tuple[str, ...]:
+    if not root_dir.exists():
+        return ()
+    return tuple(
+        child.name
+        for child in sorted(root_dir.iterdir(), key=lambda path: path.name)
+        if child.is_dir() and child.name != LATEST_DIRNAME
+    )
+
+
+def _history_entry_sort_key(entry: dict[str, object]) -> tuple[date, str]:
+    return date.fromisoformat(str(entry["start_date"])), str(entry["key"])
+
+
+def _latest_history_entry(
+    history_entries: tuple[dict[str, object], ...],
+) -> dict[str, object] | None:
+    if not history_entries:
+        return None
+    return max(history_entries, key=_history_entry_sort_key)
+
+
+def _relative_path(root_dir: Path, path: Path) -> str:
+    return path.relative_to(root_dir).as_posix()
+
+
+def _reset_directory(path: Path) -> None:
+    _remove_directory(path)
+    path.mkdir(parents=True, exist_ok=True)
+
+
+def _remove_directory(path: Path) -> None:
+    if path.exists():
+        shutil.rmtree(path)
+
+
+def _manifest_period_payload(
+    period: RawSnapshotPeriod | ReportingPeriod,
+    *,
+    closed: bool,
+) -> dict[str, object]:
+    return {
+        "key": period.key,
+        "start_date": period.start_date.isoformat(),
+        "end_date": period.end_date.isoformat(),
+        "closed": closed,
+    }
+
+
+def _manifest_period_table_rows(
+    periods: Sequence[RawSnapshotPeriod | ReportingPeriod],
+    *,
+    closed_period_keys: set[str],
+) -> list[str]:
+    if not periods:
+        return ["No periods are available."]
+    rows = ["| Period | Start | End | Closed |", "| --- | --- | --- | --- |"]
+    for period in periods:
+        rows.append(
+            (
+                f"| {period.key} | {period.start_date.isoformat()} | "
+                f"{period.end_date.isoformat()} | "
+                f"{_bool_text(period.key in closed_period_keys)} |"
+            )
+        )
+    return rows
 
 
 def _summary_row(
@@ -706,5 +1232,8 @@ def _canonical_repo_filters(
     org: str,
 ) -> tuple[str, ...]:
     return tuple(
-        sorted(canonicalize_repo_filter(repo_filter, org=org) for repo_filter in repo_filters)
+        sorted(
+            canonicalize_repo_filter(repo_filter, org=org)
+            for repo_filter in repo_filters
+        )
     )

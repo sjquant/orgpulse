@@ -77,10 +77,44 @@ class TestOrgSummaryWriter:
         # Then
         assert result.root_dir == tmp_path / "org_summary" / "month"
         assert result.contract_path == tmp_path / "org_summary" / "month" / "contract.json"
+        assert result.index_path == tmp_path / "org_summary" / "month" / "index.json"
+        assert result.readme_path == tmp_path / "org_summary" / "month" / "README.md"
+        assert result.latest_directory == tmp_path / "org_summary" / "month" / "latest"
+        assert result.latest_directory is not None
+        assert result.latest_json_path is not None
+        assert result.latest_markdown_path is not None
+        assert result.latest_json_path == result.latest_directory / "summary.json"
+        assert result.latest_markdown_path == result.latest_directory / "summary.md"
         assert [period.key for period in result.periods] == ["2026-04"]
         assert json.loads(result.contract_path.read_text(encoding="utf-8")) == {
             "exclude_repos": [],
             "include_repos": [],
+            "period_grain": "month",
+            "target_org": "acme",
+        }
+        assert json.loads(result.index_path.read_text(encoding="utf-8")) == {
+            "exclude_repos": [],
+            "history": [
+                {
+                    "closed": False,
+                    "end_date": "2026-04-30",
+                    "json_path": "2026-04/summary.json",
+                    "key": "2026-04",
+                    "markdown_path": "2026-04/summary.md",
+                    "start_date": "2026-04-01",
+                }
+            ],
+            "include_repos": [],
+            "latest": {
+                "closed": False,
+                "end_date": "2026-04-30",
+                "json_path": "latest/summary.json",
+                "key": "2026-04",
+                "markdown_path": "latest/summary.md",
+                "source_json_path": "2026-04/summary.json",
+                "source_markdown_path": "2026-04/summary.md",
+                "start_date": "2026-04-01",
+            },
             "period_grain": "month",
             "target_org": "acme",
         }
@@ -177,6 +211,31 @@ class TestOrgSummaryWriter:
             "| Changed lines | 2 | 50 | 25.00 | 25.00 |\n"
             "| Changed files | 2 | 6 | 3.00 | 3.00 |\n"
             "| Commits | 2 | 8 | 4.00 | 4.00 |\n"
+        )
+        assert result.latest_json_path is not None
+        assert result.latest_markdown_path is not None
+        assert result.latest_json_path.read_text(encoding="utf-8") == period_result.json_path.read_text(
+            encoding="utf-8"
+        )
+        assert result.latest_markdown_path.read_text(
+            encoding="utf-8"
+        ) == period_result.markdown_path.read_text(encoding="utf-8")
+        assert result.readme_path.read_text(encoding="utf-8") == (
+            "# Organization Summary Index: acme month\n"
+            "\n"
+            "- Target org: acme\n"
+            "- Period grain: month\n"
+            "- Include repos: all\n"
+            "- Exclude repos: none\n"
+            "- Latest period: 2026-04\n"
+            "- Latest JSON: latest/summary.json\n"
+            "- Latest Markdown: latest/summary.md\n"
+            "\n"
+            "## History\n"
+            "\n"
+            "| Period | Start | End | Closed | JSON | Markdown |\n"
+            "| --- | --- | --- | --- | --- | --- |\n"
+            "| 2026-04 | 2026-04-01 | 2026-04-30 | false | 2026-04/summary.json | 2026-04/summary.md |\n"
         )
 
     def test_prunes_stale_period_directories_on_full_runs(
@@ -373,6 +432,38 @@ class TestOrgSummaryWriter:
         assert locked_summary_path.read_text(encoding="utf-8") == locked_summary_payload
         assert result.periods[0].json_path.exists()
         assert result.periods[0].markdown_path.exists()
+        assert json.loads(result.index_path.read_text(encoding="utf-8"))["history"] == [
+            {
+                "closed": True,
+                "end_date": "2026-03-31",
+                "json_path": "2026-03/summary.json",
+                "key": "2026-03",
+                "markdown_path": "2026-03/summary.md",
+                "start_date": "2026-03-01",
+            },
+            {
+                "closed": False,
+                "end_date": "2026-04-30",
+                "json_path": "2026-04/summary.json",
+                "key": "2026-04",
+                "markdown_path": "2026-04/summary.md",
+                "start_date": "2026-04-01",
+            },
+        ]
+        assert json.loads(result.index_path.read_text(encoding="utf-8"))["latest"] == {
+            "closed": False,
+            "end_date": "2026-04-30",
+            "json_path": "latest/summary.json",
+            "key": "2026-04",
+            "markdown_path": "latest/summary.md",
+            "source_json_path": "2026-04/summary.json",
+            "source_markdown_path": "2026-04/summary.md",
+            "start_date": "2026-04-01",
+        }
+        assert result.latest_json_path is not None
+        assert result.latest_json_path.read_text(encoding="utf-8") == result.periods[0].json_path.read_text(
+            encoding="utf-8"
+        )
 
     def _build_rollup(self) -> OrganizationMetricRollup:
         """Build a representative org rollup payload for summary writer tests."""
@@ -705,8 +796,40 @@ class TestRunManifestWriter:
         # Then
         assert monthly_result.path == tmp_path / "manifest" / "month" / "manifest.json"
         assert weekly_result.path == tmp_path / "manifest" / "week" / "manifest.json"
+        assert monthly_result.index_path == tmp_path / "manifest" / "month" / "index.json"
+        assert monthly_result.readme_path == tmp_path / "manifest" / "month" / "README.md"
         assert monthly_result.path.exists()
         assert weekly_result.path.exists()
+        assert json.loads(monthly_result.index_path.read_text(encoding="utf-8")) == {
+            "exclude_repos": [],
+            "history": {
+                "locked_periods": [],
+                "refreshed_periods": [
+                    {
+                        "closed": False,
+                        "end_date": "2026-04-28",
+                        "key": "2026-04",
+                        "start_date": "2026-04-01",
+                    }
+                ],
+            },
+            "include_repos": [],
+            "latest": {
+                "as_of": "2026-04-18",
+                "completed_at": "2026-04-18T00:00:00+00:00",
+                "manifest_path": "manifest.json",
+                "mode": "incremental",
+                "refresh_scope": "open_period",
+            },
+            "period_grain": "month",
+            "target_org": "acme",
+            "watermarks": {
+                "collection_window_end_date": "2026-04-18",
+                "collection_window_start_date": "2026-04-01",
+                "latest_locked_period_end_date": None,
+                "latest_refreshed_period_end_date": "2026-04-28",
+            },
+        }
 
     def _build_run_config(self, **overrides: object) -> RunConfig:
         """Build the minimal run configuration needed for manifest tests."""
@@ -944,8 +1067,43 @@ class TestRepositorySummaryCsvWriter:
 
         # Then
         assert result.root_dir == tmp_path / "repo_summary" / "month"
+        assert result.contract_path == tmp_path / "repo_summary" / "month" / "contract.json"
+        assert result.index_path == tmp_path / "repo_summary" / "month" / "index.json"
+        assert result.readme_path == tmp_path / "repo_summary" / "month" / "README.md"
+        assert result.latest_path == (
+            tmp_path / "repo_summary" / "month" / "latest" / "repo_summary.csv"
+        )
         assert [period.key for period in result.periods] == ["2026-04"]
         assert result.periods[0].repository_count == 2
+        assert json.loads(result.contract_path.read_text(encoding="utf-8")) == {
+            "exclude_repos": [],
+            "include_repos": [],
+            "period_grain": "month",
+            "target_org": "acme",
+        }
+        assert json.loads(result.index_path.read_text(encoding="utf-8")) == {
+            "exclude_repos": [],
+            "history": [
+                {
+                    "closed": False,
+                    "end_date": "2026-04-30",
+                    "key": "2026-04",
+                    "path": "2026-04/repo_summary.csv",
+                    "start_date": "2026-04-01",
+                }
+            ],
+            "include_repos": [],
+            "latest": {
+                "closed": False,
+                "end_date": "2026-04-30",
+                "key": "2026-04",
+                "path": "latest/repo_summary.csv",
+                "source_path": "2026-04/repo_summary.csv",
+                "start_date": "2026-04-01",
+            },
+            "period_grain": "month",
+            "target_org": "acme",
+        }
         rows = self._read_rows(result.periods[0].path)
         assert [row["repository_full_name"] for row in rows] == [
             "acme/api",
@@ -960,6 +1118,10 @@ class TestRepositorySummaryCsvWriter:
         assert rows[0]["time_to_first_review_total_seconds"] == "10800"
         assert rows[1]["time_to_merge_total_seconds"] == "97200"
         assert rows[1]["time_to_first_review_total_seconds"] == "21600"
+        assert result.latest_path is not None
+        assert result.latest_path.read_text(encoding="utf-8") == result.periods[0].path.read_text(
+            encoding="utf-8"
+        )
 
     def test_preserves_empty_backfill_periods_as_header_only_csvs(
         self,
@@ -1162,6 +1324,34 @@ class TestRepositorySummaryCsvWriter:
         assert [period.key for period in result.periods] == ["2026-04"]
         assert locked_repo_summary_path.read_text(encoding="utf-8") == locked_repo_summary_csv
         assert result.periods[0].path.exists()
+        assert json.loads(result.index_path.read_text(encoding="utf-8"))["history"] == [
+            {
+                "closed": True,
+                "end_date": "2026-03-31",
+                "key": "2026-03",
+                "path": "2026-03/repo_summary.csv",
+                "start_date": "2026-03-01",
+            },
+            {
+                "closed": False,
+                "end_date": "2026-04-30",
+                "key": "2026-04",
+                "path": "2026-04/repo_summary.csv",
+                "start_date": "2026-04-01",
+            },
+        ]
+        assert json.loads(result.index_path.read_text(encoding="utf-8"))["latest"] == {
+            "closed": False,
+            "end_date": "2026-04-30",
+            "key": "2026-04",
+            "path": "latest/repo_summary.csv",
+            "source_path": "2026-04/repo_summary.csv",
+            "start_date": "2026-04-01",
+        }
+        assert result.latest_path is not None
+        assert result.latest_path.read_text(encoding="utf-8") == result.periods[0].path.read_text(
+            encoding="utf-8"
+        )
 
     def _build_run_config(self, **overrides: object) -> RunConfig:
         """Build the minimal run configuration needed for repo summary export tests."""

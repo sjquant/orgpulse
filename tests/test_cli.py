@@ -41,6 +41,7 @@ from orgpulse.models import (
     RunScope,
 )
 from orgpulse.output import (
+    REPOSITORY_SUMMARY_CSV_FIELDNAMES,
     OrgSummaryWriter,
     RepositorySummaryCsvWriter,
     RunManifestWriter,
@@ -158,6 +159,8 @@ class FakeCliManifestWriter:
     ) -> ManifestWriteResult:
         return ManifestWriteResult(
             path=config.output_dir / "manifest" / config.period.value / "manifest.json",
+            index_path=config.output_dir / "manifest" / config.period.value / "index.json",
+            readme_path=config.output_dir / "manifest" / config.period.value / "README.md",
             manifest=RunManifest(
                 target_org=config.org,
                 period_grain=config.period,
@@ -199,6 +202,28 @@ class FakeCliOrgSummaryWriter:
             / "org_summary"
             / config.period.value
             / "contract.json",
+            index_path=config.output_dir
+            / "org_summary"
+            / config.period.value
+            / "index.json",
+            readme_path=config.output_dir
+            / "org_summary"
+            / config.period.value
+            / "README.md",
+            latest_directory=config.output_dir
+            / "org_summary"
+            / config.period.value
+            / "latest",
+            latest_markdown_path=config.output_dir
+            / "org_summary"
+            / config.period.value
+            / "latest"
+            / "summary.md",
+            latest_json_path=config.output_dir
+            / "org_summary"
+            / config.period.value
+            / "latest"
+            / "summary.json",
             periods=tuple(
                 OrgSummaryPeriodWriteResult(
                     key=period.key,
@@ -235,6 +260,23 @@ class FakeCliRepositorySummaryWriter:
     ) -> RepositorySummaryCsvWriteResult:
         return RepositorySummaryCsvWriteResult(
             root_dir=config.output_dir / "repo_summary" / config.period.value,
+            contract_path=config.output_dir
+            / "repo_summary"
+            / config.period.value
+            / "contract.json",
+            index_path=config.output_dir
+            / "repo_summary"
+            / config.period.value
+            / "index.json",
+            readme_path=config.output_dir
+            / "repo_summary"
+            / config.period.value
+            / "README.md",
+            latest_path=config.output_dir
+            / "repo_summary"
+            / config.period.value
+            / "latest"
+            / "repo_summary.csv",
             periods=(),
         )
 
@@ -838,8 +880,29 @@ class TestRunCommandRuntime:
             tmp_path / "raw" / "month" / "2026-04" / "pull_requests.csv"
         )
         manifest_path = tmp_path / "manifest" / "month" / "manifest.json"
+        manifest_index_path = tmp_path / "manifest" / "month" / "index.json"
+        manifest_readme_path = tmp_path / "manifest" / "month" / "README.md"
+        repo_summary_contract_path = (
+            tmp_path / "repo_summary" / "month" / "contract.json"
+        )
+        repo_summary_index_path = tmp_path / "repo_summary" / "month" / "index.json"
+        repo_summary_readme_path = tmp_path / "repo_summary" / "month" / "README.md"
+        repo_summary_latest_path = (
+            tmp_path / "repo_summary" / "month" / "latest" / "repo_summary.csv"
+        )
         repo_summary_path = (
             tmp_path / "repo_summary" / "month" / "2026-04" / "repo_summary.csv"
+        )
+        org_summary_contract_path = (
+            tmp_path / "org_summary" / "month" / "contract.json"
+        )
+        org_summary_index_path = tmp_path / "org_summary" / "month" / "index.json"
+        org_summary_readme_path = tmp_path / "org_summary" / "month" / "README.md"
+        org_summary_latest_json_path = (
+            tmp_path / "org_summary" / "month" / "latest" / "summary.json"
+        )
+        org_summary_latest_markdown_path = (
+            tmp_path / "org_summary" / "month" / "latest" / "summary.md"
         )
         org_summary_json_path = (
             tmp_path / "org_summary" / "month" / "2026-04" / "summary.json"
@@ -849,14 +912,44 @@ class TestRunCommandRuntime:
         )
         assert pull_requests_path.exists()
         assert manifest_path.exists()
+        assert manifest_index_path.exists()
+        assert manifest_readme_path.exists()
+        assert repo_summary_contract_path.exists()
+        assert repo_summary_index_path.exists()
+        assert repo_summary_readme_path.exists()
+        assert repo_summary_latest_path.exists()
         assert repo_summary_path.exists()
+        assert org_summary_contract_path.exists()
+        assert org_summary_index_path.exists()
+        assert org_summary_readme_path.exists()
+        assert org_summary_latest_json_path.exists()
+        assert org_summary_latest_markdown_path.exists()
         assert org_summary_json_path.exists()
         assert org_summary_markdown_path.exists()
         assert "acme/api" in pull_requests_path.read_text(encoding="utf-8")
         assert "acme/api" in repo_summary_path.read_text(encoding="utf-8")
+        assert (
+            repo_summary_latest_path.read_text(encoding="utf-8")
+            == repo_summary_path.read_text(encoding="utf-8")
+        )
         assert json.loads(manifest_path.read_text(encoding="utf-8"))["target_org"] == (
             "acme"
         )
+        assert json.loads(manifest_index_path.read_text(encoding="utf-8"))["latest"] == {
+            "as_of": "2026-04-18",
+            "completed_at": "2026-04-18T00:00:00+00:00",
+            "manifest_path": "manifest.json",
+            "mode": "incremental",
+            "refresh_scope": "open_period",
+        }
+        assert json.loads(repo_summary_index_path.read_text(encoding="utf-8"))["latest"] == {
+            "closed": False,
+            "end_date": "2026-04-30",
+            "key": "2026-04",
+            "path": "latest/repo_summary.csv",
+            "source_path": "2026-04/repo_summary.csv",
+            "start_date": "2026-04-01",
+        }
         assert json.loads(org_summary_json_path.read_text(encoding="utf-8")) == {
             "exclude_repos": [],
             "include_repos": [],
@@ -917,6 +1010,24 @@ class TestRunCommandRuntime:
                 },
             },
             "target_org": "acme",
+        }
+        assert (
+            org_summary_latest_json_path.read_text(encoding="utf-8")
+            == org_summary_json_path.read_text(encoding="utf-8")
+        )
+        assert (
+            org_summary_latest_markdown_path.read_text(encoding="utf-8")
+            == org_summary_markdown_path.read_text(encoding="utf-8")
+        )
+        assert json.loads(org_summary_index_path.read_text(encoding="utf-8"))["latest"] == {
+            "closed": False,
+            "end_date": "2026-04-30",
+            "json_path": "latest/summary.json",
+            "key": "2026-04",
+            "markdown_path": "latest/summary.md",
+            "source_json_path": "2026-04/summary.json",
+            "source_markdown_path": "2026-04/summary.md",
+            "start_date": "2026-04-01",
         }
         assert (
             org_summary_markdown_path.read_text(encoding="utf-8").splitlines()[0]
@@ -1232,14 +1343,14 @@ class TestRunCommandRuntime:
         assert march_repo_summary.read_text(encoding="utf-8") == march_repo_summary_csv
         assert "acme/web" in april_repo_summary.read_text(encoding="utf-8")
 
-    def test_reuses_manifest_backed_locked_snapshot_counts_on_incremental_refresh(
+    def test_refreshes_only_open_period_outputs_on_incremental_runs(
         self,
         runner: CliRunner,
         github_auth_service: None,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path,
     ) -> None:
-        """Reuse locked snapshot files and row counts from the manifest when incremental runs refresh only the active period."""
+        """Refresh only the active-period outputs on incremental runs while preserving locked history across all exports."""
         # Given
         previous_config = build_run_config(
             org="acme",
@@ -1300,6 +1411,26 @@ class TestRunCommandRuntime:
             previous_snapshot,
             repository_count=1,
         )
+        previous_pull_request_metrics = PullRequestMetricCollectionBuilder().build(
+            previous_config,
+            previous_snapshot,
+        )
+        RepositorySummaryCsvWriter().write(
+            previous_config,
+            RepositoryMetricCollectionBuilder().build(
+                previous_config,
+                previous_pull_request_metrics,
+            ),
+            refreshed_period_keys=tuple(period.key for period in previous_snapshot.periods),
+        )
+        OrgSummaryWriter().write(
+            previous_config,
+            OrganizationMetricCollectionBuilder().build(
+                previous_config,
+                previous_pull_request_metrics,
+            ),
+            refreshed_period_keys=tuple(period.key for period in previous_snapshot.periods),
+        )
         locked_period_dir = tmp_path / "raw" / "month" / "2026-03"
         locked_pull_requests_path = locked_period_dir / "pull_requests.csv"
         locked_reviews_path = locked_period_dir / "pull_request_reviews.csv"
@@ -1311,6 +1442,22 @@ class TestRunCommandRuntime:
         )
         locked_reviews_csv = locked_reviews_path.read_text(encoding="utf-8")
         locked_timeline_events_csv = locked_timeline_events_path.read_text(
+            encoding="utf-8"
+        )
+        locked_repo_summary_path = (
+            tmp_path / "repo_summary" / "month" / "2026-03" / "repo_summary.csv"
+        )
+        locked_repo_summary_csv = locked_repo_summary_path.read_text(encoding="utf-8")
+        locked_org_summary_json_path = (
+            tmp_path / "org_summary" / "month" / "2026-03" / "summary.json"
+        )
+        locked_org_summary_markdown_path = (
+            tmp_path / "org_summary" / "month" / "2026-03" / "summary.md"
+        )
+        locked_org_summary_json = locked_org_summary_json_path.read_text(
+            encoding="utf-8"
+        )
+        locked_org_summary_markdown = locked_org_summary_markdown_path.read_text(
             encoding="utf-8"
         )
         current_pull_request = PullRequestRecord(
@@ -1365,6 +1512,10 @@ class TestRunCommandRuntime:
             "orgpulse.cli.OrgSummaryWriter",
             lambda: OrgSummaryWriter(),
         )
+        monkeypatch.setattr(
+            "orgpulse.cli.RepositorySummaryCsvWriter",
+            lambda: RepositorySummaryCsvWriter(),
+        )
 
         # When
         result = runner.invoke(
@@ -1397,12 +1548,129 @@ class TestRunCommandRuntime:
         assert [period["key"] for period in payload["manifest"]["locked_periods"]] == [
             "2026-03"
         ]
+        assert [period["key"] for period in payload["repo_summary"]["periods"]] == [
+            "2026-04"
+        ]
+        assert [period["key"] for period in payload["org_summary"]["periods"]] == [
+            "2026-04"
+        ]
         assert locked_pull_requests_path.read_text(encoding="utf-8") == locked_pull_requests_csv
         assert locked_reviews_path.read_text(encoding="utf-8") == locked_reviews_csv
         assert (
             locked_timeline_events_path.read_text(encoding="utf-8")
             == locked_timeline_events_csv
         )
+        assert locked_repo_summary_path.read_text(encoding="utf-8") == locked_repo_summary_csv
+        assert (
+            locked_org_summary_json_path.read_text(encoding="utf-8")
+            == locked_org_summary_json
+        )
+        assert (
+            locked_org_summary_markdown_path.read_text(encoding="utf-8")
+            == locked_org_summary_markdown
+        )
+        refreshed_repo_summary_path = (
+            tmp_path / "repo_summary" / "month" / "2026-04" / "repo_summary.csv"
+        )
+        refreshed_org_summary_json_path = (
+            tmp_path / "org_summary" / "month" / "2026-04" / "summary.json"
+        )
+        refreshed_org_summary_markdown_path = (
+            tmp_path / "org_summary" / "month" / "2026-04" / "summary.md"
+        )
+        repo_summary_index_path = tmp_path / "repo_summary" / "month" / "index.json"
+        repo_summary_latest_path = (
+            tmp_path / "repo_summary" / "month" / "latest" / "repo_summary.csv"
+        )
+        org_summary_index_path = tmp_path / "org_summary" / "month" / "index.json"
+        org_summary_latest_json_path = (
+            tmp_path / "org_summary" / "month" / "latest" / "summary.json"
+        )
+        org_summary_latest_markdown_path = (
+            tmp_path / "org_summary" / "month" / "latest" / "summary.md"
+        )
+        manifest_index_path = tmp_path / "manifest" / "month" / "index.json"
+        refreshed_repo_summary_csv = refreshed_repo_summary_path.read_text(
+            encoding="utf-8"
+        )
+        refreshed_org_summary_payload = json.loads(
+            refreshed_org_summary_json_path.read_text(encoding="utf-8")
+        )
+        assert "acme/web" in refreshed_repo_summary_csv
+        assert "acme/api" not in refreshed_repo_summary_csv
+        assert refreshed_org_summary_payload["period"]["key"] == "2026-04"
+        assert refreshed_org_summary_payload["summary"]["repository_count"] == 1
+        assert (
+            refreshed_org_summary_payload["summary"]["merged_pull_request_count"] == 1
+        )
+        assert (
+            refreshed_org_summary_markdown_path.read_text(encoding="utf-8").splitlines()[0]
+            == "# Organization Summary: acme 2026-04"
+        )
+        assert json.loads(repo_summary_index_path.read_text(encoding="utf-8"))["history"] == [
+            {
+                "closed": True,
+                "end_date": "2026-03-31",
+                "key": "2026-03",
+                "path": "2026-03/repo_summary.csv",
+                "start_date": "2026-03-01",
+            },
+            {
+                "closed": False,
+                "end_date": "2026-04-30",
+                "key": "2026-04",
+                "path": "2026-04/repo_summary.csv",
+                "start_date": "2026-04-01",
+            },
+        ]
+        assert (
+            repo_summary_latest_path.read_text(encoding="utf-8")
+            == refreshed_repo_summary_csv
+        )
+        assert json.loads(org_summary_index_path.read_text(encoding="utf-8"))["history"] == [
+            {
+                "closed": True,
+                "end_date": "2026-03-31",
+                "json_path": "2026-03/summary.json",
+                "key": "2026-03",
+                "markdown_path": "2026-03/summary.md",
+                "start_date": "2026-03-01",
+            },
+            {
+                "closed": False,
+                "end_date": "2026-04-30",
+                "json_path": "2026-04/summary.json",
+                "key": "2026-04",
+                "markdown_path": "2026-04/summary.md",
+                "start_date": "2026-04-01",
+            },
+        ]
+        assert (
+            org_summary_latest_json_path.read_text(encoding="utf-8")
+            == refreshed_org_summary_json_path.read_text(encoding="utf-8")
+        )
+        assert (
+            org_summary_latest_markdown_path.read_text(encoding="utf-8")
+            == refreshed_org_summary_markdown_path.read_text(encoding="utf-8")
+        )
+        assert json.loads(manifest_index_path.read_text(encoding="utf-8"))["history"] == {
+            "locked_periods": [
+                {
+                    "closed": True,
+                    "end_date": "2026-03-31",
+                    "key": "2026-03",
+                    "start_date": "2026-03-01",
+                }
+            ],
+            "refreshed_periods": [
+                {
+                    "closed": False,
+                    "end_date": "2026-04-30",
+                    "key": "2026-04",
+                    "start_date": "2026-04-01",
+                }
+            ],
+        }
         validation_periods = {
             period["key"]: period for period in payload["metric_validation"]["periods"]
         }
@@ -1418,14 +1686,14 @@ class TestRunCommandRuntime:
         ]
         assert all(period["valid"] for period in payload["metric_validation"]["periods"])
 
-    def test_recalculates_only_requested_periods_on_backfill_runs(
+    def test_recalculates_only_requested_closed_period_outputs_on_backfill_runs(
         self,
         runner: CliRunner,
         github_auth_service: None,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path,
     ) -> None:
-        """Recalculate only the requested closed periods on backfill while preserving other locked history."""
+        """Recalculate only the requested closed-period outputs on backfill while preserving unrelated locked history."""
         # Given
         previous_config = build_run_config(
             org="acme",
@@ -1518,6 +1786,26 @@ class TestRunCommandRuntime:
             previous_snapshot,
             repository_count=2,
         )
+        previous_pull_request_metrics = PullRequestMetricCollectionBuilder().build(
+            previous_config,
+            previous_snapshot,
+        )
+        RepositorySummaryCsvWriter().write(
+            previous_config,
+            RepositoryMetricCollectionBuilder().build(
+                previous_config,
+                previous_pull_request_metrics,
+            ),
+            refreshed_period_keys=tuple(period.key for period in previous_snapshot.periods),
+        )
+        OrgSummaryWriter().write(
+            previous_config,
+            OrganizationMetricCollectionBuilder().build(
+                previous_config,
+                previous_pull_request_metrics,
+            ),
+            refreshed_period_keys=tuple(period.key for period in previous_snapshot.periods),
+        )
         february_pull_requests_path = (
             tmp_path / "raw" / "month" / "2026-02" / "pull_requests.csv"
         )
@@ -1532,6 +1820,50 @@ class TestRunCommandRuntime:
         )
         march_pull_requests_csv = march_pull_requests_path.read_text(encoding="utf-8")
         april_pull_requests_csv = april_pull_requests_path.read_text(encoding="utf-8")
+        february_repo_summary_path = (
+            tmp_path / "repo_summary" / "month" / "2026-02" / "repo_summary.csv"
+        )
+        march_repo_summary_path = (
+            tmp_path / "repo_summary" / "month" / "2026-03" / "repo_summary.csv"
+        )
+        april_repo_summary_path = (
+            tmp_path / "repo_summary" / "month" / "2026-04" / "repo_summary.csv"
+        )
+        february_repo_summary_csv = february_repo_summary_path.read_text(encoding="utf-8")
+        march_repo_summary_csv = march_repo_summary_path.read_text(encoding="utf-8")
+        april_repo_summary_csv = april_repo_summary_path.read_text(encoding="utf-8")
+        february_org_summary_json_path = (
+            tmp_path / "org_summary" / "month" / "2026-02" / "summary.json"
+        )
+        march_org_summary_json_path = (
+            tmp_path / "org_summary" / "month" / "2026-03" / "summary.json"
+        )
+        april_org_summary_json_path = (
+            tmp_path / "org_summary" / "month" / "2026-04" / "summary.json"
+        )
+        february_org_summary_markdown_path = (
+            tmp_path / "org_summary" / "month" / "2026-02" / "summary.md"
+        )
+        march_org_summary_markdown_path = (
+            tmp_path / "org_summary" / "month" / "2026-03" / "summary.md"
+        )
+        april_org_summary_markdown_path = (
+            tmp_path / "org_summary" / "month" / "2026-04" / "summary.md"
+        )
+        february_org_summary_json = february_org_summary_json_path.read_text(
+            encoding="utf-8"
+        )
+        march_org_summary_json = march_org_summary_json_path.read_text(encoding="utf-8")
+        april_org_summary_json = april_org_summary_json_path.read_text(encoding="utf-8")
+        february_org_summary_markdown = february_org_summary_markdown_path.read_text(
+            encoding="utf-8"
+        )
+        march_org_summary_markdown = march_org_summary_markdown_path.read_text(
+            encoding="utf-8"
+        )
+        april_org_summary_markdown = april_org_summary_markdown_path.read_text(
+            encoding="utf-8"
+        )
         refreshed_april_pull_request = PullRequestRecord(
             repository_full_name="acme/web",
             number=44,
@@ -1603,6 +1935,10 @@ class TestRunCommandRuntime:
             "orgpulse.cli.OrgSummaryWriter",
             lambda: OrgSummaryWriter(),
         )
+        monkeypatch.setattr(
+            "orgpulse.cli.RepositorySummaryCsvWriter",
+            lambda: RepositorySummaryCsvWriter(),
+        )
 
         # When
         result = runner.invoke(
@@ -1649,19 +1985,76 @@ class TestRunCommandRuntime:
             "2026-03",
             "2026-04",
         ]
+        assert [period["key"] for period in payload["repo_summary"]["periods"]] == [
+            "2026-03",
+            "2026-04",
+        ]
+        assert [period["repository_count"] for period in payload["repo_summary"]["periods"]] == [
+            0,
+            1,
+        ]
+        assert [period["key"] for period in payload["org_summary"]["periods"]] == [
+            "2026-03",
+            "2026-04",
+        ]
         assert (
             february_pull_requests_path.read_text(encoding="utf-8")
             == february_pull_requests_csv
+        )
+        assert (
+            february_repo_summary_path.read_text(encoding="utf-8")
+            == february_repo_summary_csv
+        )
+        assert (
+            february_org_summary_json_path.read_text(encoding="utf-8")
+            == february_org_summary_json
+        )
+        assert (
+            february_org_summary_markdown_path.read_text(encoding="utf-8")
+            == february_org_summary_markdown
         )
         assert (
             march_pull_requests_path.read_text(encoding="utf-8")
             == f"{','.join(PULL_REQUEST_FIELDNAMES)}\n"
         )
         assert march_pull_requests_path.read_text(encoding="utf-8") != march_pull_requests_csv
+        assert (
+            march_repo_summary_path.read_text(encoding="utf-8")
+            == f"{','.join(REPOSITORY_SUMMARY_CSV_FIELDNAMES)}\n"
+        )
+        assert march_repo_summary_path.read_text(encoding="utf-8") != march_repo_summary_csv
+        refreshed_march_org_summary = json.loads(
+            march_org_summary_json_path.read_text(encoding="utf-8")
+        )
+        assert march_org_summary_json_path.read_text(encoding="utf-8") != march_org_summary_json
+        assert (
+            march_org_summary_markdown_path.read_text(encoding="utf-8")
+            != march_org_summary_markdown
+        )
+        assert refreshed_march_org_summary["period"]["key"] == "2026-03"
+        assert refreshed_march_org_summary["summary"]["pull_request_count"] == 0
+        assert refreshed_march_org_summary["summary"]["repository_count"] == 0
         refreshed_april_csv = april_pull_requests_path.read_text(encoding="utf-8")
         assert refreshed_april_csv != april_pull_requests_csv
         assert "Refresh April work" in refreshed_april_csv
         assert "Overwrite stale April work" not in refreshed_april_csv
+        refreshed_april_repo_summary = april_repo_summary_path.read_text(encoding="utf-8")
+        assert refreshed_april_repo_summary != april_repo_summary_csv
+        assert "acme/web" in refreshed_april_repo_summary
+        assert "acme/api" not in refreshed_april_repo_summary
+        refreshed_april_org_summary = json.loads(
+            april_org_summary_json_path.read_text(encoding="utf-8")
+        )
+        assert april_org_summary_json_path.read_text(encoding="utf-8") != april_org_summary_json
+        assert (
+            april_org_summary_markdown_path.read_text(encoding="utf-8")
+            != april_org_summary_markdown
+        )
+        assert refreshed_april_org_summary["period"]["key"] == "2026-04"
+        assert refreshed_april_org_summary["summary"]["repository_count"] == 1
+        assert (
+            refreshed_april_org_summary["summary"]["merged_pull_request_count"] == 1
+        )
         assert [period["key"] for period in payload["org_metrics"]["periods"]] == [
             "2026-02",
             "2026-03",
@@ -1684,6 +2077,87 @@ class TestRunCommandRuntime:
         assert validation_periods["2026-04"]["raw_review_count"] == 1
         assert validation_periods["2026-04"]["raw_timeline_event_count"] == 1
         assert all(period["valid"] for period in payload["metric_validation"]["periods"])
+        assert json.loads(
+            (
+                tmp_path / "repo_summary" / "month" / "index.json"
+            ).read_text(encoding="utf-8")
+        )["history"] == [
+            {
+                "closed": True,
+                "end_date": "2026-02-28",
+                "key": "2026-02",
+                "path": "2026-02/repo_summary.csv",
+                "start_date": "2026-02-01",
+            },
+            {
+                "closed": True,
+                "end_date": "2026-03-31",
+                "key": "2026-03",
+                "path": "2026-03/repo_summary.csv",
+                "start_date": "2026-03-01",
+            },
+            {
+                "closed": True,
+                "end_date": "2026-04-30",
+                "key": "2026-04",
+                "path": "2026-04/repo_summary.csv",
+                "start_date": "2026-04-01",
+            },
+        ]
+        assert json.loads(
+            (
+                tmp_path / "org_summary" / "month" / "index.json"
+            ).read_text(encoding="utf-8")
+        )["latest"] == {
+            "closed": True,
+            "end_date": "2026-04-30",
+            "json_path": "latest/summary.json",
+            "key": "2026-04",
+            "markdown_path": "latest/summary.md",
+            "source_json_path": "2026-04/summary.json",
+            "source_markdown_path": "2026-04/summary.md",
+            "start_date": "2026-04-01",
+        }
+        assert json.loads(
+            (
+                tmp_path / "manifest" / "month" / "index.json"
+            ).read_text(encoding="utf-8")
+        )["history"] == {
+            "locked_periods": [
+                {
+                    "closed": True,
+                    "end_date": "2026-02-28",
+                    "key": "2026-02",
+                    "start_date": "2026-02-01",
+                },
+                {
+                    "closed": True,
+                    "end_date": "2026-03-31",
+                    "key": "2026-03",
+                    "start_date": "2026-03-01",
+                },
+                {
+                    "closed": True,
+                    "end_date": "2026-04-30",
+                    "key": "2026-04",
+                    "start_date": "2026-04-01",
+                },
+            ],
+            "refreshed_periods": [
+                {
+                    "closed": True,
+                    "end_date": "2026-03-31",
+                    "key": "2026-03",
+                    "start_date": "2026-03-01",
+                },
+                {
+                    "closed": True,
+                    "end_date": "2026-04-30",
+                    "key": "2026-04",
+                    "start_date": "2026-04-01",
+                },
+            ],
+        }
 
     def test_writes_empty_org_summary_exports_for_backfill_periods_without_pull_requests(
         self,
@@ -2038,6 +2512,33 @@ class TestRunCommandRuntime:
         assert json.loads(stale_manifest_path.read_text(encoding="utf-8"))[
             "target_org"
         ] == "acme"
+        assert json.loads(
+            (
+                tmp_path / "repo_summary" / "month" / "index.json"
+            ).read_text(encoding="utf-8")
+        )["history"] == [
+            {
+                "closed": False,
+                "end_date": "2026-04-30",
+                "key": "2026-04",
+                "path": "2026-04/repo_summary.csv",
+                "start_date": "2026-04-01",
+            }
+        ]
+        assert json.loads(
+            (
+                tmp_path / "org_summary" / "month" / "index.json"
+            ).read_text(encoding="utf-8")
+        )["history"] == [
+            {
+                "closed": False,
+                "end_date": "2026-04-30",
+                "json_path": "2026-04/summary.json",
+                "key": "2026-04",
+                "markdown_path": "2026-04/summary.md",
+                "start_date": "2026-04-01",
+            }
+        ]
 
     def test_skips_snapshot_writes_when_repo_collection_has_failures(
         self,

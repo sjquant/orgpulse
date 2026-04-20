@@ -346,6 +346,11 @@ class OrgSummaryWriteResult(BaseModel):
     target_org: str
     root_dir: Path
     contract_path: Path
+    index_path: Path
+    readme_path: Path
+    latest_directory: Path | None
+    latest_markdown_path: Path | None
+    latest_json_path: Path | None
     periods: tuple[OrgSummaryPeriodWriteResult, ...]
 
 
@@ -439,6 +444,8 @@ class ManifestWriteResult(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     path: Path
+    index_path: Path
+    readme_path: Path
     manifest: RunManifest
 
 
@@ -457,6 +464,10 @@ class RepositorySummaryCsvWriteResult(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     root_dir: Path
+    contract_path: Path
+    index_path: Path
+    readme_path: Path
+    latest_path: Path | None
     periods: tuple[RepositorySummaryCsvPeriod, ...]
 
 

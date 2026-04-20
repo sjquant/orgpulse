@@ -1,410 +1,200 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import datetime
 
 import pytest
 
-from orgpulse.ingestion import NormalizedRawSnapshotWriter
-from orgpulse.metrics import (
-    MetricValidationCollectionBuilder,
-    OrganizationMetricCollectionBuilder,
-    PullRequestMetricCollectionBuilder,
-)
 from orgpulse.models import (
-    PullRequestCollection,
+    OrganizationMetricCollection,
+    PullRequestMetricCollection,
     PullRequestRecord,
-    PullRequestReviewRecord,
-    PullRequestTimelineEventRecord,
-    RunConfig,
+    RawSnapshotWriteResult,
     RunMode,
 )
 
+REVIEW_TIMING_SCENARIOS = (
+    pytest.param("draft_reset_request_cycle", id="draft reset request cycle"),
+    pytest.param("missing_review_merge_data", id="missing review and merge data"),
+    pytest.param(
+        "ignore_pre_ready_review_after_draft_reset",
+        id="ignore pre-ready review after draft reset",
+    ),
+    pytest.param("draft_created_stays_null", id="draft-created PR stays null"),
+    pytest.param(
+        "ignore_pre_ready_review_for_draft_created_pr",
+        id="ignore pre-ready review for draft-created PR",
+    ),
+)
+
+AGGREGATION_SCENARIOS = (
+    pytest.param("multi_repo_rollups", id="multi-repo rollups"),
+    pytest.param("no_active_authors", id="no active authors"),
+)
+
+VALIDATION_SCENARIOS = (
+    pytest.param("raw_count_mismatch", id="raw count mismatch"),
+    pytest.param("review_start_missing", id="review start missing"),
+    pytest.param("merge_timing_mismatch", id="merge timing mismatch"),
+    pytest.param("org_rollup_mismatch", id="org rollup mismatch"),
+)
+
+
+@dataclass(frozen=True)
+class MetricSummaryExpectation:
+    """Describe an aggregate summary asserted by fixture-driven tests."""
+
+    count: int
+    total: int
+    average: float | None
+    median: float | None
+
+
+@dataclass(frozen=True)
+class ReviewTimingExpectation:
+    """Describe the normalized timing facts expected for a pull request."""
+
+    author_login: str | None
+    review_ready_at: datetime | None
+    review_requested_at: datetime | None
+    review_started_at: datetime | None
+    first_review_submitted_at: datetime | None
+    merged_at: datetime | None
+    time_to_first_review_seconds: int | None
+    time_to_merge_seconds: int | None
+    changed_lines: int
+
+
+@dataclass(frozen=True)
+class ReviewTimingCase:
+    """Bundle a pull request fixture with its expected timing outputs."""
+
+    pull_request: PullRequestRecord
+    expected: ReviewTimingExpectation
+
+
+@dataclass(frozen=True)
+class RepositoryRollupExpectation:
+    """Describe the repo-level aggregation expected for a fixture set."""
+
+    repository_full_name: str
+    pull_request_count: int
+    merged_pull_request_count: int
+    active_author_count: int
+    merged_pull_requests_per_active_author: float | None
+    time_to_merge_seconds: MetricSummaryExpectation
+    time_to_first_review_seconds: MetricSummaryExpectation
+    additions: MetricSummaryExpectation
+    deletions: MetricSummaryExpectation
+    changed_lines: MetricSummaryExpectation
+    changed_files: MetricSummaryExpectation
+    commits: MetricSummaryExpectation
+
+
+@dataclass(frozen=True)
+class OrganizationRollupExpectation:
+    """Describe the org-level aggregation expected for a fixture set."""
+
+    repository_count: int
+    pull_request_count: int
+    merged_pull_request_count: int
+    active_author_count: int
+    merged_pull_requests_per_active_author: float | None
+    time_to_merge_seconds: MetricSummaryExpectation
+    time_to_first_review_seconds: MetricSummaryExpectation
+    additions: MetricSummaryExpectation
+    deletions: MetricSummaryExpectation
+    changed_lines: MetricSummaryExpectation
+    changed_files: MetricSummaryExpectation
+    commits: MetricSummaryExpectation
+
+
+@dataclass(frozen=True)
+class AggregationCase:
+    """Bundle multi-PR fixtures with expected repo and org rollups."""
+
+    pull_requests: tuple[PullRequestRecord, ...]
+    expected_repositories: tuple[RepositoryRollupExpectation, ...]
+    expected_org_summary: OrganizationRollupExpectation
+
+
+@dataclass(frozen=True)
+class ValidationCase:
+    """Bundle metric outputs and expected validation results."""
+
+    pipeline: object
+    raw_snapshot: RawSnapshotWriteResult
+    pull_request_metrics: PullRequestMetricCollection
+    org_metrics: OrganizationMetricCollection
+    expected_valid: bool
+    expected_issue_codes: tuple[str, ...]
+
 
 class TestPullRequestMetricCollectionBuilder:
-    def test_builds_review_and_merge_timing_from_normalized_raw_snapshots(
+    @pytest.mark.parametrize("review_timing_case_name", REVIEW_TIMING_SCENARIOS)
+    def test_normalizes_review_timing_cases(
         self,
-        tmp_path,
+        metric_harness,
+        pull_request_factory,
+        review_factory,
+        timeline_event_factory,
+        review_timing_case_name: str,
     ) -> None:
-        """Build timing facts from normalized raw snapshots for draft resets and review-request cycles."""
+        """Normalize review timing fixtures through the public raw snapshot contract."""
         # Given
-        config = self._build_run_config(
+        review_timing_case = _build_review_timing_case(
+            review_timing_case_name,
+            pull_request_factory=pull_request_factory,
+            review_factory=review_factory,
+            timeline_event_factory=timeline_event_factory,
+        )
+        pipeline = metric_harness.build_pipeline(
+            pull_requests=(review_timing_case.pull_request,),
             as_of="2026-04-18",
             mode=RunMode.FULL,
-            output_dir=tmp_path,
-        )
-        raw_snapshot = self._write_raw_snapshot(
-            config,
-            pull_requests=(
-                PullRequestRecord(
-                    repository_full_name="acme/api",
-                    number=21,
-                    title="Stabilize review timing",
-                    state="closed",
-                    draft=False,
-                    merged=True,
-                    author_login="alice",
-                    created_at=datetime.fromisoformat("2026-04-05T09:00:00"),
-                    updated_at=datetime.fromisoformat("2026-04-06T18:30:00"),
-                    closed_at=datetime.fromisoformat("2026-04-06T18:30:00"),
-                    merged_at=datetime.fromisoformat("2026-04-06T18:00:00"),
-                    additions=30,
-                    deletions=12,
-                    changed_files=5,
-                    commits=4,
-                    html_url="https://example.test/pr/21",
-                    reviews=(
-                        PullRequestReviewRecord(
-                            review_id=501,
-                            state="APPROVED",
-                            author_login="reviewer-b",
-                            submitted_at=datetime.fromisoformat(
-                                "2026-04-06T18:30:00"
-                            ),
-                            commit_id="commit-501",
-                        ),
-                    ),
-                    timeline_events=(
-                        PullRequestTimelineEventRecord(
-                            event_id=601,
-                            event="review_requested",
-                            actor_login="alice",
-                            created_at=datetime.fromisoformat("2026-04-05T10:00:00"),
-                            requested_reviewer_login="reviewer-a",
-                            requested_team_name=None,
-                        ),
-                        PullRequestTimelineEventRecord(
-                            event_id=602,
-                            event="review_request_removed",
-                            actor_login="alice",
-                            created_at=datetime.fromisoformat("2026-04-05T11:00:00"),
-                            requested_reviewer_login="reviewer-a",
-                            requested_team_name=None,
-                        ),
-                        PullRequestTimelineEventRecord(
-                            event_id=603,
-                            event="converted_to_draft",
-                            actor_login="alice",
-                            created_at=datetime.fromisoformat("2026-04-05T12:00:00"),
-                            requested_reviewer_login=None,
-                            requested_team_name=None,
-                        ),
-                        PullRequestTimelineEventRecord(
-                            event_id=604,
-                            event="ready_for_review",
-                            actor_login="alice",
-                            created_at=datetime.fromisoformat("2026-04-05T15:00:00"),
-                            requested_reviewer_login=None,
-                            requested_team_name=None,
-                        ),
-                        PullRequestTimelineEventRecord(
-                            event_id=605,
-                            event="review_requested",
-                            actor_login="alice",
-                            created_at=datetime.fromisoformat("2026-04-05T16:00:00"),
-                            requested_reviewer_login="reviewer-b",
-                            requested_team_name=None,
-                        ),
-                    ),
-                ),
-            ),
         )
 
         # When
-        result = PullRequestMetricCollectionBuilder().build(config, raw_snapshot)
+        period = pipeline.pull_request_metrics.periods[0]
+        metric = period.pull_request_metrics[0]
 
         # Then
-        assert [period.key for period in result.periods] == ["2026-04"]
-        metric = result.periods[0].pull_request_metrics[0]
-        assert metric.review_ready_at == datetime.fromisoformat("2026-04-05T15:00:00")
-        assert metric.review_requested_at == datetime.fromisoformat(
-            "2026-04-05T16:00:00"
+        assert [metric_period.key for metric_period in pipeline.pull_request_metrics.periods] == [
+            "2026-04"
+        ]
+        assert period.closed is False
+        assert metric.author_login == review_timing_case.expected.author_login
+        assert metric.review_ready_at == review_timing_case.expected.review_ready_at
+        assert metric.review_requested_at == review_timing_case.expected.review_requested_at
+        assert metric.review_started_at == review_timing_case.expected.review_started_at
+        assert (
+            metric.first_review_submitted_at
+            == review_timing_case.expected.first_review_submitted_at
         )
-        assert metric.review_started_at == datetime.fromisoformat(
-            "2026-04-05T16:00:00"
+        assert metric.merged_at == review_timing_case.expected.merged_at
+        assert (
+            metric.time_to_first_review_seconds
+            == review_timing_case.expected.time_to_first_review_seconds
         )
-        assert metric.first_review_submitted_at == datetime.fromisoformat(
-            "2026-04-06T18:30:00"
-        )
-        assert metric.time_to_first_review_seconds == 95_400
-        assert metric.time_to_merge_seconds == 118_800
-        assert metric.changed_lines == 42
-
-    def test_normalizes_missing_review_and_merge_data_to_null(
-        self,
-        tmp_path,
-    ) -> None:
-        """Normalize missing review and merge timing inputs to null instead of zero-like values."""
-        # Given
-        config = self._build_run_config(
-            as_of="2026-04-18",
-            output_dir=tmp_path,
-        )
-        raw_snapshot = self._write_raw_snapshot(
-            config,
-            pull_requests=(
-                PullRequestRecord(
-                    repository_full_name="acme/api",
-                    number=34,
-                    title="Leave timing fields empty",
-                    state="open",
-                    draft=False,
-                    merged=False,
-                    author_login=None,
-                    created_at=datetime.fromisoformat("2026-04-10T09:00:00"),
-                    updated_at=datetime.fromisoformat("2026-04-12T11:00:00"),
-                    closed_at=None,
-                    merged_at=None,
-                    additions=8,
-                    deletions=3,
-                    changed_files=2,
-                    commits=1,
-                    html_url="https://example.test/pr/34",
-                ),
-            ),
-        )
-
-        # When
-        result = PullRequestMetricCollectionBuilder().build(config, raw_snapshot)
-
-        # Then
-        metric = result.periods[0].pull_request_metrics[0]
-        assert metric.author_login is None
-        assert metric.review_ready_at == datetime.fromisoformat("2026-04-10T09:00:00")
-        assert metric.review_requested_at is None
-        assert metric.review_started_at == datetime.fromisoformat("2026-04-10T09:00:00")
-        assert metric.first_review_submitted_at is None
-        assert metric.time_to_first_review_seconds is None
-        assert metric.merged_at is None
-        assert metric.time_to_merge_seconds is None
-
-    def test_ignores_reviews_that_arrive_before_the_normalized_review_window(
-        self,
-        tmp_path,
-    ) -> None:
-        """Ignore reviews that land before a draft PR becomes reviewable again."""
-        # Given
-        config = self._build_run_config(
-            as_of="2026-04-18",
-            output_dir=tmp_path,
-        )
-        raw_snapshot = self._write_raw_snapshot(
-            config,
-            pull_requests=(
-                PullRequestRecord(
-                    repository_full_name="acme/api",
-                    number=44,
-                    title="Skip early draft review",
-                    state="closed",
-                    draft=False,
-                    merged=True,
-                    author_login="alice",
-                    created_at=datetime.fromisoformat("2026-04-10T09:00:00"),
-                    updated_at=datetime.fromisoformat("2026-04-11T13:00:00"),
-                    closed_at=datetime.fromisoformat("2026-04-11T13:00:00"),
-                    merged_at=datetime.fromisoformat("2026-04-11T13:00:00"),
-                    additions=10,
-                    deletions=2,
-                    changed_files=2,
-                    commits=2,
-                    html_url="https://example.test/pr/44",
-                    reviews=(
-                        PullRequestReviewRecord(
-                            review_id=701,
-                            state="COMMENTED",
-                            author_login="reviewer-a",
-                            submitted_at=datetime.fromisoformat(
-                                "2026-04-10T10:00:00"
-                            ),
-                            commit_id="commit-701",
-                        ),
-                        PullRequestReviewRecord(
-                            review_id=702,
-                            state="APPROVED",
-                            author_login="reviewer-b",
-                            submitted_at=datetime.fromisoformat(
-                                "2026-04-11T12:00:00"
-                            ),
-                            commit_id="commit-702",
-                        ),
-                    ),
-                    timeline_events=(
-                        PullRequestTimelineEventRecord(
-                            event_id=801,
-                            event="converted_to_draft",
-                            actor_login="alice",
-                            created_at=datetime.fromisoformat("2026-04-10T09:30:00"),
-                            requested_reviewer_login=None,
-                            requested_team_name=None,
-                        ),
-                        PullRequestTimelineEventRecord(
-                            event_id=802,
-                            event="ready_for_review",
-                            actor_login="alice",
-                            created_at=datetime.fromisoformat("2026-04-11T09:00:00"),
-                            requested_reviewer_login=None,
-                            requested_team_name=None,
-                        ),
-                    ),
-                ),
-            ),
-        )
-
-        # When
-        result = PullRequestMetricCollectionBuilder().build(config, raw_snapshot)
-
-        # Then
-        metric = result.periods[0].pull_request_metrics[0]
-        assert metric.review_ready_at == datetime.fromisoformat("2026-04-11T09:00:00")
-        assert metric.first_review_submitted_at == datetime.fromisoformat(
-            "2026-04-11T12:00:00"
-        )
-        assert metric.time_to_first_review_seconds == 10_800
-
-    def test_keeps_review_timing_null_for_pull_requests_created_as_drafts(
-        self,
-        tmp_path,
-    ) -> None:
-        """Keep review timing null until a draft-created pull request becomes reviewable."""
-        # Given
-        config = self._build_run_config(
-            as_of="2026-04-18",
-            output_dir=tmp_path,
-        )
-        raw_snapshot = self._write_raw_snapshot(
-            config,
-            pull_requests=(
-                PullRequestRecord(
-                    repository_full_name="acme/api",
-                    number=45,
-                    title="Start life as a draft",
-                    state="open",
-                    draft=True,
-                    merged=False,
-                    author_login="alice",
-                    created_at=datetime.fromisoformat("2026-04-10T09:00:00"),
-                    updated_at=datetime.fromisoformat("2026-04-12T11:00:00"),
-                    closed_at=None,
-                    merged_at=None,
-                    additions=6,
-                    deletions=1,
-                    changed_files=1,
-                    commits=1,
-                    html_url="https://example.test/pr/45",
-                ),
-            ),
-        )
-
-        # When
-        result = PullRequestMetricCollectionBuilder().build(config, raw_snapshot)
-
-        # Then
-        metric = result.periods[0].pull_request_metrics[0]
-        assert metric.review_ready_at is None
-        assert metric.review_requested_at is None
-        assert metric.review_started_at is None
-        assert metric.first_review_submitted_at is None
-        assert metric.time_to_first_review_seconds is None
-
-    def test_ignores_pre_ready_reviews_for_pull_requests_opened_as_drafts(
-        self,
-        tmp_path,
-    ) -> None:
-        """Ignore reviews that arrive before the first ready transition for a draft-created pull request."""
-        # Given
-        config = self._build_run_config(
-            as_of="2026-04-18",
-            output_dir=tmp_path,
-        )
-        raw_snapshot = self._write_raw_snapshot(
-            config,
-            pull_requests=(
-                PullRequestRecord(
-                    repository_full_name="acme/api",
-                    number=46,
-                    title="Become ready later",
-                    state="closed",
-                    draft=False,
-                    merged=True,
-                    author_login="alice",
-                    created_at=datetime.fromisoformat("2026-04-10T09:00:00"),
-                    updated_at=datetime.fromisoformat("2026-04-11T13:00:00"),
-                    closed_at=datetime.fromisoformat("2026-04-11T13:00:00"),
-                    merged_at=datetime.fromisoformat("2026-04-11T13:00:00"),
-                    additions=9,
-                    deletions=2,
-                    changed_files=2,
-                    commits=2,
-                    html_url="https://example.test/pr/46",
-                    reviews=(
-                        PullRequestReviewRecord(
-                            review_id=703,
-                            state="COMMENTED",
-                            author_login="reviewer-a",
-                            submitted_at=datetime.fromisoformat(
-                                "2026-04-10T10:00:00"
-                            ),
-                            commit_id="commit-703",
-                        ),
-                        PullRequestReviewRecord(
-                            review_id=704,
-                            state="APPROVED",
-                            author_login="reviewer-b",
-                            submitted_at=datetime.fromisoformat(
-                                "2026-04-11T12:00:00"
-                            ),
-                            commit_id="commit-704",
-                        ),
-                    ),
-                    timeline_events=(
-                        PullRequestTimelineEventRecord(
-                            event_id=803,
-                            event="ready_for_review",
-                            actor_login="alice",
-                            created_at=datetime.fromisoformat("2026-04-11T09:00:00"),
-                            requested_reviewer_login=None,
-                            requested_team_name=None,
-                        ),
-                    ),
-                ),
-            ),
-        )
-
-        # When
-        result = PullRequestMetricCollectionBuilder().build(config, raw_snapshot)
-
-        # Then
-        metric = result.periods[0].pull_request_metrics[0]
-        assert metric.review_ready_at == datetime.fromisoformat("2026-04-11T09:00:00")
-        assert metric.review_started_at == datetime.fromisoformat(
-            "2026-04-11T09:00:00"
-        )
-        assert metric.first_review_submitted_at == datetime.fromisoformat(
-            "2026-04-11T12:00:00"
-        )
-        assert metric.time_to_first_review_seconds == 10_800
+        assert metric.time_to_merge_seconds == review_timing_case.expected.time_to_merge_seconds
+        assert metric.changed_lines == review_timing_case.expected.changed_lines
 
     def test_preserves_incremental_period_scope_from_raw_snapshot_output(
         self,
-        tmp_path,
+        metric_harness,
+        pull_request_factory,
     ) -> None:
         """Preserve incremental run scope by building metrics only for the active raw snapshot period."""
         # Given
-        config = self._build_run_config(
+        pipeline = metric_harness.build_pipeline(
             as_of="2026-04-18",
             mode=RunMode.INCREMENTAL,
-            output_dir=tmp_path,
-        )
-        raw_snapshot = self._write_raw_snapshot(
-            config,
             pull_requests=(
-                PullRequestRecord(
-                    repository_full_name="acme/api",
+                pull_request_factory(
                     number=55,
                     title="Current-period refresh only",
                     state="closed",
-                    draft=False,
                     merged=True,
-                    author_login="alice",
                     created_at=datetime.fromisoformat("2026-04-11T09:00:00"),
                     updated_at=datetime.fromisoformat("2026-04-12T09:00:00"),
                     closed_at=datetime.fromisoformat("2026-04-12T09:00:00"),
@@ -419,30 +209,31 @@ class TestPullRequestMetricCollectionBuilder:
         )
 
         # When
-        result = PullRequestMetricCollectionBuilder().build(config, raw_snapshot)
+        result = pipeline.pull_request_metrics
 
         # Then
         assert [period.key for period in result.periods] == ["2026-04"]
         assert result.periods[0].closed is False
-        assert [metric.pull_request_number for metric in result.periods[0].pull_request_metrics] == [55]
+        assert [
+            metric.pull_request_number for metric in result.periods[0].pull_request_metrics
+        ] == [55]
 
     def test_builds_empty_backfill_periods_from_header_only_raw_snapshots(
         self,
-        tmp_path,
+        metric_harness,
     ) -> None:
         """Build empty metric periods for requested backfill windows even when raw snapshots have only headers."""
         # Given
-        config = self._build_run_config(
+        pipeline = metric_harness.build_pipeline(
             as_of="2026-05-18",
             mode=RunMode.BACKFILL,
             backfill_start="2026-03-01",
             backfill_end="2026-04-30",
-            output_dir=tmp_path,
+            pull_requests=(),
         )
-        raw_snapshot = self._write_raw_snapshot(config, pull_requests=())
 
         # When
-        result = PullRequestMetricCollectionBuilder().build(config, raw_snapshot)
+        result = pipeline.pull_request_metrics
 
         # Then
         assert [period.key for period in result.periods] == ["2026-03", "2026-04"]
@@ -451,192 +242,149 @@ class TestPullRequestMetricCollectionBuilder:
         assert result.periods[0].pull_request_metrics == ()
         assert result.periods[1].pull_request_metrics == ()
 
-    def _build_run_config(self, **overrides: object) -> RunConfig:
-        """Build the minimal run configuration needed for metric integration tests."""
-        return RunConfig.model_validate({"org": "acme", **overrides})
 
-    def _write_raw_snapshot(
+class TestRepositoryMetricCollectionBuilder:
+    @pytest.mark.parametrize("aggregation_case_name", AGGREGATION_SCENARIOS)
+    def test_builds_repository_rollups_from_fixture_matrix(
         self,
-        config: RunConfig,
-        *,
-        pull_requests: tuple[PullRequestRecord, ...],
-    ):
-        """Write raw snapshot fixtures through the production snapshot writer."""
-        return NormalizedRawSnapshotWriter().write(
-            config,
-            PullRequestCollection(
-                window=config.collection_window,
-                pull_requests=pull_requests,
-                failures=(),
-            ),
-        )
-
-
-class TestOrganizationMetricCollectionBuilder:
-    def test_builds_org_rollups_across_multiple_repositories(
-        self,
-        tmp_path,
+        metric_harness,
+        pull_request_factory,
+        review_factory,
+        aggregation_case_name: str,
     ) -> None:
-        """Build org-level rollups from multiple repository metric fact streams in the same period."""
+        """Build repo rollups from fixture-driven pull request aggregates."""
         # Given
-        config = self._build_run_config(
+        aggregation_case = _build_aggregation_case(
+            aggregation_case_name,
+            pull_request_factory=pull_request_factory,
+            review_factory=review_factory,
+        )
+        pipeline = metric_harness.build_pipeline(
             as_of="2026-04-18",
-            output_dir=tmp_path,
-        )
-        raw_snapshot = self._write_raw_snapshot(
-            config,
-            pull_requests=(
-                PullRequestRecord(
-                    repository_full_name="acme/api",
-                    number=21,
-                    title="Ship API endpoint",
-                    state="closed",
-                    draft=False,
-                    merged=True,
-                    author_login="Alice",
-                    created_at=datetime.fromisoformat("2026-04-05T09:00:00"),
-                    updated_at=datetime.fromisoformat("2026-04-06T12:00:00"),
-                    closed_at=datetime.fromisoformat("2026-04-06T12:00:00"),
-                    merged_at=datetime.fromisoformat("2026-04-06T12:00:00"),
-                    additions=10,
-                    deletions=4,
-                    changed_files=2,
-                    commits=2,
-                    html_url="https://example.test/pr/21",
-                    reviews=(
-                        PullRequestReviewRecord(
-                            review_id=501,
-                            state="APPROVED",
-                            author_login="reviewer-a",
-                            submitted_at=datetime.fromisoformat(
-                                "2026-04-05T12:00:00"
-                            ),
-                            commit_id="commit-501",
-                        ),
-                    ),
-                ),
-                PullRequestRecord(
-                    repository_full_name="acme/web",
-                    number=31,
-                    title="Ship dashboard layout",
-                    state="closed",
-                    draft=False,
-                    merged=True,
-                    author_login="alice",
-                    created_at=datetime.fromisoformat("2026-04-08T09:00:00"),
-                    updated_at=datetime.fromisoformat("2026-04-09T13:00:00"),
-                    closed_at=datetime.fromisoformat("2026-04-09T13:00:00"),
-                    merged_at=datetime.fromisoformat("2026-04-09T12:00:00"),
-                    additions=20,
-                    deletions=10,
-                    changed_files=4,
-                    commits=5,
-                    html_url="https://example.test/pr/31",
-                    reviews=(
-                        PullRequestReviewRecord(
-                            review_id=601,
-                            state="APPROVED",
-                            author_login="reviewer-b",
-                            submitted_at=datetime.fromisoformat(
-                                "2026-04-08T15:00:00"
-                            ),
-                            commit_id="commit-601",
-                        ),
-                    ),
-                ),
-                PullRequestRecord(
-                    repository_full_name="acme/docs",
-                    number=41,
-                    title="Clarify onboarding steps",
-                    state="open",
-                    draft=False,
-                    merged=False,
-                    author_login="bob",
-                    created_at=datetime.fromisoformat("2026-04-10T09:00:00"),
-                    updated_at=datetime.fromisoformat("2026-04-10T16:00:00"),
-                    closed_at=None,
-                    merged_at=None,
-                    additions=5,
-                    deletions=1,
-                    changed_files=1,
-                    commits=1,
-                    html_url="https://example.test/pr/41",
-                    reviews=(
-                        PullRequestReviewRecord(
-                            review_id=701,
-                            state="COMMENTED",
-                            author_login="reviewer-c",
-                            submitted_at=datetime.fromisoformat(
-                                "2026-04-10T11:00:00"
-                            ),
-                            commit_id="commit-701",
-                        ),
-                    ),
-                ),
-            ),
-        )
-        pull_request_metrics = PullRequestMetricCollectionBuilder().build(
-            config,
-            raw_snapshot,
+            pull_requests=aggregation_case.pull_requests,
         )
 
         # When
-        result = OrganizationMetricCollectionBuilder().build(
-            config,
-            pull_request_metrics,
-        )
+        repositories = pipeline.repository_metrics.periods[0].repositories
 
         # Then
-        assert result.target_org == "acme"
-        assert [period.key for period in result.periods] == ["2026-04"]
-        summary = result.periods[0].summary
-        assert summary.repository_count == 3
-        assert summary.pull_request_count == 3
-        assert summary.merged_pull_request_count == 2
-        assert summary.active_author_count == 2
-        assert summary.merged_pull_requests_per_active_author == 1.0
-        assert summary.time_to_merge_seconds.count == 2
-        assert summary.time_to_merge_seconds.total == 194_400
-        assert summary.time_to_merge_seconds.average == 97_200.0
-        assert summary.time_to_merge_seconds.median == 97_200.0
-        assert summary.time_to_first_review_seconds.count == 3
-        assert summary.time_to_first_review_seconds.total == 39_600
-        assert summary.time_to_first_review_seconds.average == 13_200.0
-        assert summary.time_to_first_review_seconds.median == 10_800.0
-        assert summary.additions.total == 35
-        assert summary.additions.average == pytest.approx(35 / 3)
-        assert summary.additions.median == 10.0
-        assert summary.changed_lines.total == 50
-        assert summary.changed_lines.average == pytest.approx(50 / 3)
-        assert summary.changed_lines.median == 14.0
-        assert summary.commits.total == 8
-        assert summary.commits.average == pytest.approx(8 / 3)
-        assert summary.commits.median == 2.0
+        assert [rollup.repository_full_name for rollup in repositories] == [
+            expectation.repository_full_name
+            for expectation in aggregation_case.expected_repositories
+        ]
+        for rollup, expectation in zip(
+            repositories,
+            aggregation_case.expected_repositories,
+            strict=True,
+        ):
+            assert rollup.pull_request_count == expectation.pull_request_count
+            assert (
+                rollup.merged_pull_request_count
+                == expectation.merged_pull_request_count
+            )
+            assert rollup.active_author_count == expectation.active_author_count
+            assert (
+                rollup.merged_pull_requests_per_active_author
+                == expectation.merged_pull_requests_per_active_author
+            )
+            _assert_metric_summary(
+                rollup.time_to_merge_seconds,
+                expectation.time_to_merge_seconds,
+            )
+            _assert_metric_summary(
+                rollup.time_to_first_review_seconds,
+                expectation.time_to_first_review_seconds,
+            )
+            _assert_metric_summary(rollup.additions, expectation.additions)
+            _assert_metric_summary(rollup.deletions, expectation.deletions)
+            _assert_metric_summary(rollup.changed_lines, expectation.changed_lines)
+            _assert_metric_summary(rollup.changed_files, expectation.changed_files)
+            _assert_metric_summary(rollup.commits, expectation.commits)
+
+
+class TestOrganizationMetricCollectionBuilder:
+    @pytest.mark.parametrize("aggregation_case_name", AGGREGATION_SCENARIOS)
+    def test_builds_org_rollups_from_fixture_matrix(
+        self,
+        metric_harness,
+        pull_request_factory,
+        review_factory,
+        aggregation_case_name: str,
+    ) -> None:
+        """Build org rollups from the same fixture-driven aggregate inputs."""
+        # Given
+        aggregation_case = _build_aggregation_case(
+            aggregation_case_name,
+            pull_request_factory=pull_request_factory,
+            review_factory=review_factory,
+        )
+        pipeline = metric_harness.build_pipeline(
+            as_of="2026-04-18",
+            pull_requests=aggregation_case.pull_requests,
+        )
+
+        # When
+        summary = pipeline.org_metrics.periods[0].summary
+
+        # Then
+        assert pipeline.org_metrics.target_org == "acme"
+        assert [period.key for period in pipeline.org_metrics.periods] == ["2026-04"]
+        assert summary.repository_count == aggregation_case.expected_org_summary.repository_count
+        assert summary.pull_request_count == aggregation_case.expected_org_summary.pull_request_count
+        assert (
+            summary.merged_pull_request_count
+            == aggregation_case.expected_org_summary.merged_pull_request_count
+        )
+        assert summary.active_author_count == aggregation_case.expected_org_summary.active_author_count
+        assert (
+            summary.merged_pull_requests_per_active_author
+            == aggregation_case.expected_org_summary.merged_pull_requests_per_active_author
+        )
+        _assert_metric_summary(
+            summary.time_to_merge_seconds,
+            aggregation_case.expected_org_summary.time_to_merge_seconds,
+        )
+        _assert_metric_summary(
+            summary.time_to_first_review_seconds,
+            aggregation_case.expected_org_summary.time_to_first_review_seconds,
+        )
+        _assert_metric_summary(
+            summary.additions,
+            aggregation_case.expected_org_summary.additions,
+        )
+        _assert_metric_summary(
+            summary.deletions,
+            aggregation_case.expected_org_summary.deletions,
+        )
+        _assert_metric_summary(
+            summary.changed_lines,
+            aggregation_case.expected_org_summary.changed_lines,
+        )
+        _assert_metric_summary(
+            summary.changed_files,
+            aggregation_case.expected_org_summary.changed_files,
+        )
+        _assert_metric_summary(
+            summary.commits,
+            aggregation_case.expected_org_summary.commits,
+        )
 
     def test_preserves_empty_backfill_periods_in_org_rollups(
         self,
-        tmp_path,
+        metric_harness,
     ) -> None:
         """Preserve explicit backfill periods in org rollups even when the normalized snapshot only contains headers."""
         # Given
-        config = self._build_run_config(
+        pipeline = metric_harness.build_pipeline(
             as_of="2026-05-18",
             mode=RunMode.BACKFILL,
             backfill_start="2026-03-01",
             backfill_end="2026-04-30",
-            output_dir=tmp_path,
-        )
-        raw_snapshot = self._write_raw_snapshot(config, pull_requests=())
-        pull_request_metrics = PullRequestMetricCollectionBuilder().build(
-            config,
-            raw_snapshot,
+            pull_requests=(),
         )
 
         # When
-        result = OrganizationMetricCollectionBuilder().build(
-            config,
-            pull_request_metrics,
-        )
+        result = pipeline.org_metrics
 
         # Then
         assert [period.key for period in result.periods] == ["2026-03", "2026-04"]
@@ -652,153 +400,35 @@ class TestOrganizationMetricCollectionBuilder:
         assert result.periods[1].summary.pull_request_count == 0
         assert result.periods[1].summary.time_to_first_review_seconds.median is None
 
-    def _build_run_config(self, **overrides: object) -> RunConfig:
-        """Build the minimal run configuration needed for org rollup integration tests."""
-        return RunConfig.model_validate({"org": "acme", **overrides})
-
-    def _write_raw_snapshot(
-        self,
-        config: RunConfig,
-        *,
-        pull_requests: tuple[PullRequestRecord, ...],
-    ):
-        """Write raw snapshot fixtures through the production snapshot writer."""
-        return NormalizedRawSnapshotWriter().write(
-            config,
-            PullRequestCollection(
-                window=config.collection_window,
-                pull_requests=pull_requests,
-                failures=(),
-            ),
-        )
-
 
 class TestMetricValidationCollectionBuilder:
     def test_validates_clean_repo_and_org_totals_from_metric_outputs(
         self,
-        tmp_path,
+        metric_harness,
+        pull_request_factory,
+        review_factory,
     ) -> None:
-        """Validate raw counts plus repo and org totals for a clean multi-repo metric snapshot."""
+        """Validate raw counts plus repo and org totals for a clean fixture-driven snapshot."""
         # Given
-        config = self._build_run_config(
+        aggregation_case = _build_aggregation_case(
+            "multi_repo_rollups",
+            pull_request_factory=pull_request_factory,
+            review_factory=review_factory,
+        )
+        pipeline = metric_harness.build_pipeline(
             as_of="2026-04-18",
-            output_dir=tmp_path,
-        )
-        raw_snapshot = self._write_raw_snapshot(
-            config,
-            pull_requests=(
-                PullRequestRecord(
-                    repository_full_name="acme/api",
-                    number=21,
-                    title="Ship API endpoint",
-                    state="closed",
-                    draft=False,
-                    merged=True,
-                    author_login="alice",
-                    created_at=datetime.fromisoformat("2026-04-05T09:00:00"),
-                    updated_at=datetime.fromisoformat("2026-04-06T12:00:00"),
-                    closed_at=datetime.fromisoformat("2026-04-06T12:00:00"),
-                    merged_at=datetime.fromisoformat("2026-04-06T12:00:00"),
-                    additions=10,
-                    deletions=4,
-                    changed_files=2,
-                    commits=2,
-                    html_url="https://example.test/pr/21",
-                    reviews=(
-                        PullRequestReviewRecord(
-                            review_id=501,
-                            state="APPROVED",
-                            author_login="reviewer-a",
-                            submitted_at=datetime.fromisoformat(
-                                "2026-04-05T12:00:00"
-                            ),
-                            commit_id="commit-501",
-                        ),
-                    ),
-                ),
-                PullRequestRecord(
-                    repository_full_name="acme/web",
-                    number=31,
-                    title="Ship dashboard layout",
-                    state="closed",
-                    draft=False,
-                    merged=True,
-                    author_login="bob",
-                    created_at=datetime.fromisoformat("2026-04-08T09:00:00"),
-                    updated_at=datetime.fromisoformat("2026-04-09T13:00:00"),
-                    closed_at=datetime.fromisoformat("2026-04-09T13:00:00"),
-                    merged_at=datetime.fromisoformat("2026-04-09T12:00:00"),
-                    additions=20,
-                    deletions=10,
-                    changed_files=4,
-                    commits=5,
-                    html_url="https://example.test/pr/31",
-                    reviews=(
-                        PullRequestReviewRecord(
-                            review_id=601,
-                            state="APPROVED",
-                            author_login="reviewer-b",
-                            submitted_at=datetime.fromisoformat(
-                                "2026-04-08T15:00:00"
-                            ),
-                            commit_id="commit-601",
-                        ),
-                    ),
-                ),
-                PullRequestRecord(
-                    repository_full_name="acme/docs",
-                    number=41,
-                    title="Clarify onboarding steps",
-                    state="open",
-                    draft=False,
-                    merged=False,
-                    author_login="carol",
-                    created_at=datetime.fromisoformat("2026-04-10T09:00:00"),
-                    updated_at=datetime.fromisoformat("2026-04-10T16:00:00"),
-                    closed_at=None,
-                    merged_at=None,
-                    additions=5,
-                    deletions=1,
-                    changed_files=1,
-                    commits=1,
-                    html_url="https://example.test/pr/41",
-                    reviews=(
-                        PullRequestReviewRecord(
-                            review_id=701,
-                            state="COMMENTED",
-                            author_login="reviewer-c",
-                            submitted_at=datetime.fromisoformat(
-                                "2026-04-10T11:00:00"
-                            ),
-                            commit_id="commit-701",
-                        ),
-                    ),
-                ),
-            ),
-        )
-        pull_request_metrics = PullRequestMetricCollectionBuilder().build(
-            config,
-            raw_snapshot,
-        )
-        org_metrics = OrganizationMetricCollectionBuilder().build(
-            config,
-            pull_request_metrics,
+            pull_requests=aggregation_case.pull_requests,
         )
 
         # When
-        result = MetricValidationCollectionBuilder().build(
-            config,
-            raw_snapshot=raw_snapshot,
-            pull_request_metrics=pull_request_metrics,
-            org_metrics=org_metrics,
-        )
+        result = metric_harness.build_validation(pipeline)
 
         # Then
         assert result.target_org == "acme"
         assert [period.key for period in result.periods] == ["2026-04"]
         period = result.periods[0]
         assert period.valid is True
-        assert period.raw_pull_request_count == 3
+        assert period.raw_pull_request_count == 4
         assert period.raw_review_count == 3
         assert period.raw_timeline_event_count == 0
         assert [
@@ -809,7 +439,7 @@ class TestMetricValidationCollectionBuilder:
             "acme/web",
         ]
         assert period.org_summary.repository_count == 3
-        assert period.org_summary.pull_request_count == 3
+        assert period.org_summary.pull_request_count == 4
         assert period.org_summary.merged_pull_request_count == 2
         assert period.org_summary.time_to_merge_count == 2
         assert period.org_summary.time_to_first_review_count == 3
@@ -817,34 +447,20 @@ class TestMetricValidationCollectionBuilder:
 
     def test_preserves_empty_backfill_periods_in_validation_results(
         self,
-        tmp_path,
+        metric_harness,
     ) -> None:
         """Preserve explicit empty backfill periods when validating historical windows."""
         # Given
-        config = self._build_run_config(
+        pipeline = metric_harness.build_pipeline(
             as_of="2026-05-18",
             mode=RunMode.BACKFILL,
             backfill_start="2026-03-01",
             backfill_end="2026-04-30",
-            output_dir=tmp_path,
-        )
-        raw_snapshot = self._write_raw_snapshot(config, pull_requests=())
-        pull_request_metrics = PullRequestMetricCollectionBuilder().build(
-            config,
-            raw_snapshot,
-        )
-        org_metrics = OrganizationMetricCollectionBuilder().build(
-            config,
-            pull_request_metrics,
+            pull_requests=(),
         )
 
         # When
-        result = MetricValidationCollectionBuilder().build(
-            config,
-            raw_snapshot=raw_snapshot,
-            pull_request_metrics=pull_request_metrics,
-            org_metrics=org_metrics,
-        )
+        result = metric_harness.build_validation(pipeline)
 
         # Then
         assert [period.key for period in result.periods] == ["2026-03", "2026-04"]
@@ -857,83 +473,843 @@ class TestMetricValidationCollectionBuilder:
         assert all(period.valid for period in result.periods)
         assert all(period.issues == () for period in result.periods)
 
-    def test_flags_raw_row_count_mismatches_between_snapshot_and_metrics(
+    @pytest.mark.parametrize("validation_case_name", VALIDATION_SCENARIOS)
+    def test_flags_validation_edge_cases(
         self,
-        tmp_path,
+        metric_harness,
+        pull_request_factory,
+        review_factory,
+        validation_case_name: str,
     ) -> None:
-        """Flag raw-count mismatches when snapshot metadata and derived metrics diverge."""
+        """Flag validation edge cases from fixture-driven public metric outputs."""
         # Given
-        config = self._build_run_config(
-            as_of="2026-04-18",
-            output_dir=tmp_path,
-        )
-        raw_snapshot = self._write_raw_snapshot(
-            config,
-            pull_requests=(
-                PullRequestRecord(
-                    repository_full_name="acme/api",
-                    number=51,
-                    title="Keep counts aligned",
-                    state="closed",
-                    draft=False,
-                    merged=True,
-                    author_login="alice",
-                    created_at=datetime.fromisoformat("2026-04-09T09:00:00"),
-                    updated_at=datetime.fromisoformat("2026-04-10T09:00:00"),
-                    closed_at=datetime.fromisoformat("2026-04-10T09:00:00"),
-                    merged_at=datetime.fromisoformat("2026-04-10T09:00:00"),
-                    additions=4,
-                    deletions=1,
-                    changed_files=1,
-                    commits=1,
-                    html_url="https://example.test/pr/51",
-                ),
-            ),
-        )
-        mismatched_period = raw_snapshot.periods[0].model_copy(
-            update={"pull_request_count": 2}
-        )
-        mismatched_snapshot = raw_snapshot.model_copy(update={"periods": (mismatched_period,)})
-        pull_request_metrics = PullRequestMetricCollectionBuilder().build(
-            config,
-            raw_snapshot,
-        )
-        org_metrics = OrganizationMetricCollectionBuilder().build(
-            config,
-            pull_request_metrics,
+        case = _build_validation_case(
+            validation_case_name,
+            metric_harness=metric_harness,
+            pull_request_factory=pull_request_factory,
+            review_factory=review_factory,
         )
 
         # When
-        result = MetricValidationCollectionBuilder().build(
-            config,
-            raw_snapshot=mismatched_snapshot,
-            pull_request_metrics=pull_request_metrics,
-            org_metrics=org_metrics,
+        result = metric_harness.build_validation(
+            case.pipeline,
+            raw_snapshot=case.raw_snapshot,
+            pull_request_metrics=case.pull_request_metrics,
+            org_metrics=case.org_metrics,
         )
 
         # Then
         period = result.periods[0]
-        assert period.valid is False
-        assert [issue.code for issue in period.issues] == [
-            "raw_pull_request_count_mismatch"
-        ]
-
-    def _build_run_config(self, **overrides: object) -> RunConfig:
-        """Build the minimal run configuration needed for validation integration tests."""
-        return RunConfig.model_validate({"org": "acme", **overrides})
-
-    def _write_raw_snapshot(
-        self,
-        config: RunConfig,
-        *,
-        pull_requests: tuple[PullRequestRecord, ...],
-    ):
-        """Write raw snapshot fixtures through the production snapshot writer."""
-        return NormalizedRawSnapshotWriter().write(
-            config,
-            PullRequestCollection(
-                window=config.collection_window,
-                pull_requests=pull_requests,
-                failures=(),
-            ),
+        assert period.valid is case.expected_valid
+        assert [issue.code for issue in period.issues] == list(
+            case.expected_issue_codes
         )
+
+
+def _assert_metric_summary(actual, expected: MetricSummaryExpectation) -> None:
+    assert actual.count == expected.count
+    assert actual.total == expected.total
+    if expected.average is None:
+        assert actual.average is None
+    else:
+        assert actual.average == pytest.approx(expected.average)
+    if expected.median is None:
+        assert actual.median is None
+    else:
+        assert actual.median == pytest.approx(expected.median)
+
+
+def _build_review_timing_case(
+    case_name: str,
+    *,
+    pull_request_factory,
+    review_factory,
+    timeline_event_factory,
+) -> ReviewTimingCase:
+    return _review_timing_case_builder(case_name)(
+        pull_request_factory=pull_request_factory,
+        review_factory=review_factory,
+        timeline_event_factory=timeline_event_factory,
+    )
+
+
+def _review_timing_case_builder(case_name: str):
+    match case_name:
+        case "draft_reset_request_cycle":
+            return _review_timing_draft_reset_request_cycle
+        case "missing_review_merge_data":
+            return _review_timing_missing_review_merge_data
+        case "ignore_pre_ready_review_after_draft_reset":
+            return _review_timing_ignore_pre_ready_review_after_draft_reset
+        case "draft_created_stays_null":
+            return _review_timing_draft_created_stays_null
+        case "ignore_pre_ready_review_for_draft_created_pr":
+            return _review_timing_ignore_pre_ready_review_for_draft_created_pr
+    raise AssertionError(f"unknown review timing case: {case_name}")
+
+
+def _build_aggregation_case(
+    case_name: str,
+    *,
+    pull_request_factory,
+    review_factory,
+) -> AggregationCase:
+    return _aggregation_case_builder(case_name)(
+        pull_request_factory=pull_request_factory,
+        review_factory=review_factory,
+    )
+
+
+def _aggregation_case_builder(case_name: str):
+    match case_name:
+        case "multi_repo_rollups":
+            return _aggregation_multi_repo_rollups
+        case "no_active_authors":
+            return _aggregation_no_active_authors
+    raise AssertionError(f"unknown aggregation case: {case_name}")
+
+
+def _build_validation_case(
+    case_name: str,
+    *,
+    metric_harness,
+    pull_request_factory,
+    review_factory,
+) -> ValidationCase:
+    return _validation_case_builder(case_name)(
+        metric_harness=metric_harness,
+        pull_request_factory=pull_request_factory,
+        review_factory=review_factory,
+    )
+
+
+def _validation_case_builder(case_name: str):
+    match case_name:
+        case "raw_count_mismatch":
+            return _validation_raw_count_mismatch
+        case "review_start_missing":
+            return _validation_review_start_missing
+        case "merge_timing_mismatch":
+            return _validation_merge_timing_mismatch
+        case "org_rollup_mismatch":
+            return _validation_org_rollup_mismatch
+    raise AssertionError(f"unknown validation case: {case_name}")
+
+
+def _review_timing_draft_reset_request_cycle(
+    *,
+    pull_request_factory,
+    review_factory,
+    timeline_event_factory,
+) -> ReviewTimingCase:
+    return ReviewTimingCase(
+        pull_request=pull_request_factory(
+            number=21,
+            title="Stabilize review timing",
+            state="closed",
+            merged=True,
+            created_at=datetime.fromisoformat("2026-04-05T09:00:00"),
+            updated_at=datetime.fromisoformat("2026-04-06T18:30:00"),
+            closed_at=datetime.fromisoformat("2026-04-06T18:30:00"),
+            merged_at=datetime.fromisoformat("2026-04-06T18:00:00"),
+            additions=30,
+            deletions=12,
+            changed_files=5,
+            commits=4,
+            html_url="https://example.test/pr/21",
+            reviews=(
+                review_factory(
+                    review_id=501,
+                    author_login="reviewer-b",
+                    submitted_at=datetime.fromisoformat("2026-04-06T18:30:00"),
+                    commit_id="commit-501",
+                ),
+            ),
+            timeline_events=(
+                timeline_event_factory(
+                    event_id=601,
+                    created_at=datetime.fromisoformat("2026-04-05T10:00:00"),
+                    requested_reviewer_login="reviewer-a",
+                ),
+                timeline_event_factory(
+                    event_id=602,
+                    event="review_request_removed",
+                    created_at=datetime.fromisoformat("2026-04-05T11:00:00"),
+                    requested_reviewer_login="reviewer-a",
+                ),
+                timeline_event_factory(
+                    event_id=603,
+                    event="converted_to_draft",
+                    created_at=datetime.fromisoformat("2026-04-05T12:00:00"),
+                    requested_reviewer_login=None,
+                ),
+                timeline_event_factory(
+                    event_id=604,
+                    event="ready_for_review",
+                    created_at=datetime.fromisoformat("2026-04-05T15:00:00"),
+                    requested_reviewer_login=None,
+                ),
+                timeline_event_factory(
+                    event_id=605,
+                    created_at=datetime.fromisoformat("2026-04-05T16:00:00"),
+                    requested_reviewer_login="reviewer-b",
+                ),
+            ),
+        ),
+        expected=ReviewTimingExpectation(
+            author_login="alice",
+            review_ready_at=datetime.fromisoformat("2026-04-05T15:00:00"),
+            review_requested_at=datetime.fromisoformat("2026-04-05T16:00:00"),
+            review_started_at=datetime.fromisoformat("2026-04-05T16:00:00"),
+            first_review_submitted_at=datetime.fromisoformat("2026-04-06T18:30:00"),
+            merged_at=datetime.fromisoformat("2026-04-06T18:00:00"),
+            time_to_first_review_seconds=95_400,
+            time_to_merge_seconds=118_800,
+            changed_lines=42,
+        ),
+    )
+
+
+def _review_timing_missing_review_merge_data(
+    *,
+    pull_request_factory,
+    review_factory,
+    timeline_event_factory,
+) -> ReviewTimingCase:
+    return ReviewTimingCase(
+        pull_request=pull_request_factory(
+            number=34,
+            title="Leave timing fields empty",
+            author_login=None,
+            updated_at=datetime.fromisoformat("2026-04-12T11:00:00"),
+            additions=8,
+            deletions=3,
+            changed_files=2,
+            html_url="https://example.test/pr/34",
+        ),
+        expected=ReviewTimingExpectation(
+            author_login=None,
+            review_ready_at=datetime.fromisoformat("2026-04-10T09:00:00"),
+            review_requested_at=None,
+            review_started_at=datetime.fromisoformat("2026-04-10T09:00:00"),
+            first_review_submitted_at=None,
+            merged_at=None,
+            time_to_first_review_seconds=None,
+            time_to_merge_seconds=None,
+            changed_lines=11,
+        ),
+    )
+
+
+def _review_timing_ignore_pre_ready_review_after_draft_reset(
+    *,
+    pull_request_factory,
+    review_factory,
+    timeline_event_factory,
+) -> ReviewTimingCase:
+    return ReviewTimingCase(
+        pull_request=pull_request_factory(
+            number=44,
+            title="Skip early draft review",
+            state="closed",
+            merged=True,
+            updated_at=datetime.fromisoformat("2026-04-11T13:00:00"),
+            closed_at=datetime.fromisoformat("2026-04-11T13:00:00"),
+            merged_at=datetime.fromisoformat("2026-04-11T13:00:00"),
+            additions=10,
+            deletions=2,
+            changed_files=2,
+            commits=2,
+            html_url="https://example.test/pr/44",
+            reviews=(
+                review_factory(
+                    review_id=701,
+                    state="COMMENTED",
+                    submitted_at=datetime.fromisoformat("2026-04-10T10:00:00"),
+                    commit_id="commit-701",
+                ),
+                review_factory(
+                    review_id=702,
+                    author_login="reviewer-b",
+                    submitted_at=datetime.fromisoformat("2026-04-11T12:00:00"),
+                    commit_id="commit-702",
+                ),
+            ),
+            timeline_events=(
+                timeline_event_factory(
+                    event_id=801,
+                    event="converted_to_draft",
+                    created_at=datetime.fromisoformat("2026-04-10T09:30:00"),
+                    requested_reviewer_login=None,
+                ),
+                timeline_event_factory(
+                    event_id=802,
+                    event="ready_for_review",
+                    created_at=datetime.fromisoformat("2026-04-11T09:00:00"),
+                    requested_reviewer_login=None,
+                ),
+            ),
+        ),
+        expected=ReviewTimingExpectation(
+            author_login="alice",
+            review_ready_at=datetime.fromisoformat("2026-04-11T09:00:00"),
+            review_requested_at=None,
+            review_started_at=datetime.fromisoformat("2026-04-11T09:00:00"),
+            first_review_submitted_at=datetime.fromisoformat("2026-04-11T12:00:00"),
+            merged_at=datetime.fromisoformat("2026-04-11T13:00:00"),
+            time_to_first_review_seconds=10_800,
+            time_to_merge_seconds=100_800,
+            changed_lines=12,
+        ),
+    )
+
+
+def _review_timing_draft_created_stays_null(
+    *,
+    pull_request_factory,
+    review_factory,
+    timeline_event_factory,
+) -> ReviewTimingCase:
+    return ReviewTimingCase(
+        pull_request=pull_request_factory(
+            number=45,
+            title="Start life as a draft",
+            draft=True,
+            additions=6,
+            deletions=1,
+            changed_files=1,
+            html_url="https://example.test/pr/45",
+        ),
+        expected=ReviewTimingExpectation(
+            author_login="alice",
+            review_ready_at=None,
+            review_requested_at=None,
+            review_started_at=None,
+            first_review_submitted_at=None,
+            merged_at=None,
+            time_to_first_review_seconds=None,
+            time_to_merge_seconds=None,
+            changed_lines=7,
+        ),
+    )
+
+
+def _review_timing_ignore_pre_ready_review_for_draft_created_pr(
+    *,
+    pull_request_factory,
+    review_factory,
+    timeline_event_factory,
+) -> ReviewTimingCase:
+    return ReviewTimingCase(
+        pull_request=pull_request_factory(
+            number=46,
+            title="Become ready later",
+            state="closed",
+            merged=True,
+            updated_at=datetime.fromisoformat("2026-04-11T13:00:00"),
+            closed_at=datetime.fromisoformat("2026-04-11T13:00:00"),
+            merged_at=datetime.fromisoformat("2026-04-11T13:00:00"),
+            additions=9,
+            deletions=2,
+            changed_files=2,
+            commits=2,
+            html_url="https://example.test/pr/46",
+            reviews=(
+                review_factory(
+                    review_id=703,
+                    state="COMMENTED",
+                    submitted_at=datetime.fromisoformat("2026-04-10T10:00:00"),
+                    commit_id="commit-703",
+                ),
+                review_factory(
+                    review_id=704,
+                    author_login="reviewer-b",
+                    submitted_at=datetime.fromisoformat("2026-04-11T12:00:00"),
+                    commit_id="commit-704",
+                ),
+            ),
+            timeline_events=(
+                timeline_event_factory(
+                    event_id=803,
+                    event="ready_for_review",
+                    created_at=datetime.fromisoformat("2026-04-11T09:00:00"),
+                    requested_reviewer_login=None,
+                ),
+            ),
+        ),
+        expected=ReviewTimingExpectation(
+            author_login="alice",
+            review_ready_at=datetime.fromisoformat("2026-04-11T09:00:00"),
+            review_requested_at=None,
+            review_started_at=datetime.fromisoformat("2026-04-11T09:00:00"),
+            first_review_submitted_at=datetime.fromisoformat("2026-04-11T12:00:00"),
+            merged_at=datetime.fromisoformat("2026-04-11T13:00:00"),
+            time_to_first_review_seconds=10_800,
+            time_to_merge_seconds=100_800,
+            changed_lines=11,
+        ),
+    )
+
+
+def _aggregation_multi_repo_rollups(
+    *,
+    pull_request_factory,
+    review_factory,
+) -> AggregationCase:
+    pull_requests = (
+        pull_request_factory(
+            number=21,
+            title="Ship API endpoint",
+            state="closed",
+            merged=True,
+            author_login="Alice",
+            created_at=datetime.fromisoformat("2026-04-05T09:00:00"),
+            updated_at=datetime.fromisoformat("2026-04-06T12:00:00"),
+            closed_at=datetime.fromisoformat("2026-04-06T12:00:00"),
+            merged_at=datetime.fromisoformat("2026-04-06T12:00:00"),
+            additions=10,
+            deletions=4,
+            changed_files=2,
+            commits=2,
+            html_url="https://example.test/pr/21",
+            reviews=(
+                review_factory(
+                    review_id=501,
+                    submitted_at=datetime.fromisoformat("2026-04-05T12:00:00"),
+                    commit_id="commit-501",
+                ),
+            ),
+        ),
+        pull_request_factory(
+            number=22,
+            title="Refine API validation",
+            state="open",
+            author_login="alice",
+            created_at=datetime.fromisoformat("2026-04-07T09:00:00"),
+            updated_at=datetime.fromisoformat("2026-04-07T14:00:00"),
+            closed_at=None,
+            merged_at=None,
+            additions=6,
+            deletions=2,
+            changed_files=1,
+            commits=1,
+            html_url="https://example.test/pr/22",
+            reviews=(
+                review_factory(
+                    review_id=502,
+                    state="COMMENTED",
+                    submitted_at=datetime.fromisoformat("2026-04-07T11:00:00"),
+                    commit_id="commit-502",
+                ),
+            ),
+        ),
+        pull_request_factory(
+            repository_full_name="acme/docs",
+            number=41,
+            title="Clarify onboarding steps",
+            author_login=None,
+            additions=5,
+            deletions=1,
+            changed_files=1,
+            html_url="https://example.test/pr/41",
+        ),
+        pull_request_factory(
+            repository_full_name="acme/web",
+            number=31,
+            title="Ship dashboard layout",
+            state="closed",
+            merged=True,
+            author_login="bob",
+            created_at=datetime.fromisoformat("2026-04-08T09:00:00"),
+            updated_at=datetime.fromisoformat("2026-04-09T13:00:00"),
+            closed_at=datetime.fromisoformat("2026-04-09T13:00:00"),
+            merged_at=datetime.fromisoformat("2026-04-09T12:00:00"),
+            additions=20,
+            deletions=10,
+            changed_files=4,
+            commits=5,
+            html_url="https://example.test/pr/31",
+            reviews=(
+                review_factory(
+                    review_id=601,
+                    author_login="reviewer-b",
+                    submitted_at=datetime.fromisoformat("2026-04-08T15:00:00"),
+                    commit_id="commit-601",
+                ),
+            ),
+        ),
+    )
+    return AggregationCase(
+        pull_requests=pull_requests,
+        expected_repositories=(
+            RepositoryRollupExpectation(
+                repository_full_name="acme/api",
+                pull_request_count=2,
+                merged_pull_request_count=1,
+                active_author_count=1,
+                merged_pull_requests_per_active_author=1.0,
+                time_to_merge_seconds=MetricSummaryExpectation(
+                    count=1,
+                    total=97_200,
+                    average=97_200.0,
+                    median=97_200.0,
+                ),
+                time_to_first_review_seconds=MetricSummaryExpectation(
+                    count=2,
+                    total=18_000,
+                    average=9_000.0,
+                    median=9_000.0,
+                ),
+                additions=MetricSummaryExpectation(2, 16, 8.0, 8.0),
+                deletions=MetricSummaryExpectation(2, 6, 3.0, 3.0),
+                changed_lines=MetricSummaryExpectation(2, 22, 11.0, 11.0),
+                changed_files=MetricSummaryExpectation(2, 3, 1.5, 1.5),
+                commits=MetricSummaryExpectation(2, 3, 1.5, 1.5),
+            ),
+            RepositoryRollupExpectation(
+                repository_full_name="acme/docs",
+                pull_request_count=1,
+                merged_pull_request_count=0,
+                active_author_count=0,
+                merged_pull_requests_per_active_author=None,
+                time_to_merge_seconds=MetricSummaryExpectation(0, 0, None, None),
+                time_to_first_review_seconds=MetricSummaryExpectation(
+                    0,
+                    0,
+                    None,
+                    None,
+                ),
+                additions=MetricSummaryExpectation(1, 5, 5.0, 5.0),
+                deletions=MetricSummaryExpectation(1, 1, 1.0, 1.0),
+                changed_lines=MetricSummaryExpectation(1, 6, 6.0, 6.0),
+                changed_files=MetricSummaryExpectation(1, 1, 1.0, 1.0),
+                commits=MetricSummaryExpectation(1, 1, 1.0, 1.0),
+            ),
+            RepositoryRollupExpectation(
+                repository_full_name="acme/web",
+                pull_request_count=1,
+                merged_pull_request_count=1,
+                active_author_count=1,
+                merged_pull_requests_per_active_author=1.0,
+                time_to_merge_seconds=MetricSummaryExpectation(
+                    count=1,
+                    total=97_200,
+                    average=97_200.0,
+                    median=97_200.0,
+                ),
+                time_to_first_review_seconds=MetricSummaryExpectation(
+                    count=1,
+                    total=21_600,
+                    average=21_600.0,
+                    median=21_600.0,
+                ),
+                additions=MetricSummaryExpectation(1, 20, 20.0, 20.0),
+                deletions=MetricSummaryExpectation(1, 10, 10.0, 10.0),
+                changed_lines=MetricSummaryExpectation(1, 30, 30.0, 30.0),
+                changed_files=MetricSummaryExpectation(1, 4, 4.0, 4.0),
+                commits=MetricSummaryExpectation(1, 5, 5.0, 5.0),
+            ),
+        ),
+        expected_org_summary=OrganizationRollupExpectation(
+            repository_count=3,
+            pull_request_count=4,
+            merged_pull_request_count=2,
+            active_author_count=2,
+            merged_pull_requests_per_active_author=1.0,
+            time_to_merge_seconds=MetricSummaryExpectation(
+                count=2,
+                total=194_400,
+                average=97_200.0,
+                median=97_200.0,
+            ),
+            time_to_first_review_seconds=MetricSummaryExpectation(
+                count=3,
+                total=39_600,
+                average=13_200.0,
+                median=10_800.0,
+            ),
+            additions=MetricSummaryExpectation(4, 41, 10.25, 8.0),
+            deletions=MetricSummaryExpectation(4, 17, 4.25, 3.0),
+            changed_lines=MetricSummaryExpectation(4, 58, 14.5, 11.0),
+            changed_files=MetricSummaryExpectation(4, 8, 2.0, 1.5),
+            commits=MetricSummaryExpectation(4, 9, 2.25, 1.5),
+        ),
+    )
+
+
+def _aggregation_no_active_authors(
+    *,
+    pull_request_factory,
+    review_factory,
+) -> AggregationCase:
+    pull_requests = (
+        pull_request_factory(
+            repository_full_name="acme/api",
+            number=51,
+            author_login=None,
+            additions=4,
+            deletions=1,
+            changed_files=1,
+            html_url="https://example.test/pr/51",
+        ),
+        pull_request_factory(
+            repository_full_name="acme/web",
+            number=61,
+            author_login=None,
+            additions=2,
+            deletions=2,
+            changed_files=1,
+            html_url="https://example.test/pr/61",
+        ),
+    )
+    return AggregationCase(
+        pull_requests=pull_requests,
+        expected_repositories=(
+            RepositoryRollupExpectation(
+                repository_full_name="acme/api",
+                pull_request_count=1,
+                merged_pull_request_count=0,
+                active_author_count=0,
+                merged_pull_requests_per_active_author=None,
+                time_to_merge_seconds=MetricSummaryExpectation(0, 0, None, None),
+                time_to_first_review_seconds=MetricSummaryExpectation(
+                    0,
+                    0,
+                    None,
+                    None,
+                ),
+                additions=MetricSummaryExpectation(1, 4, 4.0, 4.0),
+                deletions=MetricSummaryExpectation(1, 1, 1.0, 1.0),
+                changed_lines=MetricSummaryExpectation(1, 5, 5.0, 5.0),
+                changed_files=MetricSummaryExpectation(1, 1, 1.0, 1.0),
+                commits=MetricSummaryExpectation(1, 1, 1.0, 1.0),
+            ),
+            RepositoryRollupExpectation(
+                repository_full_name="acme/web",
+                pull_request_count=1,
+                merged_pull_request_count=0,
+                active_author_count=0,
+                merged_pull_requests_per_active_author=None,
+                time_to_merge_seconds=MetricSummaryExpectation(0, 0, None, None),
+                time_to_first_review_seconds=MetricSummaryExpectation(
+                    0,
+                    0,
+                    None,
+                    None,
+                ),
+                additions=MetricSummaryExpectation(1, 2, 2.0, 2.0),
+                deletions=MetricSummaryExpectation(1, 2, 2.0, 2.0),
+                changed_lines=MetricSummaryExpectation(1, 4, 4.0, 4.0),
+                changed_files=MetricSummaryExpectation(1, 1, 1.0, 1.0),
+                commits=MetricSummaryExpectation(1, 1, 1.0, 1.0),
+            ),
+        ),
+        expected_org_summary=OrganizationRollupExpectation(
+            repository_count=2,
+            pull_request_count=2,
+            merged_pull_request_count=0,
+            active_author_count=0,
+            merged_pull_requests_per_active_author=None,
+            time_to_merge_seconds=MetricSummaryExpectation(0, 0, None, None),
+            time_to_first_review_seconds=MetricSummaryExpectation(
+                0,
+                0,
+                None,
+                None,
+            ),
+            additions=MetricSummaryExpectation(2, 6, 3.0, 3.0),
+            deletions=MetricSummaryExpectation(2, 3, 1.5, 1.5),
+            changed_lines=MetricSummaryExpectation(2, 9, 4.5, 4.5),
+            changed_files=MetricSummaryExpectation(2, 2, 1.0, 1.0),
+            commits=MetricSummaryExpectation(2, 2, 1.0, 1.0),
+        ),
+    )
+
+
+def _validation_raw_count_mismatch(
+    *,
+    metric_harness,
+    pull_request_factory,
+    review_factory,
+) -> ValidationCase:
+    pipeline = _validation_base_pipeline(
+        metric_harness=metric_harness,
+        pull_request_factory=pull_request_factory,
+        review_factory=review_factory,
+    )
+    raw_period = pipeline.raw_snapshot.periods[0].model_copy(
+        update={"pull_request_count": 3}
+    )
+    raw_snapshot = pipeline.raw_snapshot.model_copy(update={"periods": (raw_period,)})
+    return ValidationCase(
+        pipeline=pipeline,
+        raw_snapshot=raw_snapshot,
+        pull_request_metrics=pipeline.pull_request_metrics,
+        org_metrics=pipeline.org_metrics,
+        expected_valid=False,
+        expected_issue_codes=("raw_pull_request_count_mismatch",),
+    )
+
+
+def _validation_review_start_missing(
+    *,
+    metric_harness,
+    pull_request_factory,
+    review_factory,
+) -> ValidationCase:
+    pipeline = _validation_base_pipeline(
+        metric_harness=metric_harness,
+        pull_request_factory=pull_request_factory,
+        review_factory=review_factory,
+    )
+    pull_request_metrics = _replace_first_metric(
+        pipeline.pull_request_metrics,
+        review_started_at=None,
+    )
+    return ValidationCase(
+        pipeline=pipeline,
+        raw_snapshot=pipeline.raw_snapshot,
+        pull_request_metrics=pull_request_metrics,
+        org_metrics=pipeline.org_metrics,
+        expected_valid=False,
+        expected_issue_codes=("review_submission_missing_review_start",),
+    )
+
+
+def _validation_merge_timing_mismatch(
+    *,
+    metric_harness,
+    pull_request_factory,
+    review_factory,
+) -> ValidationCase:
+    pipeline = _validation_base_pipeline(
+        metric_harness=metric_harness,
+        pull_request_factory=pull_request_factory,
+        review_factory=review_factory,
+    )
+    pull_request_metrics = _replace_first_metric(
+        pipeline.pull_request_metrics,
+        time_to_merge_seconds=90_001,
+    )
+    return ValidationCase(
+        pipeline=pipeline,
+        raw_snapshot=pipeline.raw_snapshot,
+        pull_request_metrics=pull_request_metrics,
+        org_metrics=pipeline.org_metrics,
+        expected_valid=False,
+        expected_issue_codes=("merged_pr_merge_timing_mismatch",),
+    )
+
+
+def _validation_org_rollup_mismatch(
+    *,
+    metric_harness,
+    pull_request_factory,
+    review_factory,
+) -> ValidationCase:
+    pipeline = _validation_base_pipeline(
+        metric_harness=metric_harness,
+        pull_request_factory=pull_request_factory,
+        review_factory=review_factory,
+    )
+    org_period = pipeline.org_metrics.periods[0]
+    org_metrics = pipeline.org_metrics.model_copy(
+        update={
+            "periods": (
+                org_period.model_copy(
+                    update={
+                        "summary": org_period.summary.model_copy(
+                            update={
+                                "pull_request_count": org_period.summary.pull_request_count
+                                + 1
+                            }
+                        )
+                    }
+                ),
+            )
+        }
+    )
+    return ValidationCase(
+        pipeline=pipeline,
+        raw_snapshot=pipeline.raw_snapshot,
+        pull_request_metrics=pipeline.pull_request_metrics,
+        org_metrics=org_metrics,
+        expected_valid=False,
+        expected_issue_codes=("pull_request_count_mismatch",),
+    )
+
+
+def _validation_base_pipeline(
+    *,
+    metric_harness,
+    pull_request_factory,
+    review_factory,
+):
+    return metric_harness.build_pipeline(
+        as_of="2026-04-18",
+        pull_requests=(
+            pull_request_factory(
+                number=51,
+                title="Keep counts aligned",
+                state="closed",
+                merged=True,
+                created_at=datetime.fromisoformat("2026-04-09T09:00:00"),
+                updated_at=datetime.fromisoformat("2026-04-10T09:00:00"),
+                closed_at=datetime.fromisoformat("2026-04-10T09:00:00"),
+                merged_at=datetime.fromisoformat("2026-04-10T09:00:00"),
+                additions=4,
+                deletions=1,
+                changed_files=1,
+                html_url="https://example.test/pr/51",
+                reviews=(
+                    review_factory(
+                        review_id=801,
+                        submitted_at=datetime.fromisoformat("2026-04-09T12:00:00"),
+                        commit_id="commit-801",
+                    ),
+                ),
+            ),
+            pull_request_factory(
+                repository_full_name="acme/web",
+                number=61,
+                title="Keep org rollups aligned",
+                state="closed",
+                merged=True,
+                author_login="bob",
+                created_at=datetime.fromisoformat("2026-04-11T09:00:00"),
+                updated_at=datetime.fromisoformat("2026-04-12T13:00:00"),
+                closed_at=datetime.fromisoformat("2026-04-12T13:00:00"),
+                merged_at=datetime.fromisoformat("2026-04-12T12:00:00"),
+                additions=9,
+                deletions=2,
+                changed_files=2,
+                commits=2,
+                html_url="https://example.test/pr/61",
+                reviews=(
+                    review_factory(
+                        review_id=802,
+                        author_login="reviewer-b",
+                        submitted_at=datetime.fromisoformat("2026-04-11T13:00:00"),
+                        commit_id="commit-802",
+                    ),
+                ),
+            ),
+        ),
+    )
+
+
+def _replace_first_metric(
+    pull_request_metrics: PullRequestMetricCollection,
+    **updates: object,
+) -> PullRequestMetricCollection:
+    period = pull_request_metrics.periods[0]
+    replacement_metric = period.pull_request_metrics[0].model_copy(update=updates)
+    replacement_period = period.model_copy(
+        update={
+            "pull_request_metrics": (
+                replacement_metric,
+                *period.pull_request_metrics[1:],
+            )
+        }
+    )
+    return pull_request_metrics.model_copy(update={"periods": (replacement_period,)})

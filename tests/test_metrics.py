@@ -13,6 +13,32 @@ from orgpulse.models import (
     RunMode,
 )
 
+REVIEW_TIMING_SCENARIOS = (
+    pytest.param("draft_reset_request_cycle", id="draft reset request cycle"),
+    pytest.param("missing_review_merge_data", id="missing review and merge data"),
+    pytest.param(
+        "ignore_pre_ready_review_after_draft_reset",
+        id="ignore pre-ready review after draft reset",
+    ),
+    pytest.param("draft_created_stays_null", id="draft-created PR stays null"),
+    pytest.param(
+        "ignore_pre_ready_review_for_draft_created_pr",
+        id="ignore pre-ready review for draft-created PR",
+    ),
+)
+
+AGGREGATION_SCENARIOS = (
+    pytest.param("multi_repo_rollups", id="multi-repo rollups"),
+    pytest.param("no_active_authors", id="no active authors"),
+)
+
+VALIDATION_SCENARIOS = (
+    pytest.param("raw_count_mismatch", id="raw count mismatch"),
+    pytest.param("review_start_missing", id="review start missing"),
+    pytest.param("merge_timing_mismatch", id="merge timing mismatch"),
+    pytest.param("org_rollup_mismatch", id="org rollup mismatch"),
+)
+
 
 @dataclass(frozen=True)
 class MetricSummaryExpectation:
@@ -105,13 +131,23 @@ class ValidationCase:
 
 
 class TestPullRequestMetricCollectionBuilder:
+    @pytest.mark.parametrize("review_timing_case_name", REVIEW_TIMING_SCENARIOS)
     def test_normalizes_review_timing_cases(
         self,
         metric_harness,
-        review_timing_case,
+        pull_request_factory,
+        review_factory,
+        timeline_event_factory,
+        review_timing_case_name: str,
     ) -> None:
         """Normalize review timing fixtures through the public raw snapshot contract."""
         # Given
+        review_timing_case = _build_review_timing_case(
+            review_timing_case_name,
+            pull_request_factory=pull_request_factory,
+            review_factory=review_factory,
+            timeline_event_factory=timeline_event_factory,
+        )
         pipeline = metric_harness.build_pipeline(
             pull_requests=(review_timing_case.pull_request,),
             as_of="2026-04-18",
@@ -208,13 +244,21 @@ class TestPullRequestMetricCollectionBuilder:
 
 
 class TestRepositoryMetricCollectionBuilder:
+    @pytest.mark.parametrize("aggregation_case_name", AGGREGATION_SCENARIOS)
     def test_builds_repository_rollups_from_fixture_matrix(
         self,
         metric_harness,
-        aggregation_case,
+        pull_request_factory,
+        review_factory,
+        aggregation_case_name: str,
     ) -> None:
         """Build repo rollups from fixture-driven pull request aggregates."""
         # Given
+        aggregation_case = _build_aggregation_case(
+            aggregation_case_name,
+            pull_request_factory=pull_request_factory,
+            review_factory=review_factory,
+        )
         pipeline = metric_harness.build_pipeline(
             as_of="2026-04-18",
             pull_requests=aggregation_case.pull_requests,
@@ -259,13 +303,21 @@ class TestRepositoryMetricCollectionBuilder:
 
 
 class TestOrganizationMetricCollectionBuilder:
+    @pytest.mark.parametrize("aggregation_case_name", AGGREGATION_SCENARIOS)
     def test_builds_org_rollups_from_fixture_matrix(
         self,
         metric_harness,
-        aggregation_case,
+        pull_request_factory,
+        review_factory,
+        aggregation_case_name: str,
     ) -> None:
         """Build org rollups from the same fixture-driven aggregate inputs."""
         # Given
+        aggregation_case = _build_aggregation_case(
+            aggregation_case_name,
+            pull_request_factory=pull_request_factory,
+            review_factory=review_factory,
+        )
         pipeline = metric_harness.build_pipeline(
             as_of="2026-04-18",
             pull_requests=aggregation_case.pull_requests,
@@ -421,14 +473,22 @@ class TestMetricValidationCollectionBuilder:
         assert all(period.valid for period in result.periods)
         assert all(period.issues == () for period in result.periods)
 
+    @pytest.mark.parametrize("validation_case_name", VALIDATION_SCENARIOS)
     def test_flags_validation_edge_cases(
         self,
         metric_harness,
-        validation_case,
+        pull_request_factory,
+        review_factory,
+        validation_case_name: str,
     ) -> None:
         """Flag validation edge cases from fixture-driven public metric outputs."""
         # Given
-        case = validation_case
+        case = _build_validation_case(
+            validation_case_name,
+            metric_harness=metric_harness,
+            pull_request_factory=pull_request_factory,
+            review_factory=review_factory,
+        )
 
         # When
         result = metric_harness.build_validation(
@@ -440,74 +500,10 @@ class TestMetricValidationCollectionBuilder:
 
         # Then
         period = result.periods[0]
-        assert period.valid is validation_case.expected_valid
+        assert period.valid is case.expected_valid
         assert [issue.code for issue in period.issues] == list(
-            validation_case.expected_issue_codes
+            case.expected_issue_codes
         )
-
-
-@pytest.fixture(
-    params=(
-        "draft_reset_request_cycle",
-        "missing_review_merge_data",
-        "ignore_pre_ready_review_after_draft_reset",
-        "draft_created_stays_null",
-        "ignore_pre_ready_review_for_draft_created_pr",
-    )
-)
-def review_timing_case(
-    request: pytest.FixtureRequest,
-    pull_request_factory,
-    review_factory,
-    timeline_event_factory,
-) -> ReviewTimingCase:
-    """Build timing fixtures from a shared table of public PR inputs."""
-    case_name = str(request.param)
-    return _build_review_timing_case(
-        case_name,
-        pull_request_factory=pull_request_factory,
-        review_factory=review_factory,
-        timeline_event_factory=timeline_event_factory,
-    )
-
-
-@pytest.fixture(params=("multi_repo_rollups", "no_active_authors"))
-def aggregation_case(
-    request: pytest.FixtureRequest,
-    pull_request_factory,
-    review_factory,
-) -> AggregationCase:
-    """Build aggregation fixtures from a shared table of PR collections."""
-    case_name = str(request.param)
-    return _build_aggregation_case(
-        case_name,
-        pull_request_factory=pull_request_factory,
-        review_factory=review_factory,
-    )
-
-
-@pytest.fixture(
-    params=(
-        "raw_count_mismatch",
-        "review_start_missing",
-        "merge_timing_mismatch",
-        "org_rollup_mismatch",
-    )
-)
-def validation_case(
-    request: pytest.FixtureRequest,
-    metric_harness,
-    pull_request_factory,
-    review_factory,
-) -> ValidationCase:
-    """Build validation fixtures from a shared table of output mutations."""
-    case_name = str(request.param)
-    return _build_validation_case(
-        case_name,
-        metric_harness=metric_harness,
-        pull_request_factory=pull_request_factory,
-        review_factory=review_factory,
-    )
 
 
 def _assert_metric_summary(actual, expected: MetricSummaryExpectation) -> None:
@@ -530,243 +526,25 @@ def _build_review_timing_case(
     review_factory,
     timeline_event_factory,
 ) -> ReviewTimingCase:
+    return _review_timing_case_builder(case_name)(
+        pull_request_factory=pull_request_factory,
+        review_factory=review_factory,
+        timeline_event_factory=timeline_event_factory,
+    )
+
+
+def _review_timing_case_builder(case_name: str):
     match case_name:
         case "draft_reset_request_cycle":
-            return ReviewTimingCase(
-                pull_request=pull_request_factory(
-                    number=21,
-                    title="Stabilize review timing",
-                    state="closed",
-                    merged=True,
-                    created_at=datetime.fromisoformat("2026-04-05T09:00:00"),
-                    updated_at=datetime.fromisoformat("2026-04-06T18:30:00"),
-                    closed_at=datetime.fromisoformat("2026-04-06T18:30:00"),
-                    merged_at=datetime.fromisoformat("2026-04-06T18:00:00"),
-                    additions=30,
-                    deletions=12,
-                    changed_files=5,
-                    commits=4,
-                    html_url="https://example.test/pr/21",
-                    reviews=(
-                        review_factory(
-                            review_id=501,
-                            author_login="reviewer-b",
-                            submitted_at=datetime.fromisoformat(
-                                "2026-04-06T18:30:00"
-                            ),
-                            commit_id="commit-501",
-                        ),
-                    ),
-                    timeline_events=(
-                        timeline_event_factory(
-                            event_id=601,
-                            created_at=datetime.fromisoformat("2026-04-05T10:00:00"),
-                            requested_reviewer_login="reviewer-a",
-                        ),
-                        timeline_event_factory(
-                            event_id=602,
-                            event="review_request_removed",
-                            created_at=datetime.fromisoformat("2026-04-05T11:00:00"),
-                            requested_reviewer_login="reviewer-a",
-                        ),
-                        timeline_event_factory(
-                            event_id=603,
-                            event="converted_to_draft",
-                            created_at=datetime.fromisoformat("2026-04-05T12:00:00"),
-                            requested_reviewer_login=None,
-                        ),
-                        timeline_event_factory(
-                            event_id=604,
-                            event="ready_for_review",
-                            created_at=datetime.fromisoformat("2026-04-05T15:00:00"),
-                            requested_reviewer_login=None,
-                        ),
-                        timeline_event_factory(
-                            event_id=605,
-                            created_at=datetime.fromisoformat("2026-04-05T16:00:00"),
-                            requested_reviewer_login="reviewer-b",
-                        ),
-                    ),
-                ),
-                expected=ReviewTimingExpectation(
-                    author_login="alice",
-                    review_ready_at=datetime.fromisoformat("2026-04-05T15:00:00"),
-                    review_requested_at=datetime.fromisoformat("2026-04-05T16:00:00"),
-                    review_started_at=datetime.fromisoformat("2026-04-05T16:00:00"),
-                    first_review_submitted_at=datetime.fromisoformat(
-                        "2026-04-06T18:30:00"
-                    ),
-                    merged_at=datetime.fromisoformat("2026-04-06T18:00:00"),
-                    time_to_first_review_seconds=95_400,
-                    time_to_merge_seconds=118_800,
-                    changed_lines=42,
-                ),
-            )
+            return _review_timing_draft_reset_request_cycle
         case "missing_review_merge_data":
-            return ReviewTimingCase(
-                pull_request=pull_request_factory(
-                    number=34,
-                    title="Leave timing fields empty",
-                    author_login=None,
-                    updated_at=datetime.fromisoformat("2026-04-12T11:00:00"),
-                    additions=8,
-                    deletions=3,
-                    changed_files=2,
-                    html_url="https://example.test/pr/34",
-                ),
-                expected=ReviewTimingExpectation(
-                    author_login=None,
-                    review_ready_at=datetime.fromisoformat("2026-04-10T09:00:00"),
-                    review_requested_at=None,
-                    review_started_at=datetime.fromisoformat("2026-04-10T09:00:00"),
-                    first_review_submitted_at=None,
-                    merged_at=None,
-                    time_to_first_review_seconds=None,
-                    time_to_merge_seconds=None,
-                    changed_lines=11,
-                ),
-            )
+            return _review_timing_missing_review_merge_data
         case "ignore_pre_ready_review_after_draft_reset":
-            return ReviewTimingCase(
-                pull_request=pull_request_factory(
-                    number=44,
-                    title="Skip early draft review",
-                    state="closed",
-                    merged=True,
-                    updated_at=datetime.fromisoformat("2026-04-11T13:00:00"),
-                    closed_at=datetime.fromisoformat("2026-04-11T13:00:00"),
-                    merged_at=datetime.fromisoformat("2026-04-11T13:00:00"),
-                    additions=10,
-                    deletions=2,
-                    changed_files=2,
-                    commits=2,
-                    html_url="https://example.test/pr/44",
-                    reviews=(
-                        review_factory(
-                            review_id=701,
-                            state="COMMENTED",
-                            submitted_at=datetime.fromisoformat(
-                                "2026-04-10T10:00:00"
-                            ),
-                            commit_id="commit-701",
-                        ),
-                        review_factory(
-                            review_id=702,
-                            author_login="reviewer-b",
-                            submitted_at=datetime.fromisoformat(
-                                "2026-04-11T12:00:00"
-                            ),
-                            commit_id="commit-702",
-                        ),
-                    ),
-                    timeline_events=(
-                        timeline_event_factory(
-                            event_id=801,
-                            event="converted_to_draft",
-                            created_at=datetime.fromisoformat("2026-04-10T09:30:00"),
-                            requested_reviewer_login=None,
-                        ),
-                        timeline_event_factory(
-                            event_id=802,
-                            event="ready_for_review",
-                            created_at=datetime.fromisoformat("2026-04-11T09:00:00"),
-                            requested_reviewer_login=None,
-                        ),
-                    ),
-                ),
-                expected=ReviewTimingExpectation(
-                    author_login="alice",
-                    review_ready_at=datetime.fromisoformat("2026-04-11T09:00:00"),
-                    review_requested_at=None,
-                    review_started_at=datetime.fromisoformat("2026-04-11T09:00:00"),
-                    first_review_submitted_at=datetime.fromisoformat(
-                        "2026-04-11T12:00:00"
-                    ),
-                    merged_at=datetime.fromisoformat("2026-04-11T13:00:00"),
-                    time_to_first_review_seconds=10_800,
-                    time_to_merge_seconds=100_800,
-                    changed_lines=12,
-                ),
-            )
+            return _review_timing_ignore_pre_ready_review_after_draft_reset
         case "draft_created_stays_null":
-            return ReviewTimingCase(
-                pull_request=pull_request_factory(
-                    number=45,
-                    title="Start life as a draft",
-                    draft=True,
-                    additions=6,
-                    deletions=1,
-                    changed_files=1,
-                    html_url="https://example.test/pr/45",
-                ),
-                expected=ReviewTimingExpectation(
-                    author_login="alice",
-                    review_ready_at=None,
-                    review_requested_at=None,
-                    review_started_at=None,
-                    first_review_submitted_at=None,
-                    merged_at=None,
-                    time_to_first_review_seconds=None,
-                    time_to_merge_seconds=None,
-                    changed_lines=7,
-                ),
-            )
+            return _review_timing_draft_created_stays_null
         case "ignore_pre_ready_review_for_draft_created_pr":
-            return ReviewTimingCase(
-                pull_request=pull_request_factory(
-                    number=46,
-                    title="Become ready later",
-                    state="closed",
-                    merged=True,
-                    updated_at=datetime.fromisoformat("2026-04-11T13:00:00"),
-                    closed_at=datetime.fromisoformat("2026-04-11T13:00:00"),
-                    merged_at=datetime.fromisoformat("2026-04-11T13:00:00"),
-                    additions=9,
-                    deletions=2,
-                    changed_files=2,
-                    commits=2,
-                    html_url="https://example.test/pr/46",
-                    reviews=(
-                        review_factory(
-                            review_id=703,
-                            state="COMMENTED",
-                            submitted_at=datetime.fromisoformat(
-                                "2026-04-10T10:00:00"
-                            ),
-                            commit_id="commit-703",
-                        ),
-                        review_factory(
-                            review_id=704,
-                            author_login="reviewer-b",
-                            submitted_at=datetime.fromisoformat(
-                                "2026-04-11T12:00:00"
-                            ),
-                            commit_id="commit-704",
-                        ),
-                    ),
-                    timeline_events=(
-                        timeline_event_factory(
-                            event_id=803,
-                            event="ready_for_review",
-                            created_at=datetime.fromisoformat("2026-04-11T09:00:00"),
-                            requested_reviewer_login=None,
-                        ),
-                    ),
-                ),
-                expected=ReviewTimingExpectation(
-                    author_login="alice",
-                    review_ready_at=datetime.fromisoformat("2026-04-11T09:00:00"),
-                    review_requested_at=None,
-                    review_started_at=datetime.fromisoformat("2026-04-11T09:00:00"),
-                    first_review_submitted_at=datetime.fromisoformat(
-                        "2026-04-11T12:00:00"
-                    ),
-                    merged_at=datetime.fromisoformat("2026-04-11T13:00:00"),
-                    time_to_first_review_seconds=10_800,
-                    time_to_merge_seconds=100_800,
-                    changed_lines=11,
-                ),
-            )
+            return _review_timing_ignore_pre_ready_review_for_draft_created_pr
     raise AssertionError(f"unknown review timing case: {case_name}")
 
 
@@ -776,276 +554,18 @@ def _build_aggregation_case(
     pull_request_factory,
     review_factory,
 ) -> AggregationCase:
+    return _aggregation_case_builder(case_name)(
+        pull_request_factory=pull_request_factory,
+        review_factory=review_factory,
+    )
+
+
+def _aggregation_case_builder(case_name: str):
     match case_name:
         case "multi_repo_rollups":
-            pull_requests = (
-                pull_request_factory(
-                    number=21,
-                    title="Ship API endpoint",
-                    state="closed",
-                    merged=True,
-                    author_login="Alice",
-                    created_at=datetime.fromisoformat("2026-04-05T09:00:00"),
-                    updated_at=datetime.fromisoformat("2026-04-06T12:00:00"),
-                    closed_at=datetime.fromisoformat("2026-04-06T12:00:00"),
-                    merged_at=datetime.fromisoformat("2026-04-06T12:00:00"),
-                    additions=10,
-                    deletions=4,
-                    changed_files=2,
-                    commits=2,
-                    html_url="https://example.test/pr/21",
-                    reviews=(
-                        review_factory(
-                            review_id=501,
-                            submitted_at=datetime.fromisoformat(
-                                "2026-04-05T12:00:00"
-                            ),
-                            commit_id="commit-501",
-                        ),
-                    ),
-                ),
-                pull_request_factory(
-                    number=22,
-                    title="Refine API validation",
-                    state="open",
-                    author_login="alice",
-                    created_at=datetime.fromisoformat("2026-04-07T09:00:00"),
-                    updated_at=datetime.fromisoformat("2026-04-07T14:00:00"),
-                    closed_at=None,
-                    merged_at=None,
-                    additions=6,
-                    deletions=2,
-                    changed_files=1,
-                    commits=1,
-                    html_url="https://example.test/pr/22",
-                    reviews=(
-                        review_factory(
-                            review_id=502,
-                            state="COMMENTED",
-                            submitted_at=datetime.fromisoformat(
-                                "2026-04-07T11:00:00"
-                            ),
-                            commit_id="commit-502",
-                        ),
-                    ),
-                ),
-                pull_request_factory(
-                    repository_full_name="acme/docs",
-                    number=41,
-                    title="Clarify onboarding steps",
-                    author_login=None,
-                    additions=5,
-                    deletions=1,
-                    changed_files=1,
-                    html_url="https://example.test/pr/41",
-                ),
-                pull_request_factory(
-                    repository_full_name="acme/web",
-                    number=31,
-                    title="Ship dashboard layout",
-                    state="closed",
-                    merged=True,
-                    author_login="bob",
-                    created_at=datetime.fromisoformat("2026-04-08T09:00:00"),
-                    updated_at=datetime.fromisoformat("2026-04-09T13:00:00"),
-                    closed_at=datetime.fromisoformat("2026-04-09T13:00:00"),
-                    merged_at=datetime.fromisoformat("2026-04-09T12:00:00"),
-                    additions=20,
-                    deletions=10,
-                    changed_files=4,
-                    commits=5,
-                    html_url="https://example.test/pr/31",
-                    reviews=(
-                        review_factory(
-                            review_id=601,
-                            author_login="reviewer-b",
-                            submitted_at=datetime.fromisoformat(
-                                "2026-04-08T15:00:00"
-                            ),
-                            commit_id="commit-601",
-                        ),
-                    ),
-                ),
-            )
-            return AggregationCase(
-                pull_requests=pull_requests,
-                expected_repositories=(
-                    RepositoryRollupExpectation(
-                        repository_full_name="acme/api",
-                        pull_request_count=2,
-                        merged_pull_request_count=1,
-                        active_author_count=1,
-                        merged_pull_requests_per_active_author=1.0,
-                        time_to_merge_seconds=MetricSummaryExpectation(
-                            count=1,
-                            total=97_200,
-                            average=97_200.0,
-                            median=97_200.0,
-                        ),
-                        time_to_first_review_seconds=MetricSummaryExpectation(
-                            count=2,
-                            total=18_000,
-                            average=9_000.0,
-                            median=9_000.0,
-                        ),
-                        additions=MetricSummaryExpectation(2, 16, 8.0, 8.0),
-                        deletions=MetricSummaryExpectation(2, 6, 3.0, 3.0),
-                        changed_lines=MetricSummaryExpectation(2, 22, 11.0, 11.0),
-                        changed_files=MetricSummaryExpectation(2, 3, 1.5, 1.5),
-                        commits=MetricSummaryExpectation(2, 3, 1.5, 1.5),
-                    ),
-                    RepositoryRollupExpectation(
-                        repository_full_name="acme/docs",
-                        pull_request_count=1,
-                        merged_pull_request_count=0,
-                        active_author_count=0,
-                        merged_pull_requests_per_active_author=None,
-                        time_to_merge_seconds=MetricSummaryExpectation(0, 0, None, None),
-                        time_to_first_review_seconds=MetricSummaryExpectation(
-                            0,
-                            0,
-                            None,
-                            None,
-                        ),
-                        additions=MetricSummaryExpectation(1, 5, 5.0, 5.0),
-                        deletions=MetricSummaryExpectation(1, 1, 1.0, 1.0),
-                        changed_lines=MetricSummaryExpectation(1, 6, 6.0, 6.0),
-                        changed_files=MetricSummaryExpectation(1, 1, 1.0, 1.0),
-                        commits=MetricSummaryExpectation(1, 1, 1.0, 1.0),
-                    ),
-                    RepositoryRollupExpectation(
-                        repository_full_name="acme/web",
-                        pull_request_count=1,
-                        merged_pull_request_count=1,
-                        active_author_count=1,
-                        merged_pull_requests_per_active_author=1.0,
-                        time_to_merge_seconds=MetricSummaryExpectation(
-                            count=1,
-                            total=97_200,
-                            average=97_200.0,
-                            median=97_200.0,
-                        ),
-                        time_to_first_review_seconds=MetricSummaryExpectation(
-                            count=1,
-                            total=21_600,
-                            average=21_600.0,
-                            median=21_600.0,
-                        ),
-                        additions=MetricSummaryExpectation(1, 20, 20.0, 20.0),
-                        deletions=MetricSummaryExpectation(1, 10, 10.0, 10.0),
-                        changed_lines=MetricSummaryExpectation(1, 30, 30.0, 30.0),
-                        changed_files=MetricSummaryExpectation(1, 4, 4.0, 4.0),
-                        commits=MetricSummaryExpectation(1, 5, 5.0, 5.0),
-                    ),
-                ),
-                expected_org_summary=OrganizationRollupExpectation(
-                    repository_count=3,
-                    pull_request_count=4,
-                    merged_pull_request_count=2,
-                    active_author_count=2,
-                    merged_pull_requests_per_active_author=1.0,
-                    time_to_merge_seconds=MetricSummaryExpectation(
-                        count=2,
-                        total=194_400,
-                        average=97_200.0,
-                        median=97_200.0,
-                    ),
-                    time_to_first_review_seconds=MetricSummaryExpectation(
-                        count=3,
-                        total=39_600,
-                        average=13_200.0,
-                        median=10_800.0,
-                    ),
-                    additions=MetricSummaryExpectation(4, 41, 10.25, 8.0),
-                    deletions=MetricSummaryExpectation(4, 17, 4.25, 3.0),
-                    changed_lines=MetricSummaryExpectation(4, 58, 14.5, 11.0),
-                    changed_files=MetricSummaryExpectation(4, 8, 2.0, 1.5),
-                    commits=MetricSummaryExpectation(4, 9, 2.25, 1.5),
-                ),
-            )
+            return _aggregation_multi_repo_rollups
         case "no_active_authors":
-            pull_requests = (
-                pull_request_factory(
-                    repository_full_name="acme/api",
-                    number=51,
-                    author_login=None,
-                    additions=4,
-                    deletions=1,
-                    changed_files=1,
-                    html_url="https://example.test/pr/51",
-                ),
-                pull_request_factory(
-                    repository_full_name="acme/web",
-                    number=61,
-                    author_login=None,
-                    additions=2,
-                    deletions=2,
-                    changed_files=1,
-                    html_url="https://example.test/pr/61",
-                ),
-            )
-            return AggregationCase(
-                pull_requests=pull_requests,
-                expected_repositories=(
-                    RepositoryRollupExpectation(
-                        repository_full_name="acme/api",
-                        pull_request_count=1,
-                        merged_pull_request_count=0,
-                        active_author_count=0,
-                        merged_pull_requests_per_active_author=None,
-                        time_to_merge_seconds=MetricSummaryExpectation(0, 0, None, None),
-                        time_to_first_review_seconds=MetricSummaryExpectation(
-                            0,
-                            0,
-                            None,
-                            None,
-                        ),
-                        additions=MetricSummaryExpectation(1, 4, 4.0, 4.0),
-                        deletions=MetricSummaryExpectation(1, 1, 1.0, 1.0),
-                        changed_lines=MetricSummaryExpectation(1, 5, 5.0, 5.0),
-                        changed_files=MetricSummaryExpectation(1, 1, 1.0, 1.0),
-                        commits=MetricSummaryExpectation(1, 1, 1.0, 1.0),
-                    ),
-                    RepositoryRollupExpectation(
-                        repository_full_name="acme/web",
-                        pull_request_count=1,
-                        merged_pull_request_count=0,
-                        active_author_count=0,
-                        merged_pull_requests_per_active_author=None,
-                        time_to_merge_seconds=MetricSummaryExpectation(0, 0, None, None),
-                        time_to_first_review_seconds=MetricSummaryExpectation(
-                            0,
-                            0,
-                            None,
-                            None,
-                        ),
-                        additions=MetricSummaryExpectation(1, 2, 2.0, 2.0),
-                        deletions=MetricSummaryExpectation(1, 2, 2.0, 2.0),
-                        changed_lines=MetricSummaryExpectation(1, 4, 4.0, 4.0),
-                        changed_files=MetricSummaryExpectation(1, 1, 1.0, 1.0),
-                        commits=MetricSummaryExpectation(1, 1, 1.0, 1.0),
-                    ),
-                ),
-                expected_org_summary=OrganizationRollupExpectation(
-                    repository_count=2,
-                    pull_request_count=2,
-                    merged_pull_request_count=0,
-                    active_author_count=0,
-                    merged_pull_requests_per_active_author=None,
-                    time_to_merge_seconds=MetricSummaryExpectation(0, 0, None, None),
-                    time_to_first_review_seconds=MetricSummaryExpectation(
-                        0,
-                        0,
-                        None,
-                        None,
-                    ),
-                    additions=MetricSummaryExpectation(2, 6, 3.0, 3.0),
-                    deletions=MetricSummaryExpectation(2, 3, 1.5, 1.5),
-                    changed_lines=MetricSummaryExpectation(2, 9, 4.5, 4.5),
-                    changed_files=MetricSummaryExpectation(2, 2, 1.0, 1.0),
-                    commits=MetricSummaryExpectation(2, 2, 1.0, 1.0),
-                ),
-            )
+            return _aggregation_no_active_authors
     raise AssertionError(f"unknown aggregation case: {case_name}")
 
 
@@ -1056,7 +576,676 @@ def _build_validation_case(
     pull_request_factory,
     review_factory,
 ) -> ValidationCase:
-    pipeline = metric_harness.build_pipeline(
+    return _validation_case_builder(case_name)(
+        metric_harness=metric_harness,
+        pull_request_factory=pull_request_factory,
+        review_factory=review_factory,
+    )
+
+
+def _validation_case_builder(case_name: str):
+    match case_name:
+        case "raw_count_mismatch":
+            return _validation_raw_count_mismatch
+        case "review_start_missing":
+            return _validation_review_start_missing
+        case "merge_timing_mismatch":
+            return _validation_merge_timing_mismatch
+        case "org_rollup_mismatch":
+            return _validation_org_rollup_mismatch
+    raise AssertionError(f"unknown validation case: {case_name}")
+
+
+def _review_timing_draft_reset_request_cycle(
+    *,
+    pull_request_factory,
+    review_factory,
+    timeline_event_factory,
+) -> ReviewTimingCase:
+    return ReviewTimingCase(
+        pull_request=pull_request_factory(
+            number=21,
+            title="Stabilize review timing",
+            state="closed",
+            merged=True,
+            created_at=datetime.fromisoformat("2026-04-05T09:00:00"),
+            updated_at=datetime.fromisoformat("2026-04-06T18:30:00"),
+            closed_at=datetime.fromisoformat("2026-04-06T18:30:00"),
+            merged_at=datetime.fromisoformat("2026-04-06T18:00:00"),
+            additions=30,
+            deletions=12,
+            changed_files=5,
+            commits=4,
+            html_url="https://example.test/pr/21",
+            reviews=(
+                review_factory(
+                    review_id=501,
+                    author_login="reviewer-b",
+                    submitted_at=datetime.fromisoformat("2026-04-06T18:30:00"),
+                    commit_id="commit-501",
+                ),
+            ),
+            timeline_events=(
+                timeline_event_factory(
+                    event_id=601,
+                    created_at=datetime.fromisoformat("2026-04-05T10:00:00"),
+                    requested_reviewer_login="reviewer-a",
+                ),
+                timeline_event_factory(
+                    event_id=602,
+                    event="review_request_removed",
+                    created_at=datetime.fromisoformat("2026-04-05T11:00:00"),
+                    requested_reviewer_login="reviewer-a",
+                ),
+                timeline_event_factory(
+                    event_id=603,
+                    event="converted_to_draft",
+                    created_at=datetime.fromisoformat("2026-04-05T12:00:00"),
+                    requested_reviewer_login=None,
+                ),
+                timeline_event_factory(
+                    event_id=604,
+                    event="ready_for_review",
+                    created_at=datetime.fromisoformat("2026-04-05T15:00:00"),
+                    requested_reviewer_login=None,
+                ),
+                timeline_event_factory(
+                    event_id=605,
+                    created_at=datetime.fromisoformat("2026-04-05T16:00:00"),
+                    requested_reviewer_login="reviewer-b",
+                ),
+            ),
+        ),
+        expected=ReviewTimingExpectation(
+            author_login="alice",
+            review_ready_at=datetime.fromisoformat("2026-04-05T15:00:00"),
+            review_requested_at=datetime.fromisoformat("2026-04-05T16:00:00"),
+            review_started_at=datetime.fromisoformat("2026-04-05T16:00:00"),
+            first_review_submitted_at=datetime.fromisoformat("2026-04-06T18:30:00"),
+            merged_at=datetime.fromisoformat("2026-04-06T18:00:00"),
+            time_to_first_review_seconds=95_400,
+            time_to_merge_seconds=118_800,
+            changed_lines=42,
+        ),
+    )
+
+
+def _review_timing_missing_review_merge_data(
+    *,
+    pull_request_factory,
+    review_factory,
+    timeline_event_factory,
+) -> ReviewTimingCase:
+    return ReviewTimingCase(
+        pull_request=pull_request_factory(
+            number=34,
+            title="Leave timing fields empty",
+            author_login=None,
+            updated_at=datetime.fromisoformat("2026-04-12T11:00:00"),
+            additions=8,
+            deletions=3,
+            changed_files=2,
+            html_url="https://example.test/pr/34",
+        ),
+        expected=ReviewTimingExpectation(
+            author_login=None,
+            review_ready_at=datetime.fromisoformat("2026-04-10T09:00:00"),
+            review_requested_at=None,
+            review_started_at=datetime.fromisoformat("2026-04-10T09:00:00"),
+            first_review_submitted_at=None,
+            merged_at=None,
+            time_to_first_review_seconds=None,
+            time_to_merge_seconds=None,
+            changed_lines=11,
+        ),
+    )
+
+
+def _review_timing_ignore_pre_ready_review_after_draft_reset(
+    *,
+    pull_request_factory,
+    review_factory,
+    timeline_event_factory,
+) -> ReviewTimingCase:
+    return ReviewTimingCase(
+        pull_request=pull_request_factory(
+            number=44,
+            title="Skip early draft review",
+            state="closed",
+            merged=True,
+            updated_at=datetime.fromisoformat("2026-04-11T13:00:00"),
+            closed_at=datetime.fromisoformat("2026-04-11T13:00:00"),
+            merged_at=datetime.fromisoformat("2026-04-11T13:00:00"),
+            additions=10,
+            deletions=2,
+            changed_files=2,
+            commits=2,
+            html_url="https://example.test/pr/44",
+            reviews=(
+                review_factory(
+                    review_id=701,
+                    state="COMMENTED",
+                    submitted_at=datetime.fromisoformat("2026-04-10T10:00:00"),
+                    commit_id="commit-701",
+                ),
+                review_factory(
+                    review_id=702,
+                    author_login="reviewer-b",
+                    submitted_at=datetime.fromisoformat("2026-04-11T12:00:00"),
+                    commit_id="commit-702",
+                ),
+            ),
+            timeline_events=(
+                timeline_event_factory(
+                    event_id=801,
+                    event="converted_to_draft",
+                    created_at=datetime.fromisoformat("2026-04-10T09:30:00"),
+                    requested_reviewer_login=None,
+                ),
+                timeline_event_factory(
+                    event_id=802,
+                    event="ready_for_review",
+                    created_at=datetime.fromisoformat("2026-04-11T09:00:00"),
+                    requested_reviewer_login=None,
+                ),
+            ),
+        ),
+        expected=ReviewTimingExpectation(
+            author_login="alice",
+            review_ready_at=datetime.fromisoformat("2026-04-11T09:00:00"),
+            review_requested_at=None,
+            review_started_at=datetime.fromisoformat("2026-04-11T09:00:00"),
+            first_review_submitted_at=datetime.fromisoformat("2026-04-11T12:00:00"),
+            merged_at=datetime.fromisoformat("2026-04-11T13:00:00"),
+            time_to_first_review_seconds=10_800,
+            time_to_merge_seconds=100_800,
+            changed_lines=12,
+        ),
+    )
+
+
+def _review_timing_draft_created_stays_null(
+    *,
+    pull_request_factory,
+    review_factory,
+    timeline_event_factory,
+) -> ReviewTimingCase:
+    return ReviewTimingCase(
+        pull_request=pull_request_factory(
+            number=45,
+            title="Start life as a draft",
+            draft=True,
+            additions=6,
+            deletions=1,
+            changed_files=1,
+            html_url="https://example.test/pr/45",
+        ),
+        expected=ReviewTimingExpectation(
+            author_login="alice",
+            review_ready_at=None,
+            review_requested_at=None,
+            review_started_at=None,
+            first_review_submitted_at=None,
+            merged_at=None,
+            time_to_first_review_seconds=None,
+            time_to_merge_seconds=None,
+            changed_lines=7,
+        ),
+    )
+
+
+def _review_timing_ignore_pre_ready_review_for_draft_created_pr(
+    *,
+    pull_request_factory,
+    review_factory,
+    timeline_event_factory,
+) -> ReviewTimingCase:
+    return ReviewTimingCase(
+        pull_request=pull_request_factory(
+            number=46,
+            title="Become ready later",
+            state="closed",
+            merged=True,
+            updated_at=datetime.fromisoformat("2026-04-11T13:00:00"),
+            closed_at=datetime.fromisoformat("2026-04-11T13:00:00"),
+            merged_at=datetime.fromisoformat("2026-04-11T13:00:00"),
+            additions=9,
+            deletions=2,
+            changed_files=2,
+            commits=2,
+            html_url="https://example.test/pr/46",
+            reviews=(
+                review_factory(
+                    review_id=703,
+                    state="COMMENTED",
+                    submitted_at=datetime.fromisoformat("2026-04-10T10:00:00"),
+                    commit_id="commit-703",
+                ),
+                review_factory(
+                    review_id=704,
+                    author_login="reviewer-b",
+                    submitted_at=datetime.fromisoformat("2026-04-11T12:00:00"),
+                    commit_id="commit-704",
+                ),
+            ),
+            timeline_events=(
+                timeline_event_factory(
+                    event_id=803,
+                    event="ready_for_review",
+                    created_at=datetime.fromisoformat("2026-04-11T09:00:00"),
+                    requested_reviewer_login=None,
+                ),
+            ),
+        ),
+        expected=ReviewTimingExpectation(
+            author_login="alice",
+            review_ready_at=datetime.fromisoformat("2026-04-11T09:00:00"),
+            review_requested_at=None,
+            review_started_at=datetime.fromisoformat("2026-04-11T09:00:00"),
+            first_review_submitted_at=datetime.fromisoformat("2026-04-11T12:00:00"),
+            merged_at=datetime.fromisoformat("2026-04-11T13:00:00"),
+            time_to_first_review_seconds=10_800,
+            time_to_merge_seconds=100_800,
+            changed_lines=11,
+        ),
+    )
+
+
+def _aggregation_multi_repo_rollups(
+    *,
+    pull_request_factory,
+    review_factory,
+) -> AggregationCase:
+    pull_requests = (
+        pull_request_factory(
+            number=21,
+            title="Ship API endpoint",
+            state="closed",
+            merged=True,
+            author_login="Alice",
+            created_at=datetime.fromisoformat("2026-04-05T09:00:00"),
+            updated_at=datetime.fromisoformat("2026-04-06T12:00:00"),
+            closed_at=datetime.fromisoformat("2026-04-06T12:00:00"),
+            merged_at=datetime.fromisoformat("2026-04-06T12:00:00"),
+            additions=10,
+            deletions=4,
+            changed_files=2,
+            commits=2,
+            html_url="https://example.test/pr/21",
+            reviews=(
+                review_factory(
+                    review_id=501,
+                    submitted_at=datetime.fromisoformat("2026-04-05T12:00:00"),
+                    commit_id="commit-501",
+                ),
+            ),
+        ),
+        pull_request_factory(
+            number=22,
+            title="Refine API validation",
+            state="open",
+            author_login="alice",
+            created_at=datetime.fromisoformat("2026-04-07T09:00:00"),
+            updated_at=datetime.fromisoformat("2026-04-07T14:00:00"),
+            closed_at=None,
+            merged_at=None,
+            additions=6,
+            deletions=2,
+            changed_files=1,
+            commits=1,
+            html_url="https://example.test/pr/22",
+            reviews=(
+                review_factory(
+                    review_id=502,
+                    state="COMMENTED",
+                    submitted_at=datetime.fromisoformat("2026-04-07T11:00:00"),
+                    commit_id="commit-502",
+                ),
+            ),
+        ),
+        pull_request_factory(
+            repository_full_name="acme/docs",
+            number=41,
+            title="Clarify onboarding steps",
+            author_login=None,
+            additions=5,
+            deletions=1,
+            changed_files=1,
+            html_url="https://example.test/pr/41",
+        ),
+        pull_request_factory(
+            repository_full_name="acme/web",
+            number=31,
+            title="Ship dashboard layout",
+            state="closed",
+            merged=True,
+            author_login="bob",
+            created_at=datetime.fromisoformat("2026-04-08T09:00:00"),
+            updated_at=datetime.fromisoformat("2026-04-09T13:00:00"),
+            closed_at=datetime.fromisoformat("2026-04-09T13:00:00"),
+            merged_at=datetime.fromisoformat("2026-04-09T12:00:00"),
+            additions=20,
+            deletions=10,
+            changed_files=4,
+            commits=5,
+            html_url="https://example.test/pr/31",
+            reviews=(
+                review_factory(
+                    review_id=601,
+                    author_login="reviewer-b",
+                    submitted_at=datetime.fromisoformat("2026-04-08T15:00:00"),
+                    commit_id="commit-601",
+                ),
+            ),
+        ),
+    )
+    return AggregationCase(
+        pull_requests=pull_requests,
+        expected_repositories=(
+            RepositoryRollupExpectation(
+                repository_full_name="acme/api",
+                pull_request_count=2,
+                merged_pull_request_count=1,
+                active_author_count=1,
+                merged_pull_requests_per_active_author=1.0,
+                time_to_merge_seconds=MetricSummaryExpectation(
+                    count=1,
+                    total=97_200,
+                    average=97_200.0,
+                    median=97_200.0,
+                ),
+                time_to_first_review_seconds=MetricSummaryExpectation(
+                    count=2,
+                    total=18_000,
+                    average=9_000.0,
+                    median=9_000.0,
+                ),
+                additions=MetricSummaryExpectation(2, 16, 8.0, 8.0),
+                deletions=MetricSummaryExpectation(2, 6, 3.0, 3.0),
+                changed_lines=MetricSummaryExpectation(2, 22, 11.0, 11.0),
+                changed_files=MetricSummaryExpectation(2, 3, 1.5, 1.5),
+                commits=MetricSummaryExpectation(2, 3, 1.5, 1.5),
+            ),
+            RepositoryRollupExpectation(
+                repository_full_name="acme/docs",
+                pull_request_count=1,
+                merged_pull_request_count=0,
+                active_author_count=0,
+                merged_pull_requests_per_active_author=None,
+                time_to_merge_seconds=MetricSummaryExpectation(0, 0, None, None),
+                time_to_first_review_seconds=MetricSummaryExpectation(
+                    0,
+                    0,
+                    None,
+                    None,
+                ),
+                additions=MetricSummaryExpectation(1, 5, 5.0, 5.0),
+                deletions=MetricSummaryExpectation(1, 1, 1.0, 1.0),
+                changed_lines=MetricSummaryExpectation(1, 6, 6.0, 6.0),
+                changed_files=MetricSummaryExpectation(1, 1, 1.0, 1.0),
+                commits=MetricSummaryExpectation(1, 1, 1.0, 1.0),
+            ),
+            RepositoryRollupExpectation(
+                repository_full_name="acme/web",
+                pull_request_count=1,
+                merged_pull_request_count=1,
+                active_author_count=1,
+                merged_pull_requests_per_active_author=1.0,
+                time_to_merge_seconds=MetricSummaryExpectation(
+                    count=1,
+                    total=97_200,
+                    average=97_200.0,
+                    median=97_200.0,
+                ),
+                time_to_first_review_seconds=MetricSummaryExpectation(
+                    count=1,
+                    total=21_600,
+                    average=21_600.0,
+                    median=21_600.0,
+                ),
+                additions=MetricSummaryExpectation(1, 20, 20.0, 20.0),
+                deletions=MetricSummaryExpectation(1, 10, 10.0, 10.0),
+                changed_lines=MetricSummaryExpectation(1, 30, 30.0, 30.0),
+                changed_files=MetricSummaryExpectation(1, 4, 4.0, 4.0),
+                commits=MetricSummaryExpectation(1, 5, 5.0, 5.0),
+            ),
+        ),
+        expected_org_summary=OrganizationRollupExpectation(
+            repository_count=3,
+            pull_request_count=4,
+            merged_pull_request_count=2,
+            active_author_count=2,
+            merged_pull_requests_per_active_author=1.0,
+            time_to_merge_seconds=MetricSummaryExpectation(
+                count=2,
+                total=194_400,
+                average=97_200.0,
+                median=97_200.0,
+            ),
+            time_to_first_review_seconds=MetricSummaryExpectation(
+                count=3,
+                total=39_600,
+                average=13_200.0,
+                median=10_800.0,
+            ),
+            additions=MetricSummaryExpectation(4, 41, 10.25, 8.0),
+            deletions=MetricSummaryExpectation(4, 17, 4.25, 3.0),
+            changed_lines=MetricSummaryExpectation(4, 58, 14.5, 11.0),
+            changed_files=MetricSummaryExpectation(4, 8, 2.0, 1.5),
+            commits=MetricSummaryExpectation(4, 9, 2.25, 1.5),
+        ),
+    )
+
+
+def _aggregation_no_active_authors(
+    *,
+    pull_request_factory,
+    review_factory,
+) -> AggregationCase:
+    pull_requests = (
+        pull_request_factory(
+            repository_full_name="acme/api",
+            number=51,
+            author_login=None,
+            additions=4,
+            deletions=1,
+            changed_files=1,
+            html_url="https://example.test/pr/51",
+        ),
+        pull_request_factory(
+            repository_full_name="acme/web",
+            number=61,
+            author_login=None,
+            additions=2,
+            deletions=2,
+            changed_files=1,
+            html_url="https://example.test/pr/61",
+        ),
+    )
+    return AggregationCase(
+        pull_requests=pull_requests,
+        expected_repositories=(
+            RepositoryRollupExpectation(
+                repository_full_name="acme/api",
+                pull_request_count=1,
+                merged_pull_request_count=0,
+                active_author_count=0,
+                merged_pull_requests_per_active_author=None,
+                time_to_merge_seconds=MetricSummaryExpectation(0, 0, None, None),
+                time_to_first_review_seconds=MetricSummaryExpectation(
+                    0,
+                    0,
+                    None,
+                    None,
+                ),
+                additions=MetricSummaryExpectation(1, 4, 4.0, 4.0),
+                deletions=MetricSummaryExpectation(1, 1, 1.0, 1.0),
+                changed_lines=MetricSummaryExpectation(1, 5, 5.0, 5.0),
+                changed_files=MetricSummaryExpectation(1, 1, 1.0, 1.0),
+                commits=MetricSummaryExpectation(1, 1, 1.0, 1.0),
+            ),
+            RepositoryRollupExpectation(
+                repository_full_name="acme/web",
+                pull_request_count=1,
+                merged_pull_request_count=0,
+                active_author_count=0,
+                merged_pull_requests_per_active_author=None,
+                time_to_merge_seconds=MetricSummaryExpectation(0, 0, None, None),
+                time_to_first_review_seconds=MetricSummaryExpectation(
+                    0,
+                    0,
+                    None,
+                    None,
+                ),
+                additions=MetricSummaryExpectation(1, 2, 2.0, 2.0),
+                deletions=MetricSummaryExpectation(1, 2, 2.0, 2.0),
+                changed_lines=MetricSummaryExpectation(1, 4, 4.0, 4.0),
+                changed_files=MetricSummaryExpectation(1, 1, 1.0, 1.0),
+                commits=MetricSummaryExpectation(1, 1, 1.0, 1.0),
+            ),
+        ),
+        expected_org_summary=OrganizationRollupExpectation(
+            repository_count=2,
+            pull_request_count=2,
+            merged_pull_request_count=0,
+            active_author_count=0,
+            merged_pull_requests_per_active_author=None,
+            time_to_merge_seconds=MetricSummaryExpectation(0, 0, None, None),
+            time_to_first_review_seconds=MetricSummaryExpectation(
+                0,
+                0,
+                None,
+                None,
+            ),
+            additions=MetricSummaryExpectation(2, 6, 3.0, 3.0),
+            deletions=MetricSummaryExpectation(2, 3, 1.5, 1.5),
+            changed_lines=MetricSummaryExpectation(2, 9, 4.5, 4.5),
+            changed_files=MetricSummaryExpectation(2, 2, 1.0, 1.0),
+            commits=MetricSummaryExpectation(2, 2, 1.0, 1.0),
+        ),
+    )
+
+
+def _validation_raw_count_mismatch(
+    *,
+    metric_harness,
+    pull_request_factory,
+    review_factory,
+) -> ValidationCase:
+    pipeline = _validation_base_pipeline(
+        metric_harness=metric_harness,
+        pull_request_factory=pull_request_factory,
+        review_factory=review_factory,
+    )
+    raw_period = pipeline.raw_snapshot.periods[0].model_copy(
+        update={"pull_request_count": 3}
+    )
+    raw_snapshot = pipeline.raw_snapshot.model_copy(update={"periods": (raw_period,)})
+    return ValidationCase(
+        pipeline=pipeline,
+        raw_snapshot=raw_snapshot,
+        pull_request_metrics=pipeline.pull_request_metrics,
+        org_metrics=pipeline.org_metrics,
+        expected_valid=False,
+        expected_issue_codes=("raw_pull_request_count_mismatch",),
+    )
+
+
+def _validation_review_start_missing(
+    *,
+    metric_harness,
+    pull_request_factory,
+    review_factory,
+) -> ValidationCase:
+    pipeline = _validation_base_pipeline(
+        metric_harness=metric_harness,
+        pull_request_factory=pull_request_factory,
+        review_factory=review_factory,
+    )
+    pull_request_metrics = _replace_first_metric(
+        pipeline.pull_request_metrics,
+        review_started_at=None,
+    )
+    return ValidationCase(
+        pipeline=pipeline,
+        raw_snapshot=pipeline.raw_snapshot,
+        pull_request_metrics=pull_request_metrics,
+        org_metrics=pipeline.org_metrics,
+        expected_valid=False,
+        expected_issue_codes=("review_submission_missing_review_start",),
+    )
+
+
+def _validation_merge_timing_mismatch(
+    *,
+    metric_harness,
+    pull_request_factory,
+    review_factory,
+) -> ValidationCase:
+    pipeline = _validation_base_pipeline(
+        metric_harness=metric_harness,
+        pull_request_factory=pull_request_factory,
+        review_factory=review_factory,
+    )
+    pull_request_metrics = _replace_first_metric(
+        pipeline.pull_request_metrics,
+        time_to_merge_seconds=90_001,
+    )
+    return ValidationCase(
+        pipeline=pipeline,
+        raw_snapshot=pipeline.raw_snapshot,
+        pull_request_metrics=pull_request_metrics,
+        org_metrics=pipeline.org_metrics,
+        expected_valid=False,
+        expected_issue_codes=("merged_pr_merge_timing_mismatch",),
+    )
+
+
+def _validation_org_rollup_mismatch(
+    *,
+    metric_harness,
+    pull_request_factory,
+    review_factory,
+) -> ValidationCase:
+    pipeline = _validation_base_pipeline(
+        metric_harness=metric_harness,
+        pull_request_factory=pull_request_factory,
+        review_factory=review_factory,
+    )
+    org_period = pipeline.org_metrics.periods[0]
+    org_metrics = pipeline.org_metrics.model_copy(
+        update={
+            "periods": (
+                org_period.model_copy(
+                    update={
+                        "summary": org_period.summary.model_copy(
+                            update={
+                                "pull_request_count": org_period.summary.pull_request_count
+                                + 1
+                            }
+                        )
+                    }
+                ),
+            )
+        }
+    )
+    return ValidationCase(
+        pipeline=pipeline,
+        raw_snapshot=pipeline.raw_snapshot,
+        pull_request_metrics=pipeline.pull_request_metrics,
+        org_metrics=org_metrics,
+        expected_valid=False,
+        expected_issue_codes=("pull_request_count_mismatch",),
+    )
+
+
+def _validation_base_pipeline(
+    *,
+    metric_harness,
+    pull_request_factory,
+    review_factory,
+):
+    return metric_harness.build_pipeline(
         as_of="2026-04-18",
         pull_requests=(
             pull_request_factory(
@@ -1107,75 +1296,6 @@ def _build_validation_case(
             ),
         ),
     )
-    match case_name:
-        case "raw_count_mismatch":
-            raw_period = pipeline.raw_snapshot.periods[0].model_copy(
-                update={"pull_request_count": 3}
-            )
-            raw_snapshot = pipeline.raw_snapshot.model_copy(
-                update={"periods": (raw_period,)}
-            )
-            return ValidationCase(
-                pipeline=pipeline,
-                raw_snapshot=raw_snapshot,
-                pull_request_metrics=pipeline.pull_request_metrics,
-                org_metrics=pipeline.org_metrics,
-                expected_valid=False,
-                expected_issue_codes=("raw_pull_request_count_mismatch",),
-            )
-        case "review_start_missing":
-            pull_request_metrics = _replace_first_metric(
-                pipeline.pull_request_metrics,
-                review_started_at=None,
-            )
-            return ValidationCase(
-                pipeline=pipeline,
-                raw_snapshot=pipeline.raw_snapshot,
-                pull_request_metrics=pull_request_metrics,
-                org_metrics=pipeline.org_metrics,
-                expected_valid=False,
-                expected_issue_codes=("review_submission_missing_review_start",),
-            )
-        case "merge_timing_mismatch":
-            pull_request_metrics = _replace_first_metric(
-                pipeline.pull_request_metrics,
-                time_to_merge_seconds=90_001,
-            )
-            return ValidationCase(
-                pipeline=pipeline,
-                raw_snapshot=pipeline.raw_snapshot,
-                pull_request_metrics=pull_request_metrics,
-                org_metrics=pipeline.org_metrics,
-                expected_valid=False,
-                expected_issue_codes=("merged_pr_merge_timing_mismatch",),
-            )
-        case "org_rollup_mismatch":
-            org_period = pipeline.org_metrics.periods[0]
-            org_metrics = pipeline.org_metrics.model_copy(
-                update={
-                    "periods": (
-                        org_period.model_copy(
-                            update={
-                                "summary": org_period.summary.model_copy(
-                                    update={
-                                        "pull_request_count": org_period.summary.pull_request_count
-                                        + 1
-                                    }
-                                )
-                            }
-                        ),
-                    )
-                }
-            )
-            return ValidationCase(
-                pipeline=pipeline,
-                raw_snapshot=pipeline.raw_snapshot,
-                pull_request_metrics=pipeline.pull_request_metrics,
-                org_metrics=org_metrics,
-                expected_valid=False,
-                expected_issue_codes=("pull_request_count_mismatch",),
-            )
-    raise AssertionError(f"unknown validation case: {case_name}")
 
 
 def _replace_first_metric(

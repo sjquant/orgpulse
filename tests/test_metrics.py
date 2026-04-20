@@ -462,19 +462,13 @@ def review_timing_case(
     timeline_event_factory,
 ) -> ReviewTimingCase:
     """Build timing fixtures from a shared table of public PR inputs."""
-    # Given
     case_name = str(request.param)
-
-    # When
-    case = _build_review_timing_case(
+    return _build_review_timing_case(
         case_name,
         pull_request_factory=pull_request_factory,
         review_factory=review_factory,
         timeline_event_factory=timeline_event_factory,
     )
-
-    # Then
-    return case
 
 
 @pytest.fixture(params=("multi_repo_rollups", "no_active_authors"))
@@ -484,18 +478,12 @@ def aggregation_case(
     review_factory,
 ) -> AggregationCase:
     """Build aggregation fixtures from a shared table of PR collections."""
-    # Given
     case_name = str(request.param)
-
-    # When
-    case = _build_aggregation_case(
+    return _build_aggregation_case(
         case_name,
         pull_request_factory=pull_request_factory,
         review_factory=review_factory,
     )
-
-    # Then
-    return case
 
 
 @pytest.fixture(
@@ -513,19 +501,13 @@ def validation_case(
     review_factory,
 ) -> ValidationCase:
     """Build validation fixtures from a shared table of output mutations."""
-    # Given
     case_name = str(request.param)
-
-    # When
-    case = _build_validation_case(
+    return _build_validation_case(
         case_name,
         metric_harness=metric_harness,
         pull_request_factory=pull_request_factory,
         review_factory=review_factory,
     )
-
-    # Then
-    return case
 
 
 def _assert_metric_summary(actual, expected: MetricSummaryExpectation) -> None:

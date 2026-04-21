@@ -944,6 +944,19 @@ class TestGitHubIngestionService:
                 FakeGithubClient(
                     organizations={},
                     repositories={
+                        "acme/api": [
+                            self._build_repository(
+                                "acme/api",
+                                pull_outcomes=[
+                                    [
+                                        self._build_pull_request(
+                                            number=9,
+                                            updated_at="2026-04-19T10:00:00",
+                                        ),
+                                    ]
+                                ],
+                            )
+                        ],
                         "acme/web": [
                             self._build_repository(
                                 "acme/web",
@@ -951,7 +964,7 @@ class TestGitHubIngestionService:
                                     [
                                         self._build_pull_request(
                                             number=8,
-                                            updated_at="2026-04-12T10:00:00",
+                                            updated_at="2026-04-19T11:00:00",
                                         ),
                                     ]
                                 ],
@@ -972,9 +985,10 @@ class TestGitHubIngestionService:
         ]
         assert [
             pull_request.repository_full_name for pull_request in second_result.pull_requests
-        ] == ["acme/api", "acme/web"]
+        ] == ["acme/api", "acme/api", "acme/web"]
         assert [pull_request.number for pull_request in second_result.pull_requests] == [
             7,
+            9,
             8,
         ]
         assert second_result.failures == ()
@@ -1001,7 +1015,482 @@ class TestGitHubIngestionService:
                 "target_org": "acme",
                 "time_anchor": "created_at",
             },
+            "repository_end_dates": {
+                "acme/api": "2026-04-19",
+                "acme/web": "2026-04-19",
+            },
         }
+
+    def test_discards_newer_incremental_checkpoint_for_earlier_as_of_reruns(
+        self,
+        tmp_path,
+    ) -> None:
+        """Discard checkpoints from later incremental runs when rerunning with an earlier as-of date."""
+        # Given
+        first_service = GitHubIngestionService(
+            cast(
+                GitHubIngestionClientLike,
+                FakeGithubClient(
+                    organizations={},
+                    repositories={
+                        "acme/api": [
+                            self._build_repository(
+                                "acme/api",
+                                pull_outcomes=[
+                                    [
+                                        self._build_pull_request(
+                                            number=7,
+                                            updated_at="2026-04-19T10:00:00",
+                                        ),
+                                    ]
+                                ],
+                            )
+                        ],
+                        "acme/web": [
+                            self._build_github_exception(
+                                status=403,
+                                message="Forbidden",
+                            )
+                        ],
+                    },
+                ),
+            )
+        )
+        later_config = self._build_run_config(
+            as_of="2026-04-19",
+            output_dir=tmp_path,
+        )
+        inventory = RepositoryInventory(
+            organization_login="acme",
+            repositories=(
+                self._build_inventory_item("acme/api"),
+                self._build_inventory_item("acme/web"),
+            ),
+        )
+
+        # When
+        first_result = first_service.fetch_pull_requests(later_config, inventory)
+        earlier_config = self._build_run_config(
+            as_of="2026-04-18",
+            output_dir=tmp_path,
+        )
+        second_service = GitHubIngestionService(
+            cast(
+                GitHubIngestionClientLike,
+                FakeGithubClient(
+                    organizations={},
+                    repositories={
+                        "acme/api": [
+                            self._build_repository(
+                                "acme/api",
+                                pull_outcomes=[
+                                    [
+                                        self._build_pull_request(
+                                            number=7,
+                                            updated_at="2026-04-18T10:00:00",
+                                        ),
+                                    ]
+                                ],
+                            )
+                        ],
+                        "acme/web": [
+                            self._build_repository(
+                                "acme/web",
+                                pull_outcomes=[
+                                    [
+                                        self._build_pull_request(
+                                            number=8,
+                                            updated_at="2026-04-18T11:00:00",
+                                        ),
+                                    ]
+                                ],
+                            )
+                        ],
+                    },
+                ),
+            )
+        )
+        second_result = second_service.fetch_pull_requests(earlier_config, inventory)
+
+        # Then
+        assert [pull_request.number for pull_request in first_result.pull_requests] == [7]
+        assert [pull_request.number for pull_request in second_result.pull_requests] == [
+            7,
+            8,
+        ]
+        assert second_result.pull_requests[0].updated_at == datetime.fromisoformat(
+            "2026-04-18T10:00:00"
+        )
+        assert second_result.failures == ()
+
+    def test_replays_completed_repositories_for_same_day_incremental_reruns(
+        self,
+        tmp_path,
+    ) -> None:
+        """Replay checkpointed repositories from the same day so later updates are not missed."""
+        # Given
+        first_service = GitHubIngestionService(
+            cast(
+                GitHubIngestionClientLike,
+                FakeGithubClient(
+                    organizations={},
+                    repositories={
+                        "acme/api": [
+                            self._build_repository(
+                                "acme/api",
+                                pull_outcomes=[
+                                    [
+                                        self._build_pull_request(
+                                            number=7,
+                                            updated_at="2026-04-18T10:00:00",
+                                        ),
+                                    ]
+                                ],
+                            )
+                        ],
+                        "acme/web": [
+                            self._build_github_exception(
+                                status=403,
+                                message="Forbidden",
+                            )
+                        ],
+                    },
+                ),
+            )
+        )
+        config = self._build_run_config(
+            as_of="2026-04-18",
+            output_dir=tmp_path,
+        )
+        inventory = RepositoryInventory(
+            organization_login="acme",
+            repositories=(
+                self._build_inventory_item("acme/api"),
+                self._build_inventory_item("acme/web"),
+            ),
+        )
+
+        # When
+        first_result = first_service.fetch_pull_requests(config, inventory)
+        second_service = GitHubIngestionService(
+            cast(
+                GitHubIngestionClientLike,
+                FakeGithubClient(
+                    organizations={},
+                    repositories={
+                        "acme/api": [
+                            self._build_repository(
+                                "acme/api",
+                                pull_outcomes=[
+                                    [
+                                        self._build_pull_request(
+                                            number=7,
+                                            updated_at="2026-04-18T18:00:00",
+                                        ),
+                                        self._build_pull_request(
+                                            number=8,
+                                            updated_at="2026-04-18T19:00:00",
+                                        ),
+                                    ]
+                                ],
+                            )
+                        ],
+                        "acme/web": [
+                            self._build_repository(
+                                "acme/web",
+                                pull_outcomes=[
+                                    [
+                                        self._build_pull_request(
+                                            number=9,
+                                            updated_at="2026-04-18T20:00:00",
+                                        ),
+                                    ]
+                                ],
+                            )
+                        ],
+                    },
+                ),
+            )
+        )
+        second_result = second_service.fetch_pull_requests(config, inventory)
+
+        # Then
+        assert [pull_request.number for pull_request in first_result.pull_requests] == [7]
+        assert [pull_request.number for pull_request in second_result.pull_requests] == [
+            7,
+            8,
+            9,
+        ]
+        assert second_result.pull_requests[0].updated_at == datetime.fromisoformat(
+            "2026-04-18T18:00:00"
+        )
+        assert second_result.failures == ()
+
+    def test_excludes_stale_checkpoint_results_when_replay_fails(
+        self,
+        tmp_path,
+    ) -> None:
+        """Exclude cached PR rows from the returned collection when replaying that repo fails."""
+        # Given
+        first_service = GitHubIngestionService(
+            cast(
+                GitHubIngestionClientLike,
+                FakeGithubClient(
+                    organizations={},
+                    repositories={
+                        "acme/api": [
+                            self._build_repository(
+                                "acme/api",
+                                pull_outcomes=[
+                                    [
+                                        self._build_pull_request(
+                                            number=7,
+                                            updated_at="2026-04-18T10:00:00",
+                                        ),
+                                    ]
+                                ],
+                            )
+                        ],
+                        "acme/web": [
+                            self._build_github_exception(
+                                status=403,
+                                message="Forbidden",
+                            )
+                        ],
+                    },
+                ),
+            )
+        )
+        inventory = RepositoryInventory(
+            organization_login="acme",
+            repositories=(
+                self._build_inventory_item("acme/api"),
+                self._build_inventory_item("acme/web"),
+            ),
+        )
+
+        # When
+        first_service.fetch_pull_requests(
+            self._build_run_config(
+                as_of="2026-04-18",
+                output_dir=tmp_path,
+            ),
+            inventory,
+        )
+        second_result = GitHubIngestionService(
+            cast(
+                GitHubIngestionClientLike,
+                FakeGithubClient(
+                    organizations={},
+                    repositories={
+                        "acme/api": [
+                            self._build_github_exception(
+                                status=403,
+                                message="Forbidden",
+                            )
+                        ],
+                        "acme/web": [
+                            self._build_repository(
+                                "acme/web",
+                                pull_outcomes=[
+                                    [
+                                        self._build_pull_request(
+                                            number=8,
+                                            updated_at="2026-04-19T11:00:00",
+                                        ),
+                                    ]
+                                ],
+                            )
+                        ],
+                    },
+                ),
+            )
+        ).fetch_pull_requests(
+            self._build_run_config(
+                as_of="2026-04-19",
+                output_dir=tmp_path,
+            ),
+            inventory,
+        )
+
+        # Then
+        assert [pull_request.number for pull_request in second_result.pull_requests] == [8]
+        assert [failure.repository_full_name for failure in second_result.failures] == [
+            "acme/api"
+        ]
+
+    def test_preserves_repository_resume_dates_when_other_replays_succeed(
+        self,
+        tmp_path,
+    ) -> None:
+        """Keep each repo's own checkpoint date so failed replays can still cover the prior day."""
+        # Given
+        inventory = RepositoryInventory(
+            organization_login="acme",
+            repositories=(
+                self._build_inventory_item("acme/api"),
+                self._build_inventory_item("acme/web"),
+            ),
+        )
+        first_service = GitHubIngestionService(
+            cast(
+                GitHubIngestionClientLike,
+                FakeGithubClient(
+                    organizations={},
+                    repositories={
+                        "acme/api": [
+                            self._build_repository(
+                                "acme/api",
+                                pull_outcomes=[
+                                    [
+                                        self._build_pull_request(
+                                            number=7,
+                                            updated_at="2026-04-18T10:00:00",
+                                        ),
+                                    ]
+                                ],
+                            )
+                        ],
+                        "acme/web": [
+                            self._build_github_exception(
+                                status=403,
+                                message="Forbidden",
+                            )
+                        ],
+                    },
+                ),
+            )
+        )
+
+        # When
+        first_service.fetch_pull_requests(
+            self._build_run_config(
+                as_of="2026-04-18",
+                output_dir=tmp_path,
+            ),
+            inventory,
+        )
+        second_service = GitHubIngestionService(
+            cast(
+                GitHubIngestionClientLike,
+                FakeGithubClient(
+                    organizations={},
+                    repositories={
+                        "acme/api": [
+                            self._build_github_exception(
+                                status=403,
+                                message="Forbidden",
+                            )
+                        ],
+                        "acme/web": [
+                            self._build_repository(
+                                "acme/web",
+                                pull_outcomes=[
+                                    [
+                                        self._build_pull_request(
+                                            number=8,
+                                            updated_at="2026-04-19T11:00:00",
+                                        ),
+                                    ]
+                                ],
+                            )
+                        ],
+                    },
+                ),
+            )
+        )
+        second_service.fetch_pull_requests(
+            self._build_run_config(
+                as_of="2026-04-19",
+                output_dir=tmp_path,
+            ),
+            inventory,
+        )
+        third_result = GitHubIngestionService(
+            cast(
+                GitHubIngestionClientLike,
+                FakeGithubClient(
+                    organizations={},
+                    repositories={
+                        "acme/api": [
+                            self._build_repository(
+                                "acme/api",
+                                pull_outcomes=[
+                                    [
+                                        self._build_pull_request(
+                                            number=7,
+                                            updated_at="2026-04-18T18:00:00",
+                                        ),
+                                        self._build_pull_request(
+                                            number=9,
+                                            updated_at="2026-04-19T09:00:00",
+                                        ),
+                                    ]
+                                ],
+                            )
+                        ],
+                        "acme/web": [
+                            self._build_repository(
+                                "acme/web",
+                                pull_outcomes=[
+                                    [
+                                        self._build_pull_request(
+                                            number=8,
+                                            updated_at="2026-04-19T11:00:00",
+                                        ),
+                                    ]
+                                ],
+                            )
+                        ],
+                    },
+                ),
+            )
+        ).fetch_pull_requests(
+            self._build_run_config(
+                as_of="2026-04-19",
+                output_dir=tmp_path,
+            ),
+            inventory,
+        )
+        checkpoint_manifest_path = (
+            tmp_path
+            / "checkpoints"
+            / "month"
+            / "created_at"
+            / "incremental"
+            / "acme"
+            / "manifest.json"
+        )
+
+        # Then
+        assert [pull_request.number for pull_request in third_result.pull_requests] == [
+            7,
+            9,
+            8,
+        ]
+        assert third_result.pull_requests[0].updated_at == datetime.fromisoformat(
+            "2026-04-18T18:00:00"
+        )
+        assert json.loads(checkpoint_manifest_path.read_text(encoding="utf-8")) == {
+            "completed_repositories": ["acme/api", "acme/web"],
+            "contract": {
+                "collection_window": {
+                    "scope": "open_period",
+                    "start_date": "2026-04-01",
+                },
+                "exclude_repos": [],
+                "include_repos": [],
+                "mode": "incremental",
+                "period_grain": "month",
+                "target_org": "acme",
+                "time_anchor": "created_at",
+            },
+            "repository_end_dates": {
+                "acme/api": "2026-04-19",
+                "acme/web": "2026-04-19",
+            },
+        }
+        assert third_result.failures == ()
 
     def test_writes_normalized_raw_snapshots_partitioned_by_period(
         self,

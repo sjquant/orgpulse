@@ -221,8 +221,8 @@ T = TypeVar("T")
 
 @dataclass(frozen=True)
 class _CollectionCheckpoint:
-    pull_requests: tuple[PullRequestRecord, ...]
-    completed_repositories: frozenset[str]
+    pull_requests_by_repository: dict[str, tuple[PullRequestRecord, ...]]
+    repository_end_dates: dict[str, date]
 
 
 class NormalizedRawSnapshotWriter:
@@ -653,26 +653,40 @@ class GitHubIngestionService:
     ) -> PullRequestCollection:
         """Fetch pull requests for the configured collection window across repositories."""
         checkpoint = self._load_collection_checkpoint(config)
-        pull_requests = list(checkpoint.pull_requests)
+        pull_requests_by_repository = dict(checkpoint.pull_requests_by_repository)
         failures: list[RepositoryCollectionFailure] = []
         window = config.collection_window
 
         for repository in inventory.repositories:
-            if repository.full_name in checkpoint.completed_repositories:
-                continue
+            cached_pull_requests = pull_requests_by_repository.get(
+                repository.full_name,
+                (),
+            )
             try:
-                repository_pull_requests = self._fetch_repository_pull_requests(
+                delta_pull_requests = self._fetch_repository_pull_requests(
                     config=config,
                     repository_full_name=repository.full_name,
                     window=window,
+                    resume_after_date=self._resume_after_date(
+                        checkpoint=checkpoint,
+                        repository_full_name=repository.full_name,
+                        current_end_date=window.end_date,
+                    ),
                 )
-                pull_requests.extend(repository_pull_requests)
+                repository_pull_requests = self._merge_repository_pull_requests(
+                    cached_pull_requests,
+                    delta_pull_requests,
+                )
+                pull_requests_by_repository[repository.full_name] = (
+                    repository_pull_requests
+                )
                 self._save_collection_checkpoint(
                     config,
                     repository_full_name=repository.full_name,
                     pull_requests=repository_pull_requests,
                 )
             except (GithubException, RequestException) as exc:
+                pull_requests_by_repository.pop(repository.full_name, None)
                 failures.append(
                     self._build_collection_failure(
                         repository_full_name=repository.full_name,
@@ -685,7 +699,11 @@ class GitHubIngestionService:
             window=window,
             pull_requests=tuple(
                 sorted(
-                    pull_requests,
+                    (
+                        pull_request
+                        for repository_pull_requests in pull_requests_by_repository.values()
+                        for pull_request in repository_pull_requests
+                    ),
                     key=lambda pull_request: (
                         pull_request.repository_full_name,
                         self._anchor_datetime(
@@ -713,42 +731,48 @@ class GitHubIngestionService:
         if config.checkpoint_policy.overwrite_checkpoint:
             self.clear_checkpoint(config)
             return _CollectionCheckpoint(
-                pull_requests=(),
-                completed_repositories=frozenset(),
+                pull_requests_by_repository={},
+                repository_end_dates={},
             )
         if not config.checkpoint_policy.resume_from_checkpoint:
             return _CollectionCheckpoint(
-                pull_requests=(),
-                completed_repositories=frozenset(),
+                pull_requests_by_repository={},
+                repository_end_dates={},
             )
         manifest_payload = self._load_checkpoint_manifest_payload(config)
         if manifest_payload is None:
             return _CollectionCheckpoint(
-                pull_requests=(),
-                completed_repositories=frozenset(),
+                pull_requests_by_repository={},
+                repository_end_dates={},
             )
         if manifest_payload.get("contract") != self._checkpoint_contract(config):
             self.clear_checkpoint(config)
             return _CollectionCheckpoint(
-                pull_requests=(),
-                completed_repositories=frozenset(),
+                pull_requests_by_repository={},
+                repository_end_dates={},
             )
-        completed_repositories = self._completed_checkpoint_repositories(
-            config,
+        checkpoint_repository_end_dates = self._checkpoint_manifest_repository_end_dates(
             manifest_payload,
         )
-        pull_requests: list[PullRequestRecord] = []
-        for repository_full_name in completed_repositories:
+        pull_requests_by_repository: dict[str, tuple[PullRequestRecord, ...]] = {}
+        repository_end_dates: dict[str, date] = {}
+        for (
+            repository_full_name,
+            checkpoint_end_date,
+        ) in checkpoint_repository_end_dates.items():
+            if checkpoint_end_date > config.collection_window.end_date:
+                continue
             checkpoint_pull_requests = self._load_checkpoint_pull_requests(
                 config,
                 repository_full_name=repository_full_name,
             )
             if checkpoint_pull_requests is None:
                 continue
-            pull_requests.extend(checkpoint_pull_requests)
+            pull_requests_by_repository[repository_full_name] = checkpoint_pull_requests
+            repository_end_dates[repository_full_name] = checkpoint_end_date
         return _CollectionCheckpoint(
-            pull_requests=tuple(pull_requests),
-            completed_repositories=frozenset(completed_repositories),
+            pull_requests_by_repository=pull_requests_by_repository,
+            repository_end_dates=repository_end_dates,
         )
 
     def _save_collection_checkpoint(
@@ -774,17 +798,21 @@ class GitHubIngestionService:
                 ],
             },
         )
-        completed_repositories = self._completed_checkpoint_repositories(
-            config,
+        repository_end_dates = self._checkpoint_manifest_repository_end_dates(
             self._load_checkpoint_manifest_payload(config),
         )
-        completed_repository_set = set(completed_repositories)
-        completed_repository_set.add(repository_full_name)
+        repository_end_dates[repository_full_name] = config.collection_window.end_date
         atomic_write_json(
             self._checkpoint_manifest_path(config),
             {
                 "contract": self._checkpoint_contract(config),
-                "completed_repositories": sorted(completed_repository_set),
+                "completed_repositories": sorted(repository_end_dates),
+                "repository_end_dates": {
+                    completed_repository: repository_end_date.isoformat()
+                    for completed_repository, repository_end_date in sorted(
+                        repository_end_dates.items()
+                    )
+                },
             },
         )
 
@@ -803,27 +831,82 @@ class GitHubIngestionService:
             return None
         return cast(dict[str, object], payload)
 
-    def _completed_checkpoint_repositories(
+    def _checkpoint_manifest_repository_end_dates(
         self,
-        config: RunConfig,
         manifest_payload: dict[str, object] | None,
-    ) -> tuple[str, ...]:
+    ) -> dict[str, date]:
         if manifest_payload is None:
-            return ()
+            return {}
+        repository_end_dates = manifest_payload.get("repository_end_dates")
+        if isinstance(repository_end_dates, dict):
+            valid_repository_end_dates: dict[str, date] = {}
+            for repository_name, end_date_value in repository_end_dates.items():
+                if not isinstance(repository_name, str):
+                    continue
+                if not isinstance(end_date_value, str):
+                    continue
+                try:
+                    valid_repository_end_dates[repository_name] = date.fromisoformat(
+                        end_date_value
+                    )
+                except ValueError:
+                    continue
+            return valid_repository_end_dates
+
         repository_names = manifest_payload.get("completed_repositories")
+        end_date_value = manifest_payload.get("collection_window_end_date")
         if not isinstance(repository_names, list):
-            return ()
-        valid_repositories: list[str] = []
-        for repository_name in repository_names:
-            if not isinstance(repository_name, str):
-                continue
-            if self._load_checkpoint_pull_requests(
-                config,
-                repository_full_name=repository_name,
-            ) is None:
-                continue
-            valid_repositories.append(repository_name)
-        return tuple(sorted(set(valid_repositories)))
+            return {}
+        if not isinstance(end_date_value, str):
+            return {}
+        try:
+            checkpoint_end_date = date.fromisoformat(end_date_value)
+        except ValueError:
+            return {}
+        return {
+            repository_name: checkpoint_end_date
+            for repository_name in repository_names
+            if isinstance(repository_name, str)
+        }
+
+    def _resume_after_date(
+        self,
+        *,
+        checkpoint: _CollectionCheckpoint,
+        repository_full_name: str,
+        current_end_date: date,
+    ) -> date | None:
+        checkpoint_end_date = checkpoint.repository_end_dates.get(repository_full_name)
+        if checkpoint_end_date is None:
+            return None
+        if checkpoint_end_date > current_end_date:
+            return None
+        return checkpoint_end_date
+
+    def _merge_repository_pull_requests(
+        self,
+        cached_pull_requests: tuple[PullRequestRecord, ...],
+        delta_pull_requests: tuple[PullRequestRecord, ...],
+    ) -> tuple[PullRequestRecord, ...]:
+        pull_requests_by_number = {
+            pull_request.number: pull_request for pull_request in cached_pull_requests
+        }
+        for pull_request in delta_pull_requests:
+            pull_requests_by_number[pull_request.number] = pull_request
+        return tuple(
+            pull_requests_by_number[number]
+            for number in sorted(
+                pull_requests_by_number,
+                key=lambda pull_request_number: (
+                    self._anchor_datetime(
+                        TimeAnchor.UPDATED_AT,
+                        pull_requests_by_number[pull_request_number],
+                    )
+                    or pull_requests_by_number[pull_request_number].updated_at,
+                    pull_request_number,
+                ),
+            )
+        )
 
     def _load_checkpoint_pull_requests(
         self,
@@ -946,9 +1029,15 @@ class GitHubIngestionService:
         config: RunConfig,
         repository_full_name: str,
         window: CollectionWindow,
+        resume_after_date: date | None,
     ) -> tuple[PullRequestRecord, ...]:
         repository = self._load_repository(repository_full_name)
-        return self._load_pull_requests(config, repository, window)
+        return self._load_pull_requests(
+            config,
+            repository,
+            window,
+            resume_after_date=resume_after_date,
+        )
 
     def _load_repository(self, repository_full_name: str) -> GitHubRepositoryLike:
         return cast(
@@ -963,11 +1052,23 @@ class GitHubIngestionService:
         config: RunConfig,
         repository: GitHubRepositoryLike,
         window: CollectionWindow,
+        *,
+        resume_after_date: date | None,
     ) -> tuple[PullRequestRecord, ...]:
         if self._graphql_requester is not None:
-            return self._load_pull_requests_via_graphql(config, repository, window)
+            return self._load_pull_requests_via_graphql(
+                config,
+                repository,
+                window,
+                resume_after_date=resume_after_date,
+            )
 
-        pull_requests = self._load_pull_request_nodes(config, repository, window)
+        pull_requests = self._load_pull_request_nodes(
+            config,
+            repository,
+            window,
+            resume_after_date=resume_after_date,
+        )
         return tuple(
             self._build_pull_request_record(
                 repository_full_name=repository.full_name,
@@ -981,6 +1082,8 @@ class GitHubIngestionService:
         config: RunConfig,
         repository: GitHubRepositoryLike,
         window: CollectionWindow,
+        *,
+        resume_after_date: date | None,
     ) -> tuple[PullRequestRecord, ...]:
         owner, repository_name = repository.full_name.split("/", 1)
         collection_time_anchor = self._collection_time_anchor(config)
@@ -988,7 +1091,10 @@ class GitHubIngestionService:
             collection_time_anchor=collection_time_anchor,
             owner=owner,
             repository_name=repository_name,
-            window=window,
+            window=self._effective_collection_window(
+                window,
+                resume_after_date=resume_after_date,
+            ),
         )
         return tuple(
             self._build_graphql_pull_request_record(
@@ -1305,8 +1411,14 @@ class GitHubIngestionService:
         config: RunConfig,
         repository: GitHubRepositoryLike,
         window: CollectionWindow,
+        *,
+        resume_after_date: date | None,
     ) -> tuple[GitHubPullRequestLike, ...]:
         collection_time_anchor = self._collection_time_anchor(config)
+        effective_window = self._effective_collection_window(
+            window,
+            resume_after_date=resume_after_date,
+        )
 
         def collect_pull_requests() -> tuple[GitHubPullRequestLike, ...]:
             pull_requests: list[GitHubPullRequestLike] = []
@@ -1316,11 +1428,11 @@ class GitHubIngestionService:
                 direction="desc",
             ):
                 anchor_on = self._anchor_date(collection_time_anchor, pull_request)
-                if not self._pull_request_is_within_window(anchor_on, window):
+                if not self._pull_request_is_within_window(anchor_on, effective_window):
                     if self._should_stop_loading_pull_requests(
                         time_anchor=collection_time_anchor,
                         anchor_on=anchor_on,
-                        window=window,
+                        window=effective_window,
                     ):
                         break
                     continue
@@ -1403,6 +1515,23 @@ class GitHubIngestionService:
         if config.mode is RunMode.INCREMENTAL:
             return TimeAnchor.UPDATED_AT
         return config.time_anchor
+
+    def _effective_collection_window(
+        self,
+        window: CollectionWindow,
+        *,
+        resume_after_date: date | None,
+    ) -> CollectionWindow:
+        if resume_after_date is None:
+            return window
+        start_date = resume_after_date
+        if window.start_date is not None and window.start_date > start_date:
+            start_date = window.start_date
+        return CollectionWindow(
+            scope=window.scope,
+            start_date=start_date,
+            end_date=window.end_date,
+        )
 
     def _anchor_date(
         self,

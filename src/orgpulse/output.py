@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import csv
 import json
 import shutil
 from collections.abc import Callable, Sequence
@@ -8,6 +7,7 @@ from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import cast
 
+from orgpulse.files import atomic_write_csv, atomic_write_json, atomic_write_text
 from orgpulse.ingestion import (
     PULL_REQUEST_FIELDNAMES,
     PULL_REQUEST_REVIEW_FIELDNAMES,
@@ -110,7 +110,11 @@ class RepositorySummaryCsvWriter:
         *,
         refreshed_period_keys: tuple[str, ...],
     ) -> RepositorySummaryCsvWriteResult:
-        root_dir = self._root_dir(config.output_dir, config.period.value)
+        root_dir = self._root_dir(
+            config.output_dir,
+            config.period.value,
+            config.time_anchor.value,
+        )
         refreshed_periods = tuple(
             period
             for period in repository_metrics.periods
@@ -286,22 +290,26 @@ class RepositorySummaryCsvWriter:
         latest_entry = _latest_history_entry(history_entries)
         latest_payload = None
         if latest_entry is not None:
+            root_dir = self._root_dir(
+                config.output_dir,
+                config.period.value,
+                config.time_anchor.value,
+            )
             latest_payload = {
                 "key": latest_entry["key"],
                 "start_date": latest_entry["start_date"],
                 "end_date": latest_entry["end_date"],
                 "closed": latest_entry["closed"],
                 "path": _relative_path(
-                    self._root_dir(config.output_dir, config.period.value),
-                    self._root_dir(config.output_dir, config.period.value)
-                    / LATEST_DIRNAME
-                    / REPOSITORY_SUMMARY_CSV_FILENAME,
+                    root_dir,
+                    root_dir / LATEST_DIRNAME / REPOSITORY_SUMMARY_CSV_FILENAME,
                 ),
                 "source_path": latest_entry["path"],
             }
         return {
             "target_org": config.org,
             "period_grain": config.period.value,
+            "time_anchor": config.time_anchor.value,
             "include_repos": list(
                 _canonical_repo_filters(config.include_repos, org=config.org)
             ),
@@ -348,6 +356,7 @@ class RepositorySummaryCsvWriter:
                 "",
                 f"- Target org: {config.org}",
                 f"- Period grain: {config.period.value}",
+                f"- Time anchor: {config.time_anchor.value}",
                 f"- Include repos: {_repo_filters_text(_canonical_repo_filters(config.include_repos, org=config.org), empty='all')}",
                 f"- Exclude repos: {_repo_filters_text(_canonical_repo_filters(config.exclude_repos, org=config.org), empty='none')}",
                 *latest_lines,
@@ -366,6 +375,7 @@ class RepositorySummaryCsvWriter:
         return {
             "target_org": config.org,
             "period_grain": config.period.value,
+            "time_anchor": config.time_anchor.value,
             "include_repos": list(
                 _canonical_repo_filters(config.include_repos, org=config.org)
             ),
@@ -374,8 +384,13 @@ class RepositorySummaryCsvWriter:
             ),
         }
 
-    def _root_dir(self, output_dir: Path, period_grain: str) -> Path:
-        return output_dir / REPOSITORY_SUMMARY_CSV_DIRNAME / period_grain
+    def _root_dir(
+        self,
+        output_dir: Path,
+        period_grain: str,
+        time_anchor: str,
+    ) -> Path:
+        return output_dir / REPOSITORY_SUMMARY_CSV_DIRNAME / period_grain / time_anchor
 
 
 class OrgSummaryWriter:
@@ -388,7 +403,11 @@ class OrgSummaryWriter:
         *,
         refreshed_period_keys: tuple[str, ...],
     ) -> OrgSummaryWriteResult:
-        root_dir = self._root_dir(config.output_dir, config.period.value)
+        root_dir = self._root_dir(
+            config.output_dir,
+            config.period.value,
+            config.time_anchor.value,
+        )
         refreshed_periods = tuple(
             period for period in org_metrics.periods if period.key in set(refreshed_period_keys)
         )
@@ -495,6 +514,7 @@ class OrgSummaryWriter:
         return {
             "target_org": target_org,
             "period_grain": config.period.value,
+            "time_anchor": config.time_anchor.value,
             "include_repos": list(include_repos),
             "exclude_repos": list(exclude_repos),
             "period": {
@@ -522,6 +542,7 @@ class OrgSummaryWriter:
                 "",
                 f"- Target org: {target_org}",
                 f"- Period grain: {config.period.value}",
+                f"- Time anchor: {config.time_anchor.value}",
                 f"- Period key: {period.key}",
                 f"- Include repos: {_repo_filters_text(include_repos, empty='all')}",
                 f"- Exclude repos: {_repo_filters_text(exclude_repos, empty='none')}",
@@ -623,8 +644,16 @@ class OrgSummaryWriter:
     ) -> dict[str, object]:
         latest_entry = _latest_history_entry(history_entries)
         latest_payload = None
-        if latest_entry is not None and latest_markdown_path is not None and latest_json_path is not None:
-            root_dir = self._root_dir(config.output_dir, config.period.value)
+        if (
+            latest_entry is not None
+            and latest_markdown_path is not None
+            and latest_json_path is not None
+        ):
+            root_dir = self._root_dir(
+                config.output_dir,
+                config.period.value,
+                config.time_anchor.value,
+            )
             latest_payload = {
                 "key": latest_entry["key"],
                 "start_date": latest_entry["start_date"],
@@ -638,6 +667,7 @@ class OrgSummaryWriter:
         return {
             "target_org": config.org,
             "period_grain": config.period.value,
+            "time_anchor": config.time_anchor.value,
             "include_repos": list(
                 _canonical_repo_filters(config.include_repos, org=config.org)
             ),
@@ -690,6 +720,7 @@ class OrgSummaryWriter:
                 "",
                 f"- Target org: {config.org}",
                 f"- Period grain: {config.period.value}",
+                f"- Time anchor: {config.time_anchor.value}",
                 f"- Include repos: {_repo_filters_text(_canonical_repo_filters(config.include_repos, org=config.org), empty='all')}",
                 f"- Exclude repos: {_repo_filters_text(_canonical_repo_filters(config.exclude_repos, org=config.org), empty='none')}",
                 *latest_lines,
@@ -708,6 +739,7 @@ class OrgSummaryWriter:
         return {
             "target_org": config.org,
             "period_grain": config.period.value,
+            "time_anchor": config.time_anchor.value,
             "include_repos": list(
                 _canonical_repo_filters(config.include_repos, org=config.org)
             ),
@@ -716,8 +748,13 @@ class OrgSummaryWriter:
             ),
         }
 
-    def _root_dir(self, output_dir: Path, period_grain: str) -> Path:
-        return output_dir / ORG_SUMMARY_DIRNAME / period_grain
+    def _root_dir(
+        self,
+        output_dir: Path,
+        period_grain: str,
+        time_anchor: str,
+    ) -> Path:
+        return output_dir / ORG_SUMMARY_DIRNAME / period_grain / time_anchor
 
 
 class RunManifestWriter:
@@ -744,7 +781,11 @@ class RunManifestWriter:
             raw_snapshot=raw_snapshot,
             repository_count=repository_count,
         )
-        path = self._manifest_path(config.output_dir, config.period.value)
+        path = self._manifest_path(
+            config.output_dir,
+            config.period.value,
+            config.time_anchor.value,
+        )
         index_path = path.parent / INDEX_FILENAME
         readme_path = path.parent / README_FILENAME
         self._write_manifest_file(path, manifest)
@@ -772,6 +813,7 @@ class RunManifestWriter:
         return RunManifest(
             target_org=config.org,
             period_grain=config.period,
+            time_anchor=config.time_anchor,
             include_repos=config.include_repos,
             exclude_repos=config.exclude_repos,
             raw_snapshot_root_dir=raw_snapshot.root_dir,
@@ -797,7 +839,11 @@ class RunManifestWriter:
     ) -> tuple[ReportingPeriod, ...]:
         carried_locked_periods = self._load_carried_locked_periods(
             config=config,
-            manifest_path=self._manifest_path(config.output_dir, config.period.value),
+            manifest_path=self._manifest_path(
+                config.output_dir,
+                config.period.value,
+                config.time_anchor.value,
+            ),
             raw_snapshot_root_dir=raw_snapshot.root_dir,
         )
         refreshed_closed_periods = tuple(
@@ -883,6 +929,7 @@ class RunManifestWriter:
         return (
             manifest.target_org.lower() == config.org.lower()
             and manifest.period_grain == config.period
+            and manifest.time_anchor == config.time_anchor
             and _canonical_repo_filters(manifest.include_repos, org=config.org)
             == _canonical_repo_filters(config.include_repos, org=config.org)
             and _canonical_repo_filters(manifest.exclude_repos, org=config.org)
@@ -938,6 +985,7 @@ class RunManifestWriter:
         return {
             "target_org": manifest.target_org,
             "period_grain": manifest.period_grain.value,
+            "time_anchor": manifest.time_anchor.value,
             "include_repos": list(
                 _canonical_repo_filters(manifest.include_repos, org=manifest.target_org)
             ),
@@ -986,6 +1034,7 @@ class RunManifestWriter:
                 "",
                 f"- Target org: {manifest.target_org}",
                 f"- Period grain: {manifest.period_grain.value}",
+                f"- Time anchor: {manifest.time_anchor.value}",
                 f"- Include repos: {_repo_filters_text(_canonical_repo_filters(manifest.include_repos, org=manifest.target_org), empty='all')}",
                 f"- Exclude repos: {_repo_filters_text(_canonical_repo_filters(manifest.exclude_repos, org=manifest.target_org), empty='none')}",
                 f"- Latest manifest: {MANIFEST_FILENAME}",
@@ -1005,8 +1054,13 @@ class RunManifestWriter:
             )
         )
 
-    def _manifest_path(self, output_dir: Path, period_grain: str) -> Path:
-        return output_dir / MANIFEST_DIRNAME / period_grain / MANIFEST_FILENAME
+    def _manifest_path(
+        self,
+        output_dir: Path,
+        period_grain: str,
+        time_anchor: str,
+    ) -> Path:
+        return output_dir / MANIFEST_DIRNAME / period_grain / time_anchor / MANIFEST_FILENAME
 
     def _period_snapshot_is_complete(self, period_dir: Path) -> bool:
         return period_dir.is_dir() and all(
@@ -1037,29 +1091,21 @@ def _write_csv_file(
     fieldnames: tuple[str, ...],
     rows: list[dict[str, object]],
 ) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w", encoding="utf-8", newline="") as handle:
-        writer = csv.DictWriter(handle, fieldnames=fieldnames, lineterminator="\n")
-        writer.writeheader()
-        writer.writerows(rows)
+    atomic_write_csv(path=path, fieldnames=fieldnames, rows=rows)
 
 
 def _write_json_file(
     path: Path,
     payload: dict[str, object],
 ) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w", encoding="utf-8", newline="\n") as handle:
-        json.dump(payload, handle, indent=2, sort_keys=True)
-        handle.write("\n")
+    atomic_write_json(path, payload)
 
 
 def _write_text_file(
     path: Path,
     document: str,
 ) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(document, encoding="utf-8", newline="\n")
+    atomic_write_text(path, document)
 
 
 def _prune_stale_period_directories(

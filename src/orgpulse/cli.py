@@ -39,6 +39,7 @@ from orgpulse.models import (
     RunConfig,
     RunManifest,
     RunMode,
+    TimeAnchor,
 )
 from orgpulse.output import (
     OrgSummaryWriter,
@@ -84,7 +85,14 @@ def run_command(
         RunMode | None,
         typer.Option(
             "--mode",
-            help="Run strategy: full rebuild ignores locks, incremental refreshes the current open period, and backfill refreshes an explicit closed-period range. Falls back to ORGPULSE_MODE.",
+            help="Run strategy: full rebuild ignores locks, incremental refreshes pull requests updated during the current open period, and backfill refreshes an explicit closed-period range. Falls back to ORGPULSE_MODE.",
+        ),
+    ] = None,
+    time_anchor: Annotated[
+        TimeAnchor | None,
+        typer.Option(
+            "--time-anchor",
+            help="Timestamp used to bucket and filter pull requests. Defaults to created_at and falls back to ORGPULSE_TIME_ANCHOR.",
         ),
     ] = None,
     include_repos: Annotated[
@@ -129,6 +137,7 @@ def run_command(
             as_of=as_of,
             period=period,
             mode=mode,
+            time_anchor=time_anchor,
             include_repos=include_repos,
             exclude_repos=exclude_repos,
             output_dir=output_dir,
@@ -178,6 +187,8 @@ def run_command(
             if raw_snapshot is None
             else tuple(period.key for period in raw_snapshot.periods),
         )
+        if not collection.failures:
+            ingestion_service.clear_checkpoint(config)
     except AuthResolutionError as exc:
         typer.echo(f"orgpulse: GitHub authentication failed\n{exc}", err=True)
         raise typer.Exit(code=1) from exc
@@ -437,6 +448,7 @@ def build_run_config(
     as_of: date | str | None = None,
     period: PeriodGrain | None = None,
     mode: RunMode | None = None,
+    time_anchor: TimeAnchor | None = None,
     include_repos: list[str] | None = None,
     exclude_repos: list[str] | None = None,
     output_dir: Path | None = None,
@@ -449,6 +461,7 @@ def build_run_config(
         "github_token": settings.github_token,
         "as_of": settings.as_of if as_of is None else as_of,
         "period": settings.period if period is None else period,
+        "time_anchor": settings.time_anchor if time_anchor is None else time_anchor,
         "mode": settings.mode if mode is None else mode,
         "output_dir": settings.output_dir if output_dir is None else output_dir,
     }

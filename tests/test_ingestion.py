@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 import csv
+import json
+import tempfile
 from collections import deque
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
-from typing import TypeVar, cast, overload
+from typing import Any, TypeVar, cast, overload
 
 from github import GithubException
+from requests.exceptions import ChunkedEncodingError, RequestException
 
 from orgpulse.ingestion import GitHubIngestionService, NormalizedRawSnapshotWriter
 from orgpulse.models import (
@@ -35,11 +38,11 @@ RepositoryBatch = Sequence[GitHubRepositoryLike]
 PullRequestBatch = Sequence[GitHubPullRequestLike]
 ReviewBatch = Sequence[GitHubReviewLike]
 TimelineEventBatch = Sequence[GitHubTimelineEventLike]
-RepositoryInventoryOutcome = RepositoryBatch | GithubException
-RepositoryFetchOutcome = GitHubRepositoryLike | GithubException
-PullRequestFetchOutcome = PullRequestBatch | GithubException
-ReviewFetchOutcome = ReviewBatch | GithubException
-TimelineFetchOutcome = TimelineEventBatch | GithubException
+RepositoryInventoryOutcome = RepositoryBatch | GithubException | RequestException
+RepositoryFetchOutcome = GitHubRepositoryLike | GithubException | RequestException
+PullRequestFetchOutcome = PullRequestBatch | GithubException | RequestException
+ReviewFetchOutcome = ReviewBatch | GithubException | RequestException
+TimelineFetchOutcome = TimelineEventBatch | GithubException | RequestException
 
 
 class TestGitHubIngestionService:
@@ -217,6 +220,175 @@ class TestGitHubIngestionService:
         assert result.failures == ()
         assert paginated_pull_requests.page_accesses == [0, 1]
 
+    def test_fetches_pull_requests_through_graphql_batches_when_available(self) -> None:
+        """Fetch pull requests through the GraphQL batch path when the client supports it."""
+        # Given
+        repository = self._build_repository("acme/api", pull_outcomes=[])
+        graphql_requester = FakeGraphQLRequester(
+            responses=[
+                self._build_graphql_pull_request_response(
+                    has_next_page=False,
+                    nodes=[
+                        self._build_graphql_pull_request_node(
+                            number=20,
+                            updated_at="2026-04-12T09:00:00Z",
+                            reviews=(
+                                self._build_graphql_review_node(
+                                    review_id=101,
+                                    submitted_at="2026-04-10T11:00:00Z",
+                                    author_login="reviewer-a",
+                                ),
+                            ),
+                            timeline_events=(
+                                self._build_graphql_timeline_event_node(
+                                    event_type="ReviewRequestedEvent",
+                                    node_id="review-request-20",
+                                    created_at="2026-04-10T09:30:00Z",
+                                    actor_login="alice",
+                                    requested_reviewer_login="reviewer-a",
+                                ),
+                            ),
+                        ),
+                        self._build_graphql_pull_request_node(
+                            number=10,
+                            updated_at="2026-03-31T23:59:00Z",
+                        ),
+                    ],
+                )
+            ]
+        )
+        service = GitHubIngestionService(
+            cast(
+                GitHubIngestionClientLike,
+                FakeGithubClient(
+                    organizations={},
+                    repositories={"acme/api": [repository]},
+                    graphql_requester=graphql_requester,
+                ),
+            )
+        )
+        config = self._build_run_config(as_of="2026-04-18")
+
+        # When
+        result = service.fetch_pull_requests(
+            config,
+            RepositoryInventory(
+                organization_login="acme",
+                repositories=(self._build_inventory_item("acme/api"),),
+            ),
+        )
+
+        # Then
+        assert [pull_request.number for pull_request in result.pull_requests] == [20]
+        pull_request = result.pull_requests[0]
+        assert pull_request.reviews[0].review_id == 101
+        assert (
+            pull_request.timeline_events[0].requested_reviewer_login
+            == "reviewer-a"
+        )
+        assert graphql_requester.variables == [
+            {"owner": "acme", "name": "api", "after": None}
+        ]
+        assert result.failures == ()
+
+    def test_falls_back_to_rest_enrichment_for_graphql_nested_page_overflow(
+        self,
+    ) -> None:
+        """Fall back to REST pull-request enrichment when GraphQL nested pages overflow."""
+        # Given
+        repository = self._build_repository(
+            "acme/api",
+            pull_outcomes=[],
+            pull_lookup={
+                20: self._build_pull_request(
+                    number=20,
+                    updated_at="2026-04-12T09:00:00",
+                    review_outcomes=[
+                        [
+                            self._build_review(
+                                review_id=201,
+                                state="APPROVED",
+                                submitted_at="2026-04-10T11:00:00",
+                                author_login="reviewer-a",
+                            ),
+                            self._build_review(
+                                review_id=202,
+                                state="COMMENTED",
+                                submitted_at="2026-04-10T12:00:00",
+                                author_login="reviewer-b",
+                            ),
+                        ]
+                    ],
+                    timeline_outcomes=[
+                        [
+                            self._build_timeline_event(
+                                event_id=301,
+                                event="review_requested",
+                                created_at="2026-04-10T09:30:00",
+                                actor_login="alice",
+                                requested_reviewer_login="reviewer-a",
+                            ),
+                            self._build_timeline_event(
+                                event_id=302,
+                                event="ready_for_review",
+                                created_at="2026-04-10T10:00:00",
+                                actor_login="alice",
+                            ),
+                        ]
+                    ],
+                )
+            },
+        )
+        graphql_requester = FakeGraphQLRequester(
+            responses=[
+                self._build_graphql_pull_request_response(
+                    has_next_page=False,
+                    nodes=[
+                        self._build_graphql_pull_request_node(
+                            number=20,
+                            updated_at="2026-04-12T09:00:00Z",
+                            reviews=(
+                                self._build_graphql_review_node(
+                                    review_id=201,
+                                    submitted_at="2026-04-10T11:00:00Z",
+                                    author_login="reviewer-a",
+                                ),
+                            ),
+                            review_has_next_page=True,
+                        )
+                    ],
+                )
+            ]
+        )
+        service = GitHubIngestionService(
+            cast(
+                GitHubIngestionClientLike,
+                FakeGithubClient(
+                    organizations={},
+                    repositories={"acme/api": [repository]},
+                    graphql_requester=graphql_requester,
+                ),
+            )
+        )
+        config = self._build_run_config(as_of="2026-04-18")
+
+        # When
+        result = service.fetch_pull_requests(
+            config,
+            RepositoryInventory(
+                organization_login="acme",
+                repositories=(self._build_inventory_item("acme/api"),),
+            ),
+        )
+
+        # Then
+        assert [pull_request.number for pull_request in result.pull_requests] == [20]
+        pull_request = result.pull_requests[0]
+        assert [review.review_id for review in pull_request.reviews] == [201, 202]
+        assert [event.event_id for event in pull_request.timeline_events] == [301, 302]
+        assert repository.get_pull_calls == [20]
+        assert result.failures == ()
+
     def test_returns_empty_collection_for_repository_without_pull_requests(self) -> None:
         """Return an empty collection for repositories that currently have no pull requests."""
         # Given
@@ -339,6 +511,68 @@ class TestGitHubIngestionService:
         ]
         assert pull_request.timeline_events[0].requested_reviewer_login == "reviewer-a"
         assert pull_request.timeline_events[1].actor_login == "alice"
+        assert result.failures == ()
+
+    def test_reads_requested_reviewer_and_team_from_timeline_raw_data(
+        self,
+    ) -> None:
+        """Read review request targets from timeline raw data when the SDK omits direct attributes."""
+        # Given
+        repository = self._build_repository(
+            "acme/api",
+            pull_outcomes=[
+                [
+                    self._build_pull_request(
+                        number=21,
+                        updated_at="2026-04-12T09:00:00",
+                        timeline_outcomes=[
+                            [
+                                FakeTimelineEvent(
+                                    id=401,
+                                    event="review_requested",
+                                    actor=FakeActor(login="alice"),
+                                    created_at=datetime.fromisoformat(
+                                        "2026-04-10T09:30:00"
+                                    ),
+                                    requested_reviewer=None,
+                                    requested_team=None,
+                                    raw_data={
+                                        "requested_reviewer": {"login": "reviewer-a"},
+                                        "requested_team": {"name": "platform"},
+                                    },
+                                )
+                            ]
+                        ],
+                    )
+                ]
+            ],
+        )
+        service = GitHubIngestionService(
+            cast(
+                GitHubIngestionClientLike,
+                FakeGithubClient(
+                    organizations={},
+                    repositories={"acme/api": [repository]},
+                ),
+            )
+        )
+        config = self._build_run_config(as_of="2026-04-18")
+
+        # When
+        result = service.fetch_pull_requests(
+            config,
+            RepositoryInventory(
+                organization_login="acme",
+                repositories=(self._build_inventory_item("acme/api"),),
+            ),
+        )
+
+        # Then
+        assert len(result.pull_requests) == 1
+        pull_request = result.pull_requests[0]
+        assert len(pull_request.timeline_events) == 1
+        assert pull_request.timeline_events[0].requested_reviewer_login == "reviewer-a"
+        assert pull_request.timeline_events[0].requested_team_name == "platform"
         assert result.failures == ()
 
     def test_fetches_backfill_pull_requests_from_closed_period_window(self) -> None:
@@ -514,6 +748,65 @@ class TestGitHubIngestionService:
         assert result.failures[0].retriable is False
         assert result.failures[0].message == "Forbidden"
 
+    def test_retries_request_transport_failures_and_records_repo_scoped_failure(
+        self,
+    ) -> None:
+        """Retry request-layer transport failures and keep other repositories running."""
+        # Given
+        sleep_calls: list[float] = []
+        succeeding_repository = self._build_repository(
+            "acme/web",
+            pull_outcomes=[
+                [
+                    self._build_pull_request(
+                        number=7, updated_at="2026-04-11T10:00:00"
+                    ),
+                ]
+            ],
+        )
+        service = GitHubIngestionService(
+            cast(
+                GitHubIngestionClientLike,
+                FakeGithubClient(
+                    organizations={},
+                    repositories={
+                        "acme/api": [
+                            ChunkedEncodingError("Response ended prematurely"),
+                            ChunkedEncodingError("Response ended prematurely"),
+                            ChunkedEncodingError("Response ended prematurely"),
+                        ],
+                        "acme/web": [succeeding_repository],
+                    },
+                ),
+            ),
+            max_retries=2,
+            sleep=lambda seconds: sleep_calls.append(seconds),
+        )
+        config = self._build_run_config(as_of="2026-04-18")
+
+        # When
+        result = service.fetch_pull_requests(
+            config,
+            RepositoryInventory(
+                organization_login="acme",
+                repositories=(
+                    self._build_inventory_item("acme/api"),
+                    self._build_inventory_item("acme/web"),
+                ),
+            ),
+        )
+
+        # Then
+        assert sleep_calls == [1.0, 2.0]
+        assert [
+            pull_request.repository_full_name for pull_request in result.pull_requests
+        ] == ["acme/web"]
+        assert len(result.failures) == 1
+        assert result.failures[0].repository_full_name == "acme/api"
+        assert result.failures[0].status_code == 0
+        assert result.failures[0].retriable is True
+        assert "Response ended prematurely" in result.failures[0].message
+
     def test_records_repo_scoped_failures_when_review_enrichment_exhausts_retries(
         self,
     ) -> None:
@@ -591,6 +884,614 @@ class TestGitHubIngestionService:
         assert result.failures[0].retriable is True
         assert result.failures[0].message == "Review API unavailable"
 
+    def test_resumes_completed_repositories_from_checkpoint_after_partial_failure(
+        self,
+        tmp_path,
+    ) -> None:
+        """Resume completed repositories from a persisted checkpoint after a partial incremental failure."""
+        # Given
+        api_repository = self._build_repository(
+            "acme/api",
+            pull_outcomes=[
+                [
+                    self._build_pull_request(
+                        number=7,
+                        updated_at="2026-04-11T10:00:00",
+                    ),
+                ]
+            ],
+        )
+        first_service = GitHubIngestionService(
+            cast(
+                GitHubIngestionClientLike,
+                FakeGithubClient(
+                    organizations={},
+                    repositories={
+                        "acme/api": [api_repository],
+                        "acme/web": [
+                            self._build_github_exception(
+                                status=403,
+                                message="Forbidden",
+                            )
+                        ],
+                    },
+                ),
+            )
+        )
+        config = self._build_run_config(
+            as_of="2026-04-18",
+            output_dir=tmp_path,
+            include_repos=["api", "acme/web"],
+        )
+        inventory = RepositoryInventory(
+            organization_login="acme",
+            repositories=(
+                self._build_inventory_item("acme/api"),
+                self._build_inventory_item("acme/web"),
+            ),
+        )
+
+        # When
+        first_result = first_service.fetch_pull_requests(config, inventory)
+        second_config = self._build_run_config(
+            as_of="2026-04-19",
+            output_dir=tmp_path,
+            include_repos=["acme/api", "web"],
+        )
+        second_service = GitHubIngestionService(
+            cast(
+                GitHubIngestionClientLike,
+                FakeGithubClient(
+                    organizations={},
+                    repositories={
+                        "acme/api": [
+                            self._build_repository(
+                                "acme/api",
+                                pull_outcomes=[
+                                    [
+                                        self._build_pull_request(
+                                            number=9,
+                                            updated_at="2026-04-19T10:00:00",
+                                        ),
+                                    ]
+                                ],
+                            )
+                        ],
+                        "acme/web": [
+                            self._build_repository(
+                                "acme/web",
+                                pull_outcomes=[
+                                    [
+                                        self._build_pull_request(
+                                            number=8,
+                                            updated_at="2026-04-19T11:00:00",
+                                        ),
+                                    ]
+                                ],
+                            )
+                        ]
+                    },
+                ),
+            )
+        )
+        second_result = second_service.fetch_pull_requests(second_config, inventory)
+
+        # Then
+        assert [pull_request.repository_full_name for pull_request in first_result.pull_requests] == [
+            "acme/api"
+        ]
+        assert [failure.repository_full_name for failure in first_result.failures] == [
+            "acme/web"
+        ]
+        assert [
+            pull_request.repository_full_name for pull_request in second_result.pull_requests
+        ] == ["acme/api", "acme/api", "acme/web"]
+        assert [pull_request.number for pull_request in second_result.pull_requests] == [
+            7,
+            9,
+            8,
+        ]
+        assert second_result.failures == ()
+        checkpoint_manifest_path = (
+            tmp_path
+            / "checkpoints"
+            / "month"
+            / "created_at"
+            / "incremental"
+            / "acme"
+            / "manifest.json"
+        )
+        assert json.loads(checkpoint_manifest_path.read_text(encoding="utf-8")) == {
+            "completed_repositories": ["acme/api", "acme/web"],
+            "contract": {
+                "collection_window": {
+                    "scope": "open_period",
+                    "start_date": "2026-04-01",
+                },
+                "exclude_repos": [],
+                "include_repos": ["acme/api", "acme/web"],
+                "mode": "incremental",
+                "period_grain": "month",
+                "target_org": "acme",
+                "time_anchor": "created_at",
+            },
+            "repository_end_dates": {
+                "acme/api": "2026-04-19",
+                "acme/web": "2026-04-19",
+            },
+        }
+
+    def test_discards_newer_incremental_checkpoint_for_earlier_as_of_reruns(
+        self,
+        tmp_path,
+    ) -> None:
+        """Discard checkpoints from later incremental runs when rerunning with an earlier as-of date."""
+        # Given
+        first_service = GitHubIngestionService(
+            cast(
+                GitHubIngestionClientLike,
+                FakeGithubClient(
+                    organizations={},
+                    repositories={
+                        "acme/api": [
+                            self._build_repository(
+                                "acme/api",
+                                pull_outcomes=[
+                                    [
+                                        self._build_pull_request(
+                                            number=7,
+                                            updated_at="2026-04-19T10:00:00",
+                                        ),
+                                    ]
+                                ],
+                            )
+                        ],
+                        "acme/web": [
+                            self._build_github_exception(
+                                status=403,
+                                message="Forbidden",
+                            )
+                        ],
+                    },
+                ),
+            )
+        )
+        later_config = self._build_run_config(
+            as_of="2026-04-19",
+            output_dir=tmp_path,
+        )
+        inventory = RepositoryInventory(
+            organization_login="acme",
+            repositories=(
+                self._build_inventory_item("acme/api"),
+                self._build_inventory_item("acme/web"),
+            ),
+        )
+
+        # When
+        first_result = first_service.fetch_pull_requests(later_config, inventory)
+        earlier_config = self._build_run_config(
+            as_of="2026-04-18",
+            output_dir=tmp_path,
+        )
+        second_service = GitHubIngestionService(
+            cast(
+                GitHubIngestionClientLike,
+                FakeGithubClient(
+                    organizations={},
+                    repositories={
+                        "acme/api": [
+                            self._build_repository(
+                                "acme/api",
+                                pull_outcomes=[
+                                    [
+                                        self._build_pull_request(
+                                            number=7,
+                                            updated_at="2026-04-18T10:00:00",
+                                        ),
+                                    ]
+                                ],
+                            )
+                        ],
+                        "acme/web": [
+                            self._build_repository(
+                                "acme/web",
+                                pull_outcomes=[
+                                    [
+                                        self._build_pull_request(
+                                            number=8,
+                                            updated_at="2026-04-18T11:00:00",
+                                        ),
+                                    ]
+                                ],
+                            )
+                        ],
+                    },
+                ),
+            )
+        )
+        second_result = second_service.fetch_pull_requests(earlier_config, inventory)
+
+        # Then
+        assert [pull_request.number for pull_request in first_result.pull_requests] == [7]
+        assert [pull_request.number for pull_request in second_result.pull_requests] == [
+            7,
+            8,
+        ]
+        assert second_result.pull_requests[0].updated_at == datetime.fromisoformat(
+            "2026-04-18T10:00:00"
+        )
+        assert second_result.failures == ()
+
+    def test_replays_completed_repositories_for_same_day_incremental_reruns(
+        self,
+        tmp_path,
+    ) -> None:
+        """Replay checkpointed repositories from the same day so later updates are not missed."""
+        # Given
+        first_service = GitHubIngestionService(
+            cast(
+                GitHubIngestionClientLike,
+                FakeGithubClient(
+                    organizations={},
+                    repositories={
+                        "acme/api": [
+                            self._build_repository(
+                                "acme/api",
+                                pull_outcomes=[
+                                    [
+                                        self._build_pull_request(
+                                            number=7,
+                                            updated_at="2026-04-18T10:00:00",
+                                        ),
+                                    ]
+                                ],
+                            )
+                        ],
+                        "acme/web": [
+                            self._build_github_exception(
+                                status=403,
+                                message="Forbidden",
+                            )
+                        ],
+                    },
+                ),
+            )
+        )
+        config = self._build_run_config(
+            as_of="2026-04-18",
+            output_dir=tmp_path,
+        )
+        inventory = RepositoryInventory(
+            organization_login="acme",
+            repositories=(
+                self._build_inventory_item("acme/api"),
+                self._build_inventory_item("acme/web"),
+            ),
+        )
+
+        # When
+        first_result = first_service.fetch_pull_requests(config, inventory)
+        second_service = GitHubIngestionService(
+            cast(
+                GitHubIngestionClientLike,
+                FakeGithubClient(
+                    organizations={},
+                    repositories={
+                        "acme/api": [
+                            self._build_repository(
+                                "acme/api",
+                                pull_outcomes=[
+                                    [
+                                        self._build_pull_request(
+                                            number=7,
+                                            updated_at="2026-04-18T18:00:00",
+                                        ),
+                                        self._build_pull_request(
+                                            number=8,
+                                            updated_at="2026-04-18T19:00:00",
+                                        ),
+                                    ]
+                                ],
+                            )
+                        ],
+                        "acme/web": [
+                            self._build_repository(
+                                "acme/web",
+                                pull_outcomes=[
+                                    [
+                                        self._build_pull_request(
+                                            number=9,
+                                            updated_at="2026-04-18T20:00:00",
+                                        ),
+                                    ]
+                                ],
+                            )
+                        ],
+                    },
+                ),
+            )
+        )
+        second_result = second_service.fetch_pull_requests(config, inventory)
+
+        # Then
+        assert [pull_request.number for pull_request in first_result.pull_requests] == [7]
+        assert [pull_request.number for pull_request in second_result.pull_requests] == [
+            7,
+            8,
+            9,
+        ]
+        assert second_result.pull_requests[0].updated_at == datetime.fromisoformat(
+            "2026-04-18T18:00:00"
+        )
+        assert second_result.failures == ()
+
+    def test_excludes_stale_checkpoint_results_when_replay_fails(
+        self,
+        tmp_path,
+    ) -> None:
+        """Exclude cached PR rows from the returned collection when replaying that repo fails."""
+        # Given
+        first_service = GitHubIngestionService(
+            cast(
+                GitHubIngestionClientLike,
+                FakeGithubClient(
+                    organizations={},
+                    repositories={
+                        "acme/api": [
+                            self._build_repository(
+                                "acme/api",
+                                pull_outcomes=[
+                                    [
+                                        self._build_pull_request(
+                                            number=7,
+                                            updated_at="2026-04-18T10:00:00",
+                                        ),
+                                    ]
+                                ],
+                            )
+                        ],
+                        "acme/web": [
+                            self._build_github_exception(
+                                status=403,
+                                message="Forbidden",
+                            )
+                        ],
+                    },
+                ),
+            )
+        )
+        inventory = RepositoryInventory(
+            organization_login="acme",
+            repositories=(
+                self._build_inventory_item("acme/api"),
+                self._build_inventory_item("acme/web"),
+            ),
+        )
+
+        # When
+        first_service.fetch_pull_requests(
+            self._build_run_config(
+                as_of="2026-04-18",
+                output_dir=tmp_path,
+            ),
+            inventory,
+        )
+        second_result = GitHubIngestionService(
+            cast(
+                GitHubIngestionClientLike,
+                FakeGithubClient(
+                    organizations={},
+                    repositories={
+                        "acme/api": [
+                            self._build_github_exception(
+                                status=403,
+                                message="Forbidden",
+                            )
+                        ],
+                        "acme/web": [
+                            self._build_repository(
+                                "acme/web",
+                                pull_outcomes=[
+                                    [
+                                        self._build_pull_request(
+                                            number=8,
+                                            updated_at="2026-04-19T11:00:00",
+                                        ),
+                                    ]
+                                ],
+                            )
+                        ],
+                    },
+                ),
+            )
+        ).fetch_pull_requests(
+            self._build_run_config(
+                as_of="2026-04-19",
+                output_dir=tmp_path,
+            ),
+            inventory,
+        )
+
+        # Then
+        assert [pull_request.number for pull_request in second_result.pull_requests] == [8]
+        assert [failure.repository_full_name for failure in second_result.failures] == [
+            "acme/api"
+        ]
+
+    def test_preserves_repository_resume_dates_when_other_replays_succeed(
+        self,
+        tmp_path,
+    ) -> None:
+        """Keep each repo's own checkpoint date so failed replays can still cover the prior day."""
+        # Given
+        inventory = RepositoryInventory(
+            organization_login="acme",
+            repositories=(
+                self._build_inventory_item("acme/api"),
+                self._build_inventory_item("acme/web"),
+            ),
+        )
+        first_service = GitHubIngestionService(
+            cast(
+                GitHubIngestionClientLike,
+                FakeGithubClient(
+                    organizations={},
+                    repositories={
+                        "acme/api": [
+                            self._build_repository(
+                                "acme/api",
+                                pull_outcomes=[
+                                    [
+                                        self._build_pull_request(
+                                            number=7,
+                                            updated_at="2026-04-18T10:00:00",
+                                        ),
+                                    ]
+                                ],
+                            )
+                        ],
+                        "acme/web": [
+                            self._build_github_exception(
+                                status=403,
+                                message="Forbidden",
+                            )
+                        ],
+                    },
+                ),
+            )
+        )
+
+        # When
+        first_service.fetch_pull_requests(
+            self._build_run_config(
+                as_of="2026-04-18",
+                output_dir=tmp_path,
+            ),
+            inventory,
+        )
+        second_service = GitHubIngestionService(
+            cast(
+                GitHubIngestionClientLike,
+                FakeGithubClient(
+                    organizations={},
+                    repositories={
+                        "acme/api": [
+                            self._build_github_exception(
+                                status=403,
+                                message="Forbidden",
+                            )
+                        ],
+                        "acme/web": [
+                            self._build_repository(
+                                "acme/web",
+                                pull_outcomes=[
+                                    [
+                                        self._build_pull_request(
+                                            number=8,
+                                            updated_at="2026-04-19T11:00:00",
+                                        ),
+                                    ]
+                                ],
+                            )
+                        ],
+                    },
+                ),
+            )
+        )
+        second_service.fetch_pull_requests(
+            self._build_run_config(
+                as_of="2026-04-19",
+                output_dir=tmp_path,
+            ),
+            inventory,
+        )
+        third_result = GitHubIngestionService(
+            cast(
+                GitHubIngestionClientLike,
+                FakeGithubClient(
+                    organizations={},
+                    repositories={
+                        "acme/api": [
+                            self._build_repository(
+                                "acme/api",
+                                pull_outcomes=[
+                                    [
+                                        self._build_pull_request(
+                                            number=7,
+                                            updated_at="2026-04-18T18:00:00",
+                                        ),
+                                        self._build_pull_request(
+                                            number=9,
+                                            updated_at="2026-04-19T09:00:00",
+                                        ),
+                                    ]
+                                ],
+                            )
+                        ],
+                        "acme/web": [
+                            self._build_repository(
+                                "acme/web",
+                                pull_outcomes=[
+                                    [
+                                        self._build_pull_request(
+                                            number=8,
+                                            updated_at="2026-04-19T11:00:00",
+                                        ),
+                                    ]
+                                ],
+                            )
+                        ],
+                    },
+                ),
+            )
+        ).fetch_pull_requests(
+            self._build_run_config(
+                as_of="2026-04-19",
+                output_dir=tmp_path,
+            ),
+            inventory,
+        )
+        checkpoint_manifest_path = (
+            tmp_path
+            / "checkpoints"
+            / "month"
+            / "created_at"
+            / "incremental"
+            / "acme"
+            / "manifest.json"
+        )
+
+        # Then
+        assert [pull_request.number for pull_request in third_result.pull_requests] == [
+            7,
+            9,
+            8,
+        ]
+        assert third_result.pull_requests[0].updated_at == datetime.fromisoformat(
+            "2026-04-18T18:00:00"
+        )
+        assert json.loads(checkpoint_manifest_path.read_text(encoding="utf-8")) == {
+            "completed_repositories": ["acme/api", "acme/web"],
+            "contract": {
+                "collection_window": {
+                    "scope": "open_period",
+                    "start_date": "2026-04-01",
+                },
+                "exclude_repos": [],
+                "include_repos": [],
+                "mode": "incremental",
+                "period_grain": "month",
+                "target_org": "acme",
+                "time_anchor": "created_at",
+            },
+            "repository_end_dates": {
+                "acme/api": "2026-04-19",
+                "acme/web": "2026-04-19",
+            },
+        }
+        assert third_result.failures == ()
+
     def test_writes_normalized_raw_snapshots_partitioned_by_period(
         self,
         tmp_path,
@@ -660,7 +1561,7 @@ class TestGitHubIngestionService:
         # Then
         assert [period.key for period in result.periods] == ["2026-03", "2026-04"]
         assert self._read_csv_rows(
-            tmp_path / "raw" / "month" / "2026-03" / "pull_requests.csv"
+            tmp_path / "raw" / "month" / "created_at" / "2026-03" / "pull_requests.csv"
         ) == [
             {
                 "period_key": "2026-03",
@@ -683,7 +1584,7 @@ class TestGitHubIngestionService:
             }
         ]
         assert self._read_csv_rows(
-            tmp_path / "raw" / "month" / "2026-04" / "pull_request_reviews.csv"
+            tmp_path / "raw" / "month" / "created_at" / "2026-04" / "pull_request_reviews.csv"
         ) == [
             {
                 "period_key": "2026-04",
@@ -697,7 +1598,7 @@ class TestGitHubIngestionService:
             }
         ]
         assert self._read_csv_rows(
-            tmp_path / "raw" / "month" / "2026-04" / "pull_request_timeline_events.csv"
+            tmp_path / "raw" / "month" / "created_at" / "2026-04" / "pull_request_timeline_events.csv"
         ) == [
             {
                 "period_key": "2026-04",
@@ -711,6 +1612,64 @@ class TestGitHubIngestionService:
                 "requested_team_name": "",
             }
         ]
+
+    def test_refreshes_prior_anchor_periods_during_incremental_created_at_runs(
+        self,
+        tmp_path,
+    ) -> None:
+        """Refresh anchor periods touched by incremental updates while still keeping the active period output."""
+        # Given
+        writer = NormalizedRawSnapshotWriter()
+        config = self._build_run_config(
+            as_of="2026-04-18",
+            output_dir=tmp_path,
+        )
+        collection = PullRequestCollection(
+            window=config.collection_window,
+            pull_requests=(
+                self._build_pull_request_record(
+                    number=20,
+                    updated_at="2026-04-12T09:00:00",
+                    created_at="2026-03-31T23:00:00",
+                ),
+            ),
+            failures=(),
+        )
+
+        # When
+        result = writer.write(config, collection)
+
+        # Then
+        assert [period.key for period in result.periods] == ["2026-03", "2026-04"]
+        assert self._read_csv_rows(
+            tmp_path / "raw" / "month" / "created_at" / "2026-03" / "pull_requests.csv"
+        ) == [
+            {
+                "period_key": "2026-03",
+                "repository_full_name": "acme/api",
+                "pull_request_number": "20",
+                "title": "PR 20",
+                "state": "closed",
+                "draft": "False",
+                "merged": "True",
+                "author_login": "alice",
+                "created_at": "2026-03-31T23:00:00",
+                "updated_at": "2026-04-12T09:00:00",
+                "closed_at": "2026-04-12T09:00:00",
+                "merged_at": "2026-04-12T09:00:00",
+                "additions": "12",
+                "deletions": "4",
+                "changed_files": "3",
+                "commits": "2",
+                "html_url": "https://example.test/pr/20",
+            }
+        ]
+        assert (
+            self._read_csv_rows(
+                tmp_path / "raw" / "month" / "created_at" / "2026-04" / "pull_requests.csv"
+            )
+            == []
+        )
 
     def test_writes_empty_backfill_snapshots_for_requested_periods_without_rows(
         self,
@@ -739,13 +1698,13 @@ class TestGitHubIngestionService:
         assert [period.key for period in result.periods] == ["2026-03", "2026-04"]
         assert (
             self._read_csv_rows(
-                tmp_path / "raw" / "month" / "2026-03" / "pull_requests.csv"
+                tmp_path / "raw" / "month" / "created_at" / "2026-03" / "pull_requests.csv"
             )
             == []
         )
         assert (
             self._read_csv_rows(
-                tmp_path / "raw" / "month" / "2026-04" / "pull_request_reviews.csv"
+                tmp_path / "raw" / "month" / "created_at" / "2026-04" / "pull_request_reviews.csv"
             )
             == []
         )
@@ -756,7 +1715,7 @@ class TestGitHubIngestionService:
     ) -> None:
         """Remove obsolete period directories during a full rebuild before rewriting current snapshots."""
         # Given
-        stale_period_dir = tmp_path / "raw" / "month" / "2026-03"
+        stale_period_dir = tmp_path / "raw" / "month" / "created_at" / "2026-03"
         stale_period_dir.mkdir(parents=True)
         (stale_period_dir / "pull_requests.csv").write_text(
             "stale snapshot\n",
@@ -800,7 +1759,7 @@ class TestGitHubIngestionService:
         # Then
         assert [period.key for period in result.periods] == ["2026-04"]
         assert stale_period_dir.exists() is False
-        assert (tmp_path / "raw" / "month" / "2026-04" / "pull_requests.csv").exists()
+        assert (tmp_path / "raw" / "month" / "created_at" / "2026-04" / "pull_requests.csv").exists()
 
     def test_rewrites_incremental_snapshots_idempotently_on_rerun(
         self,
@@ -851,7 +1810,7 @@ class TestGitHubIngestionService:
         assert [period.key for period in second_result.periods] == ["2026-04"]
         assert first_file_contents == second_file_contents
         assert self._read_csv_rows(
-            tmp_path / "raw" / "month" / "2026-04" / "pull_requests.csv"
+            tmp_path / "raw" / "month" / "created_at" / "2026-04" / "pull_requests.csv"
         ) == [
             {
                 "period_key": "2026-04",
@@ -933,7 +1892,7 @@ class TestGitHubIngestionService:
 
         # Then
         assert self._read_csv_rows(
-            tmp_path / "raw" / "month" / "2026-04" / "pull_requests.csv"
+            tmp_path / "raw" / "month" / "created_at" / "2026-04" / "pull_requests.csv"
         ) == [
             {
                 "period_key": "2026-04",
@@ -957,7 +1916,7 @@ class TestGitHubIngestionService:
         ]
         assert (
             self._read_csv_rows(
-                tmp_path / "raw" / "month" / "2026-04" / "pull_request_reviews.csv"
+                tmp_path / "raw" / "month" / "created_at" / "2026-04" / "pull_request_reviews.csv"
             )
             == []
         )
@@ -966,6 +1925,7 @@ class TestGitHubIngestionService:
                 tmp_path
                 / "raw"
                 / "month"
+                / "created_at"
                 / "2026-04"
                 / "pull_request_timeline_events.csv"
             )
@@ -1037,12 +1997,18 @@ class TestGitHubIngestionService:
         *,
         number: int,
         updated_at: str,
+        created_at: str | None = None,
         title: str | None = None,
         reviews: tuple[PullRequestReviewRecord, ...] = (),
         timeline_events: tuple[PullRequestTimelineEventRecord, ...] = (),
     ) -> PullRequestRecord:
         """Build a deterministic pull request record for snapshot rerun tests."""
-        timestamp = datetime.fromisoformat(updated_at)
+        updated_timestamp = datetime.fromisoformat(updated_at)
+        created_timestamp = (
+            updated_timestamp
+            if created_at is None
+            else datetime.fromisoformat(created_at)
+        )
         return PullRequestRecord(
             repository_full_name="acme/api",
             number=number,
@@ -1051,10 +2017,10 @@ class TestGitHubIngestionService:
             draft=False,
             merged=True,
             author_login="alice",
-            created_at=timestamp,
-            updated_at=timestamp,
-            closed_at=timestamp,
-            merged_at=timestamp,
+            created_at=created_timestamp,
+            updated_at=updated_timestamp,
+            closed_at=updated_timestamp,
+            merged_at=updated_timestamp,
             additions=12,
             deletions=4,
             changed_files=3,
@@ -1127,18 +2093,26 @@ class TestGitHubIngestionService:
 
     def _build_run_config(self, **overrides: object) -> RunConfig:
         """Build the minimal run configuration needed for ingestion tests."""
-        return RunConfig.model_validate({"org": "acme", **overrides})
+        return RunConfig.model_validate(
+            {
+                "org": "acme",
+                "output_dir": tempfile.mkdtemp(prefix="orgpulse-test-"),
+                **overrides,
+            }
+        )
 
     def _build_repository(
         self,
         full_name: str,
         *,
         pull_outcomes: list[PullRequestFetchOutcome] | None = None,
+        pull_lookup: dict[int, GitHubPullRequestLike] | None = None,
     ) -> FakeRepository:
         """Build a fake repository with optional pull request outcomes."""
         return FakeRepository(
             full_name=full_name,
             pull_outcomes=[] if pull_outcomes is None else pull_outcomes,
+            pull_lookup=pull_lookup,
         )
 
     def _build_pull_request(
@@ -1146,11 +2120,17 @@ class TestGitHubIngestionService:
         *,
         number: int,
         updated_at: str,
+        created_at: str | None = None,
         review_outcomes: list[ReviewFetchOutcome] | None = None,
         timeline_outcomes: list[TimelineFetchOutcome] | None = None,
     ) -> FakePullRequest:
         """Build a fake pull request object with deterministic metric fields."""
-        timestamp = datetime.fromisoformat(updated_at)
+        updated_timestamp = datetime.fromisoformat(updated_at)
+        created_timestamp = (
+            updated_timestamp
+            if created_at is None
+            else datetime.fromisoformat(created_at)
+        )
         return FakePullRequest(
             number=number,
             title=f"PR {number}",
@@ -1158,10 +2138,10 @@ class TestGitHubIngestionService:
             draft=False,
             merged=True,
             user=FakeActor(login="alice"),
-            created_at=timestamp,
-            updated_at=timestamp,
-            closed_at=timestamp,
-            merged_at=timestamp,
+            created_at=created_timestamp,
+            updated_at=updated_timestamp,
+            closed_at=updated_timestamp,
+            merged_at=updated_timestamp,
             additions=12,
             deletions=4,
             changed_files=3,
@@ -1210,6 +2190,18 @@ class TestGitHubIngestionService:
             requested_team=None
             if requested_team_name is None
             else FakeTeam(name=requested_team_name),
+            raw_data={
+                "requested_reviewer": (
+                    None
+                    if requested_reviewer_login is None
+                    else {"login": requested_reviewer_login}
+                ),
+                "requested_team": (
+                    None
+                    if requested_team_name is None
+                    else {"name": requested_team_name}
+                ),
+            },
         )
 
     def _build_github_exception(
@@ -1221,6 +2213,111 @@ class TestGitHubIngestionService:
     ) -> GithubException:
         """Build a GitHub exception with message and headers for retry tests."""
         return GithubException(status, {"message": message}, headers)
+
+    def _build_graphql_pull_request_response(
+        self,
+        *,
+        has_next_page: bool,
+        nodes: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        """Build a fake GraphQL pull request page response."""
+        return {
+            "data": {
+                "repository": {
+                    "pullRequests": {
+                        "pageInfo": {
+                            "hasNextPage": has_next_page,
+                            "endCursor": "cursor-1" if has_next_page else None,
+                        },
+                        "nodes": nodes,
+                    }
+                }
+            }
+        }
+
+    def _build_graphql_pull_request_node(
+        self,
+        *,
+        number: int,
+        updated_at: str,
+        created_at: str | None = None,
+        reviews: tuple[dict[str, Any], ...] = (),
+        timeline_events: tuple[dict[str, Any], ...] = (),
+        review_has_next_page: bool = False,
+        timeline_has_next_page: bool = False,
+    ) -> dict[str, Any]:
+        """Build a fake GraphQL pull request node for ingestion tests."""
+        return {
+            "number": number,
+            "title": f"Pull request {number}",
+            "updatedAt": updated_at,
+            "createdAt": updated_at if created_at is None else created_at,
+            "closedAt": "2026-04-12T09:00:00Z",
+            "mergedAt": "2026-04-12T09:00:00Z",
+            "state": "MERGED",
+            "isDraft": False,
+            "additions": 8,
+            "deletions": 2,
+            "changedFiles": 2,
+            "commits": {"totalCount": 1},
+            "url": f"https://example.test/pr/{number}",
+            "author": {"login": "alice"},
+            "reviews": {
+                "pageInfo": {"hasNextPage": review_has_next_page},
+                "nodes": list(reviews),
+            },
+            "timelineItems": {
+                "pageInfo": {"hasNextPage": timeline_has_next_page},
+                "nodes": list(timeline_events),
+            },
+        }
+
+    def _build_graphql_review_node(
+        self,
+        *,
+        review_id: int,
+        submitted_at: str,
+        author_login: str,
+    ) -> dict[str, Any]:
+        """Build a fake GraphQL review node."""
+        return {
+            "databaseId": review_id,
+            "state": "APPROVED",
+            "submittedAt": submitted_at,
+            "author": {"login": author_login},
+            "commit": {"oid": f"commit-{review_id}"},
+        }
+
+    def _build_graphql_timeline_event_node(
+        self,
+        *,
+        event_type: str,
+        node_id: str,
+        created_at: str,
+        actor_login: str,
+        requested_reviewer_login: str | None = None,
+        requested_team_name: str | None = None,
+    ) -> dict[str, Any]:
+        """Build a fake GraphQL timeline event node."""
+        requested_reviewer: dict[str, Any] | None = None
+        if requested_reviewer_login is not None:
+            requested_reviewer = {
+                "__typename": "User",
+                "login": requested_reviewer_login,
+            }
+        elif requested_team_name is not None:
+            requested_reviewer = {
+                "__typename": "Team",
+                "name": requested_team_name,
+            }
+
+        return {
+            "__typename": event_type,
+            "id": node_id,
+            "createdAt": created_at,
+            "actor": {"login": actor_login},
+            "requestedReviewer": requested_reviewer,
+        }
 
     def _read_csv_rows(self, path) -> list[dict[str, str]]:
         """Read snapshot rows back as dictionaries for integration-style assertions."""
@@ -1234,11 +2331,13 @@ class FakeGithubClient:
         *,
         organizations: dict[str, FakeOrganization],
         repositories: dict[str, list[RepositoryFetchOutcome]],
+        graphql_requester: "FakeGraphQLRequester | None" = None,
     ) -> None:
         self._organizations = organizations
         self._repositories = {
             name: deque(outcomes) for name, outcomes in repositories.items()
         }
+        self.requester = graphql_requester
 
     def get_organization(self, org: str) -> FakeOrganization:
         return self._organizations[org]
@@ -1260,7 +2359,11 @@ class FakeOrganization:
 
 class FakeRepository:
     def __init__(
-        self, *, full_name: str, pull_outcomes: list[PullRequestFetchOutcome]
+        self,
+        *,
+        full_name: str,
+        pull_outcomes: list[PullRequestFetchOutcome],
+        pull_lookup: dict[int, GitHubPullRequestLike] | None = None,
     ) -> None:
         self.name = full_name.split("/", 1)[1]
         self.full_name = full_name
@@ -1269,9 +2372,15 @@ class FakeRepository:
         self.archived = False
         self.disabled = False
         self._pull_outcomes = deque(pull_outcomes)
+        self._pull_lookup = {} if pull_lookup is None else dict(pull_lookup)
+        self.get_pull_calls: list[int] = []
 
     def get_pulls(self, *, state: str, sort: str, direction: str) -> PullRequestBatch:
         return resolve_outcome(self._pull_outcomes)
+
+    def get_pull(self, number: int) -> GitHubPullRequestLike:
+        self.get_pull_calls.append(number)
+        return self._pull_lookup[number]
 
 
 class FakePullRequest:
@@ -1383,10 +2492,29 @@ class FakeTimelineEvent:
     created_at: datetime | None
     requested_reviewer: GitHubActorLike | None
     requested_team: GitHubTeamLike | None
+    raw_data: dict[str, object]
 
 
-def resolve_outcome(outcomes: deque[T | GithubException]) -> T:
+class FakeGraphQLRequester:
+    def __init__(
+        self,
+        *,
+        responses: list[dict[str, Any] | GithubException | RequestException],
+    ) -> None:
+        self._responses = deque(responses)
+        self.variables: list[dict[str, Any]] = []
+
+    def graphql_query(
+        self,
+        query: str,
+        variables: dict[str, Any],
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
+        self.variables.append(dict(variables))
+        return {}, resolve_outcome(self._responses)
+
+
+def resolve_outcome(outcomes: deque[T | GithubException | RequestException]) -> T:
     outcome = outcomes.popleft()
-    if isinstance(outcome, GithubException):
+    if isinstance(outcome, (GithubException, RequestException)):
         raise outcome
     return outcome

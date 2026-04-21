@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 from datetime import datetime
 from unittest.mock import create_autospec
 
@@ -39,6 +40,7 @@ from orgpulse.models import (
     RunManifest,
     RunMode,
     RunScope,
+    TimeAnchor,
 )
 from orgpulse.output import (
     REPOSITORY_SUMMARY_CSV_FIELDNAMES,
@@ -135,6 +137,9 @@ class FakeCliIngestionService:
             )
         )
 
+    def clear_checkpoint(self, config) -> None:
+        """Mirror the production ingestion interface without touching fixture state."""
+
 
 class FakeCliSnapshotWriter:
     def write(
@@ -164,6 +169,7 @@ class FakeCliManifestWriter:
             manifest=RunManifest(
                 target_org=config.org,
                 period_grain=config.period,
+                time_anchor=config.time_anchor,
                 include_repos=config.include_repos,
                 exclude_repos=config.exclude_repos,
                 raw_snapshot_root_dir=raw_snapshot.root_dir,
@@ -335,6 +341,7 @@ class TestRunConfigParsing:
         # Then
         assert config.org == "acme"
         assert config.period == PeriodGrain.MONTH
+        assert config.time_anchor == TimeAnchor.CREATED_AT
         assert config.mode == RunMode.INCREMENTAL
         assert config.refresh_scope == RunScope.OPEN_PERIOD
         assert config.output_dir.as_posix() == "output"
@@ -358,6 +365,7 @@ class TestRunConfigParsing:
             "ORGPULSE_AS_OF": "2026-04-18",
             "ORGPULSE_ORG": "env-acme",
             "ORGPULSE_PERIOD": "week",
+            "ORGPULSE_TIME_ANCHOR": "updated_at",
             "ORGPULSE_OUTPUT_DIR": "env-output",
         }
 
@@ -370,6 +378,7 @@ class TestRunConfigParsing:
         assert payload["config"]["as_of"] == "2026-04-18"
         assert payload["config"]["org"] == "env-acme"
         assert payload["config"]["period"] == "week"
+        assert payload["config"]["time_anchor"] == "updated_at"
         assert payload["config"]["output_dir"] == "env-output"
         assert payload["config"]["active_period"]["start_date"] == "2026-04-13"
         assert payload["config"]["active_period"]["end_date"] == "2026-04-19"
@@ -386,11 +395,22 @@ class TestRunConfigParsing:
         env = {
             "ORGPULSE_ORG": "env-acme",
             "ORGPULSE_PERIOD": "month",
+            "ORGPULSE_TIME_ANCHOR": "updated_at",
         }
 
         # When
         result = runner.invoke(
-            app, ["run", "--org", "cli-acme", "--period", "week"], env=env
+            app,
+            [
+                "run",
+                "--org",
+                "cli-acme",
+                "--period",
+                "week",
+                "--time-anchor",
+                "merged_at",
+            ],
+            env=env,
         )
 
         # Then
@@ -398,6 +418,7 @@ class TestRunConfigParsing:
         assert result.exit_code == 0
         assert payload["config"]["org"] == "cli-acme"
         assert payload["config"]["period"] == "week"
+        assert payload["config"]["time_anchor"] == "merged_at"
         assert payload["github"]["organization_login"] == "cli-acme"
 
     def test_resolves_month_period_boundaries_from_as_of(self) -> None:
@@ -877,38 +898,38 @@ class TestRunCommandRuntime:
         assert payload["metric_validation"]["periods"][0]["issues"] == []
         assert payload["metric_validation_skipped_reason"] is None
         pull_requests_path = (
-            tmp_path / "raw" / "month" / "2026-04" / "pull_requests.csv"
+            tmp_path / "raw" / "month" / "created_at" / "2026-04" / "pull_requests.csv"
         )
-        manifest_path = tmp_path / "manifest" / "month" / "manifest.json"
-        manifest_index_path = tmp_path / "manifest" / "month" / "index.json"
-        manifest_readme_path = tmp_path / "manifest" / "month" / "README.md"
+        manifest_path = tmp_path / "manifest" / "month" / "created_at" / "manifest.json"
+        manifest_index_path = tmp_path / "manifest" / "month" / "created_at" / "index.json"
+        manifest_readme_path = tmp_path / "manifest" / "month" / "created_at" / "README.md"
         repo_summary_contract_path = (
-            tmp_path / "repo_summary" / "month" / "contract.json"
+            tmp_path / "repo_summary" / "month" / "created_at" / "contract.json"
         )
-        repo_summary_index_path = tmp_path / "repo_summary" / "month" / "index.json"
-        repo_summary_readme_path = tmp_path / "repo_summary" / "month" / "README.md"
+        repo_summary_index_path = tmp_path / "repo_summary" / "month" / "created_at" / "index.json"
+        repo_summary_readme_path = tmp_path / "repo_summary" / "month" / "created_at" / "README.md"
         repo_summary_latest_path = (
-            tmp_path / "repo_summary" / "month" / "latest" / "repo_summary.csv"
+            tmp_path / "repo_summary" / "month" / "created_at" / "latest" / "repo_summary.csv"
         )
         repo_summary_path = (
-            tmp_path / "repo_summary" / "month" / "2026-04" / "repo_summary.csv"
+            tmp_path / "repo_summary" / "month" / "created_at" / "2026-04" / "repo_summary.csv"
         )
         org_summary_contract_path = (
-            tmp_path / "org_summary" / "month" / "contract.json"
+            tmp_path / "org_summary" / "month" / "created_at" / "contract.json"
         )
-        org_summary_index_path = tmp_path / "org_summary" / "month" / "index.json"
-        org_summary_readme_path = tmp_path / "org_summary" / "month" / "README.md"
+        org_summary_index_path = tmp_path / "org_summary" / "month" / "created_at" / "index.json"
+        org_summary_readme_path = tmp_path / "org_summary" / "month" / "created_at" / "README.md"
         org_summary_latest_json_path = (
-            tmp_path / "org_summary" / "month" / "latest" / "summary.json"
+            tmp_path / "org_summary" / "month" / "created_at" / "latest" / "summary.json"
         )
         org_summary_latest_markdown_path = (
-            tmp_path / "org_summary" / "month" / "latest" / "summary.md"
+            tmp_path / "org_summary" / "month" / "created_at" / "latest" / "summary.md"
         )
         org_summary_json_path = (
-            tmp_path / "org_summary" / "month" / "2026-04" / "summary.json"
+            tmp_path / "org_summary" / "month" / "created_at" / "2026-04" / "summary.json"
         )
         org_summary_markdown_path = (
-            tmp_path / "org_summary" / "month" / "2026-04" / "summary.md"
+            tmp_path / "org_summary" / "month" / "created_at" / "2026-04" / "summary.md"
         )
         assert pull_requests_path.exists()
         assert manifest_path.exists()
@@ -960,6 +981,7 @@ class TestRunCommandRuntime:
                 "start_date": "2026-04-01",
             },
             "period_grain": "month",
+            "time_anchor": "created_at",
             "summary": {
                 "active_author_count": 1,
                 "additions": {
@@ -1118,11 +1140,11 @@ class TestRunCommandRuntime:
             ],
         )
         pull_requests_path = (
-            tmp_path / "raw" / "month" / "2026-04" / "pull_requests.csv"
+            tmp_path / "raw" / "month" / "created_at" / "2026-04" / "pull_requests.csv"
         )
-        manifest_path = tmp_path / "manifest" / "month" / "manifest.json"
+        manifest_path = tmp_path / "manifest" / "month" / "created_at" / "manifest.json"
         repo_summary_path = (
-            tmp_path / "repo_summary" / "month" / "2026-04" / "repo_summary.csv"
+            tmp_path / "repo_summary" / "month" / "created_at" / "2026-04" / "repo_summary.csv"
         )
         first_pull_requests_csv = pull_requests_path.read_text(encoding="utf-8")
         first_repo_summary_csv = repo_summary_path.read_text(encoding="utf-8")
@@ -1229,11 +1251,11 @@ class TestRunCommandRuntime:
             refreshed_period_keys=tuple(period.key for period in previous_snapshot.periods),
         )
         march_repo_summary = (
-            tmp_path / "repo_summary" / "month" / "2026-03" / "repo_summary.csv"
+            tmp_path / "repo_summary" / "month" / "created_at" / "2026-03" / "repo_summary.csv"
         )
         march_repo_summary_csv = march_repo_summary.read_text(encoding="utf-8")
         march_org_summary = (
-            tmp_path / "org_summary" / "month" / "2026-03" / "summary.json"
+            tmp_path / "org_summary" / "month" / "created_at" / "2026-03" / "summary.json"
         )
         march_org_summary_json = march_org_summary.read_text(encoding="utf-8")
         current_pull_request = PullRequestRecord(
@@ -1338,7 +1360,7 @@ class TestRunCommandRuntime:
         assert all(period["valid"] for period in payload["metric_validation"]["periods"])
         assert march_org_summary.read_text(encoding="utf-8") == march_org_summary_json
         april_repo_summary = (
-            tmp_path / "repo_summary" / "month" / "2026-04" / "repo_summary.csv"
+            tmp_path / "repo_summary" / "month" / "created_at" / "2026-04" / "repo_summary.csv"
         )
         assert march_repo_summary.read_text(encoding="utf-8") == march_repo_summary_csv
         assert "acme/web" in april_repo_summary.read_text(encoding="utf-8")
@@ -1431,7 +1453,7 @@ class TestRunCommandRuntime:
             ),
             refreshed_period_keys=tuple(period.key for period in previous_snapshot.periods),
         )
-        locked_period_dir = tmp_path / "raw" / "month" / "2026-03"
+        locked_period_dir = tmp_path / "raw" / "month" / "created_at" / "2026-03"
         locked_pull_requests_path = locked_period_dir / "pull_requests.csv"
         locked_reviews_path = locked_period_dir / "pull_request_reviews.csv"
         locked_timeline_events_path = (
@@ -1445,14 +1467,14 @@ class TestRunCommandRuntime:
             encoding="utf-8"
         )
         locked_repo_summary_path = (
-            tmp_path / "repo_summary" / "month" / "2026-03" / "repo_summary.csv"
+            tmp_path / "repo_summary" / "month" / "created_at" / "2026-03" / "repo_summary.csv"
         )
         locked_repo_summary_csv = locked_repo_summary_path.read_text(encoding="utf-8")
         locked_org_summary_json_path = (
-            tmp_path / "org_summary" / "month" / "2026-03" / "summary.json"
+            tmp_path / "org_summary" / "month" / "created_at" / "2026-03" / "summary.json"
         )
         locked_org_summary_markdown_path = (
-            tmp_path / "org_summary" / "month" / "2026-03" / "summary.md"
+            tmp_path / "org_summary" / "month" / "created_at" / "2026-03" / "summary.md"
         )
         locked_org_summary_json = locked_org_summary_json_path.read_text(
             encoding="utf-8"
@@ -1570,26 +1592,26 @@ class TestRunCommandRuntime:
             == locked_org_summary_markdown
         )
         refreshed_repo_summary_path = (
-            tmp_path / "repo_summary" / "month" / "2026-04" / "repo_summary.csv"
+            tmp_path / "repo_summary" / "month" / "created_at" / "2026-04" / "repo_summary.csv"
         )
         refreshed_org_summary_json_path = (
-            tmp_path / "org_summary" / "month" / "2026-04" / "summary.json"
+            tmp_path / "org_summary" / "month" / "created_at" / "2026-04" / "summary.json"
         )
         refreshed_org_summary_markdown_path = (
-            tmp_path / "org_summary" / "month" / "2026-04" / "summary.md"
+            tmp_path / "org_summary" / "month" / "created_at" / "2026-04" / "summary.md"
         )
-        repo_summary_index_path = tmp_path / "repo_summary" / "month" / "index.json"
+        repo_summary_index_path = tmp_path / "repo_summary" / "month" / "created_at" / "index.json"
         repo_summary_latest_path = (
-            tmp_path / "repo_summary" / "month" / "latest" / "repo_summary.csv"
+            tmp_path / "repo_summary" / "month" / "created_at" / "latest" / "repo_summary.csv"
         )
-        org_summary_index_path = tmp_path / "org_summary" / "month" / "index.json"
+        org_summary_index_path = tmp_path / "org_summary" / "month" / "created_at" / "index.json"
         org_summary_latest_json_path = (
-            tmp_path / "org_summary" / "month" / "latest" / "summary.json"
+            tmp_path / "org_summary" / "month" / "created_at" / "latest" / "summary.json"
         )
         org_summary_latest_markdown_path = (
-            tmp_path / "org_summary" / "month" / "latest" / "summary.md"
+            tmp_path / "org_summary" / "month" / "created_at" / "latest" / "summary.md"
         )
-        manifest_index_path = tmp_path / "manifest" / "month" / "index.json"
+        manifest_index_path = tmp_path / "manifest" / "month" / "created_at" / "index.json"
         refreshed_repo_summary_csv = refreshed_repo_summary_path.read_text(
             encoding="utf-8"
         )
@@ -1685,6 +1707,178 @@ class TestRunCommandRuntime:
             "2026-04",
         ]
         assert all(period["valid"] for period in payload["metric_validation"]["periods"])
+
+    def test_refreshes_cross_period_created_at_outputs_on_incremental_runs(
+        self,
+        runner: CliRunner,
+        github_auth_service: None,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path,
+    ) -> None:
+        """Refresh prior created-at periods when incremental collection updates an older pull request."""
+        # Given
+        previous_config = build_run_config(
+            org="acme",
+            as_of="2026-03-31",
+            output_dir=tmp_path,
+        )
+        previous_pull_request = PullRequestRecord(
+            repository_full_name="acme/api",
+            number=31,
+            title="Still open at month end",
+            state="open",
+            draft=False,
+            merged=False,
+            author_login="alice",
+            created_at=datetime.fromisoformat("2026-03-31T22:00:00"),
+            updated_at=datetime.fromisoformat("2026-03-31T22:00:00"),
+            closed_at=None,
+            merged_at=None,
+            additions=14,
+            deletions=2,
+            changed_files=3,
+            commits=2,
+            html_url="https://example.test/pr/31",
+        )
+        previous_collection = PullRequestCollection(
+            window=previous_config.collection_window,
+            pull_requests=(previous_pull_request,),
+            failures=(),
+        )
+        previous_snapshot = NormalizedRawSnapshotWriter().write(
+            previous_config,
+            previous_collection,
+        )
+        RunManifestWriter(
+            now=lambda: datetime.fromisoformat("2026-03-31T00:00:00+00:00")
+        ).write(
+            previous_config,
+            previous_collection,
+            previous_snapshot,
+            repository_count=1,
+        )
+        previous_pull_request_metrics = PullRequestMetricCollectionBuilder().build(
+            previous_config,
+            previous_snapshot,
+        )
+        RepositorySummaryCsvWriter().write(
+            previous_config,
+            RepositoryMetricCollectionBuilder().build(
+                previous_config,
+                previous_pull_request_metrics,
+            ),
+            refreshed_period_keys=tuple(period.key for period in previous_snapshot.periods),
+        )
+        OrgSummaryWriter().write(
+            previous_config,
+            OrganizationMetricCollectionBuilder().build(
+                previous_config,
+                previous_pull_request_metrics,
+            ),
+            refreshed_period_keys=tuple(period.key for period in previous_snapshot.periods),
+        )
+        march_summary_path = (
+            tmp_path / "org_summary" / "month" / "created_at" / "2026-03" / "summary.json"
+        )
+        assert (
+            json.loads(march_summary_path.read_text(encoding="utf-8"))["summary"][
+                "merged_pull_request_count"
+            ]
+            == 0
+        )
+        current_pull_request = PullRequestRecord(
+            repository_full_name="acme/api",
+            number=31,
+            title="Merged after month end",
+            state="closed",
+            draft=False,
+            merged=True,
+            author_login="alice",
+            created_at=datetime.fromisoformat("2026-03-31T22:00:00"),
+            updated_at=datetime.fromisoformat("2026-04-12T09:00:00"),
+            closed_at=datetime.fromisoformat("2026-04-12T09:00:00"),
+            merged_at=datetime.fromisoformat("2026-04-12T09:00:00"),
+            additions=14,
+            deletions=2,
+            changed_files=3,
+            commits=2,
+            html_url="https://example.test/pr/31",
+        )
+        inventory = RepositoryInventory(
+            organization_login="acme",
+            repositories=(),
+        )
+        collection = PullRequestCollection(
+            window=CollectionWindow(
+                scope=RunScope.OPEN_PERIOD,
+                start_date=datetime.fromisoformat("2026-04-01T00:00:00").date(),
+                end_date=datetime.fromisoformat("2026-04-18T00:00:00").date(),
+            ),
+            pull_requests=(current_pull_request,),
+            failures=(),
+        )
+        monkeypatch.setattr(
+            "orgpulse.cli.GitHubIngestionService",
+            lambda github_client: FakeCliIngestionService(
+                inventory=inventory,
+                collection=collection,
+            ),
+        )
+        monkeypatch.setattr(
+            "orgpulse.cli.NormalizedRawSnapshotWriter",
+            lambda: NormalizedRawSnapshotWriter(),
+        )
+        monkeypatch.setattr(
+            "orgpulse.cli.RunManifestWriter",
+            lambda: RunManifestWriter(
+                now=lambda: datetime.fromisoformat("2026-04-18T00:00:00+00:00")
+            ),
+        )
+        monkeypatch.setattr(
+            "orgpulse.cli.OrgSummaryWriter",
+            lambda: OrgSummaryWriter(),
+        )
+        monkeypatch.setattr(
+            "orgpulse.cli.RepositorySummaryCsvWriter",
+            lambda: RepositorySummaryCsvWriter(),
+        )
+
+        # When
+        result = runner.invoke(
+            app,
+            [
+                "run",
+                "--org",
+                "acme",
+                "--as-of",
+                "2026-04-18",
+                "--output-dir",
+                str(tmp_path),
+            ],
+        )
+
+        # Then
+        assert result.exit_code == 0
+        payload = json.loads(result.stdout)
+        assert [period["key"] for period in payload["raw_snapshot"]["periods"]] == [
+            "2026-03",
+            "2026-04",
+        ]
+        assert [period["key"] for period in payload["manifest"]["refreshed_periods"]] == [
+            "2026-03",
+            "2026-04",
+        ]
+        assert [period["key"] for period in payload["repo_summary"]["periods"]] == [
+            "2026-03",
+            "2026-04",
+        ]
+        assert [period["key"] for period in payload["org_summary"]["periods"]] == [
+            "2026-03",
+            "2026-04",
+        ]
+        march_summary = json.loads(march_summary_path.read_text(encoding="utf-8"))
+        assert march_summary["summary"]["merged_pull_request_count"] == 1
+        assert march_summary["summary"]["pull_request_count"] == 1
 
     def test_recalculates_only_requested_closed_period_outputs_on_backfill_runs(
         self,
@@ -1807,13 +2001,13 @@ class TestRunCommandRuntime:
             refreshed_period_keys=tuple(period.key for period in previous_snapshot.periods),
         )
         february_pull_requests_path = (
-            tmp_path / "raw" / "month" / "2026-02" / "pull_requests.csv"
+            tmp_path / "raw" / "month" / "created_at" / "2026-02" / "pull_requests.csv"
         )
         march_pull_requests_path = (
-            tmp_path / "raw" / "month" / "2026-03" / "pull_requests.csv"
+            tmp_path / "raw" / "month" / "created_at" / "2026-03" / "pull_requests.csv"
         )
         april_pull_requests_path = (
-            tmp_path / "raw" / "month" / "2026-04" / "pull_requests.csv"
+            tmp_path / "raw" / "month" / "created_at" / "2026-04" / "pull_requests.csv"
         )
         february_pull_requests_csv = february_pull_requests_path.read_text(
             encoding="utf-8"
@@ -1821,34 +2015,34 @@ class TestRunCommandRuntime:
         march_pull_requests_csv = march_pull_requests_path.read_text(encoding="utf-8")
         april_pull_requests_csv = april_pull_requests_path.read_text(encoding="utf-8")
         february_repo_summary_path = (
-            tmp_path / "repo_summary" / "month" / "2026-02" / "repo_summary.csv"
+            tmp_path / "repo_summary" / "month" / "created_at" / "2026-02" / "repo_summary.csv"
         )
         march_repo_summary_path = (
-            tmp_path / "repo_summary" / "month" / "2026-03" / "repo_summary.csv"
+            tmp_path / "repo_summary" / "month" / "created_at" / "2026-03" / "repo_summary.csv"
         )
         april_repo_summary_path = (
-            tmp_path / "repo_summary" / "month" / "2026-04" / "repo_summary.csv"
+            tmp_path / "repo_summary" / "month" / "created_at" / "2026-04" / "repo_summary.csv"
         )
         february_repo_summary_csv = february_repo_summary_path.read_text(encoding="utf-8")
         march_repo_summary_csv = march_repo_summary_path.read_text(encoding="utf-8")
         april_repo_summary_csv = april_repo_summary_path.read_text(encoding="utf-8")
         february_org_summary_json_path = (
-            tmp_path / "org_summary" / "month" / "2026-02" / "summary.json"
+            tmp_path / "org_summary" / "month" / "created_at" / "2026-02" / "summary.json"
         )
         march_org_summary_json_path = (
-            tmp_path / "org_summary" / "month" / "2026-03" / "summary.json"
+            tmp_path / "org_summary" / "month" / "created_at" / "2026-03" / "summary.json"
         )
         april_org_summary_json_path = (
-            tmp_path / "org_summary" / "month" / "2026-04" / "summary.json"
+            tmp_path / "org_summary" / "month" / "created_at" / "2026-04" / "summary.json"
         )
         february_org_summary_markdown_path = (
-            tmp_path / "org_summary" / "month" / "2026-02" / "summary.md"
+            tmp_path / "org_summary" / "month" / "created_at" / "2026-02" / "summary.md"
         )
         march_org_summary_markdown_path = (
-            tmp_path / "org_summary" / "month" / "2026-03" / "summary.md"
+            tmp_path / "org_summary" / "month" / "created_at" / "2026-03" / "summary.md"
         )
         april_org_summary_markdown_path = (
-            tmp_path / "org_summary" / "month" / "2026-04" / "summary.md"
+            tmp_path / "org_summary" / "month" / "created_at" / "2026-04" / "summary.md"
         )
         february_org_summary_json = february_org_summary_json_path.read_text(
             encoding="utf-8"
@@ -2079,7 +2273,7 @@ class TestRunCommandRuntime:
         assert all(period["valid"] for period in payload["metric_validation"]["periods"])
         assert json.loads(
             (
-                tmp_path / "repo_summary" / "month" / "index.json"
+                tmp_path / "repo_summary" / "month" / "created_at" / "index.json"
             ).read_text(encoding="utf-8")
         )["history"] == [
             {
@@ -2106,7 +2300,7 @@ class TestRunCommandRuntime:
         ]
         assert json.loads(
             (
-                tmp_path / "org_summary" / "month" / "index.json"
+                tmp_path / "org_summary" / "month" / "created_at" / "index.json"
             ).read_text(encoding="utf-8")
         )["latest"] == {
             "closed": True,
@@ -2120,7 +2314,7 @@ class TestRunCommandRuntime:
         }
         assert json.loads(
             (
-                tmp_path / "manifest" / "month" / "index.json"
+                tmp_path / "manifest" / "month" / "created_at" / "index.json"
             ).read_text(encoding="utf-8")
         )["history"] == {
             "locked_periods": [
@@ -2235,7 +2429,7 @@ class TestRunCommandRuntime:
         ]
         summary_payload = json.loads(
             (
-                tmp_path / "org_summary" / "month" / "2026-01" / "summary.json"
+                tmp_path / "org_summary" / "month" / "created_at" / "2026-01" / "summary.json"
             ).read_text(encoding="utf-8")
         )
         assert summary_payload == {
@@ -2248,6 +2442,7 @@ class TestRunCommandRuntime:
                 "start_date": "2026-01-01",
             },
             "period_grain": "month",
+            "time_anchor": "created_at",
             "summary": {
                 "active_author_count": 0,
                 "additions": {
@@ -2300,7 +2495,7 @@ class TestRunCommandRuntime:
             "target_org": "acme",
         }
         assert "Merged pull requests per active author: n/a" in (
-            tmp_path / "org_summary" / "month" / "2026-01" / "summary.md"
+            tmp_path / "org_summary" / "month" / "created_at" / "2026-01" / "summary.md"
         ).read_text(encoding="utf-8")
 
     def test_reports_metric_validation_failures_without_skipping_outputs(
@@ -2405,19 +2600,19 @@ class TestRunCommandRuntime:
     ) -> None:
         """Prune stale full-history raw outputs and overwrite the manifest with only the surviving periods."""
         # Given
-        stale_period_dir = tmp_path / "raw" / "month" / "2026-03"
+        stale_period_dir = tmp_path / "raw" / "month" / "created_at" / "2026-03"
         stale_period_dir.mkdir(parents=True)
         (stale_period_dir / "pull_requests.csv").write_text(
             "stale snapshot\n",
             encoding="utf-8",
         )
-        stale_org_summary_dir = tmp_path / "org_summary" / "month" / "2026-03"
+        stale_org_summary_dir = tmp_path / "org_summary" / "month" / "created_at" / "2026-03"
         stale_org_summary_dir.mkdir(parents=True)
         (stale_org_summary_dir / "summary.json").write_text(
             json.dumps({"target_org": "stale"}),
             encoding="utf-8",
         )
-        stale_manifest_path = tmp_path / "manifest" / "month" / "manifest.json"
+        stale_manifest_path = tmp_path / "manifest" / "month" / "created_at" / "manifest.json"
         stale_manifest_path.parent.mkdir(parents=True)
         stale_manifest_path.write_text(
             json.dumps({"target_org": "stale"}),
@@ -2514,7 +2709,7 @@ class TestRunCommandRuntime:
         ] == "acme"
         assert json.loads(
             (
-                tmp_path / "repo_summary" / "month" / "index.json"
+                tmp_path / "repo_summary" / "month" / "created_at" / "index.json"
             ).read_text(encoding="utf-8")
         )["history"] == [
             {
@@ -2527,7 +2722,7 @@ class TestRunCommandRuntime:
         ]
         assert json.loads(
             (
-                tmp_path / "org_summary" / "month" / "index.json"
+                tmp_path / "org_summary" / "month" / "created_at" / "index.json"
             ).read_text(encoding="utf-8")
         )["history"] == [
             {
@@ -2549,7 +2744,7 @@ class TestRunCommandRuntime:
     ) -> None:
         """Skip raw snapshot persistence when repo-scoped failures would make the output incomplete."""
         # Given
-        existing_snapshot = tmp_path / "raw" / "month" / "2026-04" / "pull_requests.csv"
+        existing_snapshot = tmp_path / "raw" / "month" / "created_at" / "2026-04" / "pull_requests.csv"
         existing_snapshot.parent.mkdir(parents=True)
         existing_snapshot.write_text("existing snapshot\n", encoding="utf-8")
         collection = PullRequestCollection(
@@ -2589,7 +2784,7 @@ class TestRunCommandRuntime:
             "orgpulse.cli.RepositorySummaryCsvWriter",
             lambda: UnexpectedRepositorySummaryWriter(),
         )
-        existing_manifest = tmp_path / "manifest" / "month" / "manifest.json"
+        existing_manifest = tmp_path / "manifest" / "month" / "created_at" / "manifest.json"
         existing_manifest.parent.mkdir(parents=True)
         existing_manifest.write_text(
             json.dumps({"target_org": "acme", "status": "previous"}),
@@ -2631,3 +2826,139 @@ class TestRunCommandRuntime:
             "target_org": "acme",
             "status": "previous",
         }
+
+    def test_clears_checkpoint_after_successful_run(
+        self,
+        runner: CliRunner,
+        github_auth_service: None,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path,
+    ) -> None:
+        """Clear persisted repo checkpoints after the full run completes successfully."""
+        # Given
+        checkpoint_root = (
+            tmp_path
+            / "checkpoints"
+            / "month"
+            / "created_at"
+            / "incremental"
+            / "acme"
+        )
+        checkpoint_root.mkdir(parents=True)
+        (checkpoint_root / "manifest.json").write_text("{}", encoding="utf-8")
+        service = FakeCliIngestionService()
+        clear_calls: list[str] = []
+
+        def clear_checkpoint(config) -> None:
+            clear_calls.append(config.org)
+            shutil.rmtree(checkpoint_root)
+
+        monkeypatch.setattr(service, "clear_checkpoint", clear_checkpoint)
+        monkeypatch.setattr(
+            "orgpulse.cli.GitHubIngestionService",
+            lambda github_client: service,
+        )
+
+        # When
+        result = runner.invoke(
+            app,
+            [
+                "run",
+                "--org",
+                "acme",
+                "--as-of",
+                "2026-04-18",
+                "--output-dir",
+                str(tmp_path),
+            ],
+        )
+
+        # Then
+        assert result.exit_code == 0
+        assert clear_calls == ["acme"]
+        assert checkpoint_root.exists() is False
+
+    def test_keeps_checkpoint_after_partial_failure_run(
+        self,
+        runner: CliRunner,
+        github_auth_service: None,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path,
+    ) -> None:
+        """Keep repo checkpoints in place when collection failures prevent a complete run."""
+        # Given
+        checkpoint_root = (
+            tmp_path
+            / "checkpoints"
+            / "month"
+            / "created_at"
+            / "incremental"
+            / "acme"
+        )
+        checkpoint_root.mkdir(parents=True)
+        (checkpoint_root / "manifest.json").write_text("{}", encoding="utf-8")
+        service = FakeCliIngestionService(
+            collection=PullRequestCollection(
+                window=CollectionWindow(
+                    scope=RunScope.OPEN_PERIOD,
+                    start_date=datetime.fromisoformat("2026-04-01T00:00:00").date(),
+                    end_date=datetime.fromisoformat("2026-04-18T00:00:00").date(),
+                ),
+                pull_requests=(),
+                failures=(
+                    RepositoryCollectionFailure(
+                        repository_full_name="acme/web",
+                        operation="pull_requests",
+                        status_code=503,
+                        retriable=True,
+                        message="Service unavailable",
+                    ),
+                ),
+            )
+        )
+        clear_calls: list[str] = []
+
+        def clear_checkpoint(config) -> None:
+            clear_calls.append(config.org)
+            shutil.rmtree(checkpoint_root)
+
+        monkeypatch.setattr(service, "clear_checkpoint", clear_checkpoint)
+        monkeypatch.setattr(
+            "orgpulse.cli.GitHubIngestionService",
+            lambda github_client: service,
+        )
+        monkeypatch.setattr(
+            "orgpulse.cli.NormalizedRawSnapshotWriter",
+            lambda: UnexpectedSnapshotWriter(),
+        )
+        monkeypatch.setattr(
+            "orgpulse.cli.RunManifestWriter",
+            lambda: UnexpectedManifestWriter(),
+        )
+        monkeypatch.setattr(
+            "orgpulse.cli.OrgSummaryWriter",
+            lambda: UnexpectedOrgSummaryWriter(),
+        )
+        monkeypatch.setattr(
+            "orgpulse.cli.RepositorySummaryCsvWriter",
+            lambda: UnexpectedRepositorySummaryWriter(),
+        )
+
+        # When
+        result = runner.invoke(
+            app,
+            [
+                "run",
+                "--org",
+                "acme",
+                "--as-of",
+                "2026-04-18",
+                "--output-dir",
+                str(tmp_path),
+            ],
+        )
+
+        # Then
+        assert result.exit_code == 0
+        assert clear_calls == []
+        assert checkpoint_root.exists() is True

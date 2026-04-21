@@ -9,13 +9,26 @@ import typer
 from github import Auth, Github
 from pydantic import ValidationError
 
+from orgpulse.analysis import (
+    AnalysisExportFormat,
+    AnalysisGrouping,
+    AnalysisService,
+    build_analysis_config,
+    render_analysis_result,
+)
 from orgpulse.config import get_settings
-from orgpulse.errors import AuthResolutionError, GitHubApiError, OrgTargetingError
+from orgpulse.errors import (
+    AnalysisInputError,
+    AuthResolutionError,
+    GitHubApiError,
+    OrgTargetingError,
+)
 from orgpulse.github_auth import GitHubAuthService, resolve_auth_token
 from orgpulse.ingestion import (
     PULL_REQUEST_REVIEW_SNAPSHOT_FILENAME,
     PULL_REQUEST_SNAPSHOT_FILENAME,
     PULL_REQUEST_TIMELINE_EVENT_SNAPSHOT_FILENAME,
+    CanonicalRawInventoryStore,
     GitHubIngestionService,
     NormalizedRawSnapshotWriter,
 )
@@ -32,6 +45,7 @@ from orgpulse.models import (
     OrgSummaryWriteResult,
     PeriodGrain,
     PullRequestCollection,
+    PullRequestRecord,
     RawSnapshotPeriod,
     RawSnapshotWriteResult,
     ReportingPeriod,
@@ -251,6 +265,255 @@ def run_command(
     )
 
 
+@app.command("reaggregate")
+def reaggregate_command(
+    org: Annotated[
+        str | None,
+        typer.Option(
+            "--org",
+            help="GitHub organization to re-aggregate. Falls back to ORGPULSE_ORG.",
+        ),
+    ] = None,
+    as_of: Annotated[
+        str | None,
+        typer.Option(
+            "--as-of",
+            help="Anchor date used to resolve regenerated reporting periods. Falls back to ORGPULSE_AS_OF or today.",
+        ),
+    ] = None,
+    period: Annotated[
+        PeriodGrain | None,
+        typer.Option(
+            "--period",
+            help="Reporting grain for regenerated snapshots and rollups. Falls back to ORGPULSE_PERIOD.",
+        ),
+    ] = None,
+    time_anchor: Annotated[
+        TimeAnchor | None,
+        typer.Option(
+            "--time-anchor",
+            help="Timestamp used to bucket regenerated pull requests. Defaults to created_at and falls back to ORGPULSE_TIME_ANCHOR.",
+        ),
+    ] = None,
+    include_repos: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--repo",
+            help="Restrict re-aggregation to the stored repository scope. May be provided multiple times.",
+        ),
+    ] = None,
+    exclude_repos: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--exclude-repo",
+            help="Exclude repositories from the stored scope. May be provided multiple times.",
+        ),
+    ] = None,
+    output_dir: Annotated[
+        Path | None,
+        typer.Option(
+            "--output-dir",
+            help="Directory where the canonical raw inventory and regenerated outputs live. Falls back to ORGPULSE_OUTPUT_DIR.",
+        ),
+    ] = None,
+) -> None:
+    try:
+        config = build_run_config(
+            org=org,
+            as_of=as_of,
+            period=period,
+            mode=RunMode.FULL,
+            time_anchor=time_anchor,
+            include_repos=include_repos,
+            exclude_repos=exclude_repos,
+            output_dir=output_dir,
+        )
+    except ValidationError as exc:
+        typer.echo(f"orgpulse: invalid configuration\n{exc}", err=True)
+        raise typer.Exit(code=2) from exc
+
+    canonical_pull_requests = CanonicalRawInventoryStore().load(config)
+    if canonical_pull_requests is None:
+        typer.echo(
+            "orgpulse: canonical raw inventory is missing or does not match the requested org and repository scope",
+            err=True,
+        )
+        raise typer.Exit(code=1)
+
+    collection = _canonical_inventory_collection(config, canonical_pull_requests)
+    repository_count = _canonical_inventory_repository_count(canonical_pull_requests)
+    (
+        raw_snapshot,
+        raw_snapshot_skipped_reason,
+        manifest,
+        manifest_skipped_reason,
+    ) = _write_outputs(
+        config,
+        repository_count,
+        collection,
+    )
+    (
+        repo_summary,
+        repo_summary_skipped_reason,
+        org_metrics,
+        org_metrics_skipped_reason,
+        metric_validation,
+        metric_validation_skipped_reason,
+    ) = _build_metric_outputs(
+        config,
+        manifest=manifest,
+        raw_snapshot=raw_snapshot,
+        raw_snapshot_skipped_reason=raw_snapshot_skipped_reason,
+    )
+    org_summary, org_summary_skipped_reason = _write_org_summary(
+        config,
+        org_metrics=org_metrics,
+        org_metrics_skipped_reason=org_metrics_skipped_reason,
+        refreshed_period_keys=()
+        if raw_snapshot is None
+        else tuple(period_record.key for period_record in raw_snapshot.periods),
+    )
+    typer.echo(
+        json.dumps(
+            {
+                "config": config.model_dump(mode="json"),
+                "source": {
+                    "kind": "canonical_raw_inventory",
+                    "repository_count": repository_count,
+                    "pull_request_count": len(canonical_pull_requests),
+                },
+                "collection": {
+                    "window": collection.window.model_dump(mode="json"),
+                    "pull_request_count": len(collection.pull_requests),
+                    "failure_count": len(collection.failures),
+                    "failures": [],
+                },
+                "raw_snapshot": None
+                if raw_snapshot is None
+                else raw_snapshot.model_dump(mode="json"),
+                "raw_snapshot_skipped_reason": raw_snapshot_skipped_reason,
+                "manifest": None
+                if manifest is None
+                else manifest.manifest.model_dump(mode="json"),
+                "manifest_path": None
+                if manifest is None
+                else str(manifest.path),
+                "manifest_skipped_reason": manifest_skipped_reason,
+                "repo_summary": None
+                if repo_summary is None
+                else repo_summary.model_dump(mode="json"),
+                "repo_summary_skipped_reason": repo_summary_skipped_reason,
+                "org_metrics": None
+                if org_metrics is None
+                else org_metrics.model_dump(mode="json"),
+                "org_metrics_skipped_reason": org_metrics_skipped_reason,
+                "org_summary": None
+                if org_summary is None
+                else org_summary.model_dump(mode="json"),
+                "org_summary_skipped_reason": org_summary_skipped_reason,
+                "metric_validation": None
+                if metric_validation is None
+                else metric_validation.model_dump(mode="json"),
+                "metric_validation_skipped_reason": metric_validation_skipped_reason,
+            },
+            indent=2,
+            sort_keys=True,
+        )
+    )
+
+
+@app.command("analyze")
+def analyze_command(
+    org: Annotated[
+        str | None,
+        typer.Option(
+            "--org",
+            help="GitHub organization whose local outputs should be analyzed. Falls back to ORGPULSE_ORG.",
+        ),
+    ] = None,
+    grain: Annotated[
+        PeriodGrain | None,
+        typer.Option(
+            "--grain",
+            help="Snapshot grain to analyze. Falls back to ORGPULSE_PERIOD.",
+        ),
+    ] = None,
+    grouping: Annotated[
+        AnalysisGrouping | None,
+        typer.Option(
+            "--group-by",
+            help="Dimension used to group the analysis output.",
+        ),
+    ] = None,
+    top_n: Annotated[
+        int | None,
+        typer.Option(
+            "--top",
+            min=1,
+            help="Limit the output to the top N grouped rows.",
+        ),
+    ] = None,
+    since: Annotated[
+        str | None,
+        typer.Option(
+            "--since",
+            help="Inclusive ISO date lower bound for the selected time anchor.",
+        ),
+    ] = None,
+    until: Annotated[
+        str | None,
+        typer.Option(
+            "--until",
+            help="Inclusive ISO date upper bound for the selected time anchor.",
+        ),
+    ] = None,
+    time_anchor: Annotated[
+        TimeAnchor | None,
+        typer.Option(
+            "--time-anchor",
+            help="Timestamp used to filter the local pull request dataset. Falls back to ORGPULSE_TIME_ANCHOR.",
+        ),
+    ] = None,
+    output_dir: Annotated[
+        Path | None,
+        typer.Option(
+            "--output-dir",
+            help="Directory containing local orgpulse outputs. Falls back to ORGPULSE_OUTPUT_DIR.",
+        ),
+    ] = None,
+    export_format: Annotated[
+        AnalysisExportFormat | None,
+        typer.Option(
+            "--format",
+            help="Analysis export format written to stdout.",
+        ),
+    ] = None,
+) -> None:
+    try:
+        config = build_analysis_config(
+            org=org,
+            output_dir=output_dir,
+            grain=grain,
+            time_anchor=time_anchor,
+            grouping=grouping,
+            top_n=top_n,
+            since=since,
+            until=until,
+            export_format=export_format,
+        )
+    except ValidationError as exc:
+        typer.echo(f"orgpulse: invalid analysis configuration\n{exc}", err=True)
+        raise typer.Exit(code=2) from exc
+
+    try:
+        result = AnalysisService().analyze(config)
+    except AnalysisInputError as exc:
+        typer.echo(f"orgpulse: analysis input failed\n{exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+    typer.echo(render_analysis_result(result))
+
+
 def _write_outputs(
     config: RunConfig,
     repository_count: int,
@@ -440,6 +703,28 @@ def _count_snapshot_rows(path: Path) -> int:
             return max(sum(1 for _ in handle) - 1, 0)
     except OSError:
         return 0
+
+
+def _canonical_inventory_collection(
+    config: RunConfig,
+    canonical_pull_requests: tuple[PullRequestRecord, ...],
+) -> PullRequestCollection:
+    return PullRequestCollection(
+        window=config.collection_window,
+        pull_requests=canonical_pull_requests,
+        failures=(),
+    )
+
+
+def _canonical_inventory_repository_count(
+    canonical_pull_requests: tuple[PullRequestRecord, ...],
+) -> int:
+    return len(
+        {
+            pull_request.repository_full_name
+            for pull_request in canonical_pull_requests
+        }
+    )
 
 
 def build_run_config(

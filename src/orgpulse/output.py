@@ -53,9 +53,17 @@ REPOSITORY_SUMMARY_CSV_DIRNAME = "repo_summary"
 REPOSITORY_SUMMARY_CSV_FILENAME = "repo_summary.csv"
 REPOSITORY_SUMMARY_CSV_FIELDNAMES = (
     "period_key",
+    "period_grain",
+    "time_anchor",
+    "time_anchor_scope",
     "period_start_date",
     "period_end_date",
+    "period_status",
+    "period_label",
+    "period_open",
     "period_closed",
+    "period_partial",
+    "period_observed_through_date",
     "repository_full_name",
     "pull_request_count",
     "merged_pull_request_count",
@@ -136,10 +144,15 @@ class RepositorySummaryCsvWriter:
         )
         _write_json_file(contract_path, contract)
         period_results = tuple(
-            self._write_period_summary(root_dir, metric_period)
+            self._write_period_summary(
+                config=config,
+                root_dir=root_dir,
+                metric_period=metric_period,
+            )
             for metric_period in refreshed_periods
         )
         history_entries = self._history_entries(
+            config=config,
             root_dir=root_dir,
             periods=repository_metrics.periods,
             index_path=index_path,
@@ -167,6 +180,8 @@ class RepositorySummaryCsvWriter:
 
     def _write_period_summary(
         self,
+        *,
+        config: RunConfig,
         root_dir: Path,
         metric_period: RepositoryMetricPeriod,
     ) -> RepositorySummaryCsvPeriod:
@@ -175,7 +190,7 @@ class RepositorySummaryCsvWriter:
             path=path,
             fieldnames=REPOSITORY_SUMMARY_CSV_FIELDNAMES,
             rows=[
-                self._csv_row(metric_period, repository)
+                self._csv_row(config, metric_period, repository)
                 for repository in metric_period.repositories
             ],
         )
@@ -190,14 +205,30 @@ class RepositorySummaryCsvWriter:
 
     def _csv_row(
         self,
+        config: RunConfig,
         metric_period: RepositoryMetricPeriod,
         repository: RepositoryMetricRollup,
     ) -> dict[str, object]:
+        period_state = _period_state_payload(
+            period_grain=config.period.value,
+            start_date=metric_period.start_date,
+            end_date=metric_period.end_date,
+            closed=metric_period.closed,
+            as_of=config.as_of,
+        )
         return {
             "period_key": metric_period.key,
+            "period_grain": config.period.value,
+            "time_anchor": config.time_anchor.value,
+            "time_anchor_scope": _time_anchor_scope(config.time_anchor.value),
             "period_start_date": metric_period.start_date.isoformat(),
             "period_end_date": metric_period.end_date.isoformat(),
+            "period_status": period_state["status"],
+            "period_label": period_state["label"],
+            "period_open": str(period_state["is_open"]).lower(),
             "period_closed": str(metric_period.closed).lower(),
+            "period_partial": str(period_state["is_partial"]).lower(),
+            "period_observed_through_date": period_state["observed_through_date"],
             "repository_full_name": repository.repository_full_name,
             "pull_request_count": repository.pull_request_count,
             "merged_pull_request_count": repository.merged_pull_request_count,
@@ -236,6 +267,7 @@ class RepositorySummaryCsvWriter:
     def _history_entries(
         self,
         *,
+        config: RunConfig,
         root_dir: Path,
         periods: tuple[RepositoryMetricPeriod, ...],
         index_path: Path,
@@ -246,12 +278,20 @@ class RepositorySummaryCsvWriter:
         for period_key in _history_period_keys(root_dir):
             if period_key in period_index:
                 period = period_index[period_key]
+                period_state = _period_state_payload(
+                    period_grain=config.period.value,
+                    start_date=period.start_date,
+                    end_date=period.end_date,
+                    closed=period.closed,
+                    as_of=config.as_of,
+                )
                 history_entries.append(
                     {
                         "key": period.key,
                         "start_date": period.start_date.isoformat(),
                         "end_date": period.end_date.isoformat(),
                         "closed": period.closed,
+                        **period_state,
                         "path": _relative_path(
                             root_dir,
                             root_dir / period.key / REPOSITORY_SUMMARY_CSV_FILENAME,
@@ -300,6 +340,12 @@ class RepositorySummaryCsvWriter:
                 "start_date": latest_entry["start_date"],
                 "end_date": latest_entry["end_date"],
                 "closed": latest_entry["closed"],
+                "status": latest_entry["status"],
+                "label": latest_entry["label"],
+                "is_open": latest_entry["is_open"],
+                "is_closed": latest_entry["is_closed"],
+                "is_partial": latest_entry["is_partial"],
+                "observed_through_date": latest_entry["observed_through_date"],
                 "path": _relative_path(
                     root_dir,
                     root_dir / LATEST_DIRNAME / REPOSITORY_SUMMARY_CSV_FILENAME,
@@ -310,6 +356,7 @@ class RepositorySummaryCsvWriter:
             "target_org": config.org,
             "period_grain": config.period.value,
             "time_anchor": config.time_anchor.value,
+            "time_anchor_context": _time_anchor_context(config.time_anchor.value),
             "include_repos": list(
                 _canonical_repo_filters(config.include_repos, org=config.org)
             ),
@@ -328,11 +375,15 @@ class RepositorySummaryCsvWriter:
     ) -> str:
         latest_entry = _latest_history_entry(history_entries)
         history_rows = (
-            ["| Period | Start | End | Closed | CSV |", "| --- | --- | --- | --- | --- |"]
+            [
+                "| Period | Start | End | Status | Partial | Observed Through | CSV |",
+                "| --- | --- | --- | --- | --- | --- | --- |",
+            ]
             + [
                 (
                     f"| {entry['key']} | {entry['start_date']} | {entry['end_date']} | "
-                    f"{_bool_text(bool(entry['closed']))} | {entry['path']} |"
+                    f"{entry['label']} | {_bool_text(bool(entry['is_partial']))} | "
+                    f"{entry['observed_through_date']} | {entry['path']} |"
                 )
                 for entry in history_entries
             ]
@@ -342,13 +393,25 @@ class RepositorySummaryCsvWriter:
         latest_lines = (
             [
                 f"- Latest period: {latest_entry['key']}",
+                f"- Latest period status: {latest_entry['label']}",
+                f"- Latest period partial: {_bool_text(bool(latest_entry['is_partial']))}",
+                (
+                    "- Latest period observed through: "
+                    f"{latest_entry['observed_through_date']}"
+                ),
                 (
                     "- Latest CSV: "
                     f"{LATEST_DIRNAME}/{REPOSITORY_SUMMARY_CSV_FILENAME}"
                 ),
             ]
             if latest_entry is not None
-            else ["- Latest period: none", "- Latest CSV: none"]
+            else [
+                "- Latest period: none",
+                "- Latest period status: none",
+                "- Latest period partial: none",
+                "- Latest period observed through: none",
+                "- Latest CSV: none",
+            ]
         )
         return "\n".join(
             (
@@ -357,6 +420,10 @@ class RepositorySummaryCsvWriter:
                 f"- Target org: {config.org}",
                 f"- Period grain: {config.period.value}",
                 f"- Time anchor: {config.time_anchor.value}",
+                (
+                    "- Summary scope: "
+                    f"{_time_anchor_context(config.time_anchor.value)['description']}"
+                ),
                 f"- Include repos: {_repo_filters_text(_canonical_repo_filters(config.include_repos, org=config.org), empty='all')}",
                 f"- Exclude repos: {_repo_filters_text(_canonical_repo_filters(config.exclude_repos, org=config.org), empty='none')}",
                 *latest_lines,
@@ -376,6 +443,15 @@ class RepositorySummaryCsvWriter:
             "target_org": config.org,
             "period_grain": config.period.value,
             "time_anchor": config.time_anchor.value,
+            "time_anchor_context": _time_anchor_context(config.time_anchor.value),
+            "period_state_fields": [
+                "status",
+                "label",
+                "is_open",
+                "is_closed",
+                "is_partial",
+                "observed_through_date",
+            ],
             "include_repos": list(
                 _canonical_repo_filters(config.include_repos, org=config.org)
             ),
@@ -436,6 +512,7 @@ class OrgSummaryWriter:
             for period in refreshed_periods
         )
         history_entries = self._history_entries(
+            config=config,
             root_dir=root_dir,
             periods=org_metrics.periods,
             index_path=index_path,
@@ -515,6 +592,7 @@ class OrgSummaryWriter:
             "target_org": target_org,
             "period_grain": config.period.value,
             "time_anchor": config.time_anchor.value,
+            "time_anchor_context": _time_anchor_context(config.time_anchor.value),
             "include_repos": list(include_repos),
             "exclude_repos": list(exclude_repos),
             "period": {
@@ -522,6 +600,27 @@ class OrgSummaryWriter:
                 "start_date": period.start_date.isoformat(),
                 "end_date": period.end_date.isoformat(),
                 "closed": period.closed,
+                **_period_state_payload(
+                    period_grain=config.period.value,
+                    start_date=period.start_date,
+                    end_date=period.end_date,
+                    closed=period.closed,
+                    as_of=config.as_of,
+                ),
+            },
+            "summary_labels": {
+                "pull_request_count": _anchored_metric_label(
+                    "Pull request count",
+                    config.time_anchor.value,
+                ),
+                "merged_pull_request_count": _anchored_metric_label(
+                    "Merged pull request count",
+                    config.time_anchor.value,
+                ),
+                "value_summaries": (
+                    "Value summaries grouped by "
+                    f"{_time_anchor_scope(config.time_anchor.value)}"
+                ),
             },
             "summary": period.summary.model_dump(mode="json"),
         }
@@ -536,32 +635,60 @@ class OrgSummaryWriter:
         include_repos = _canonical_repo_filters(config.include_repos, org=config.org)
         exclude_repos = _canonical_repo_filters(config.exclude_repos, org=config.org)
         summary = period.summary
+        period_state = _period_state_payload(
+            period_grain=config.period.value,
+            start_date=period.start_date,
+            end_date=period.end_date,
+            closed=period.closed,
+            as_of=config.as_of,
+        )
         return "\n".join(
             (
-                f"# Organization Summary: {target_org} {period.key}",
+                (
+                    f"# Organization Summary: {target_org} {period.key} "
+                    f"({_time_anchor_scope(config.time_anchor.value)})"
+                ),
                 "",
                 f"- Target org: {target_org}",
                 f"- Period grain: {config.period.value}",
                 f"- Time anchor: {config.time_anchor.value}",
+                (
+                    "- Summary scope: "
+                    f"{_time_anchor_context(config.time_anchor.value)['description']}"
+                ),
                 f"- Period key: {period.key}",
                 f"- Include repos: {_repo_filters_text(include_repos, empty='all')}",
                 f"- Exclude repos: {_repo_filters_text(exclude_repos, empty='none')}",
                 f"- Period start: {period.start_date.isoformat()}",
                 f"- Period end: {period.end_date.isoformat()}",
-                f"- Closed: {_bool_text(period.closed)}",
+                f"- Period status: {period_state['label']}",
+                f"- Partial period: {_bool_text(bool(period_state['is_partial']))}",
+                (
+                    "- Observed through: "
+                    f"{period_state['observed_through_date']}"
+                ),
                 "",
                 "## Totals",
                 "",
                 f"- Repository count: {summary.repository_count}",
-                f"- Pull request count: {summary.pull_request_count}",
-                f"- Merged pull request count: {summary.merged_pull_request_count}",
+                (
+                    f"- {_anchored_metric_label('Pull request count', config.time_anchor.value)}: "
+                    f"{summary.pull_request_count}"
+                ),
+                (
+                    f"- {_anchored_metric_label('Merged pull request count', config.time_anchor.value)}: "
+                    f"{summary.merged_pull_request_count}"
+                ),
                 f"- Active author count: {summary.active_author_count}",
                 (
                     "- Merged pull requests per active author: "
                     f"{_float_text(summary.merged_pull_requests_per_active_author)}"
                 ),
                 "",
-                "## Value Summaries",
+                (
+                    "## Value Summaries "
+                    f"({_time_anchor_scope(config.time_anchor.value)})"
+                ),
                 "",
                 "| Metric | Count | Total | Average | Median |",
                 "| --- | ---: | ---: | ---: | ---: |",
@@ -582,6 +709,7 @@ class OrgSummaryWriter:
     def _history_entries(
         self,
         *,
+        config: RunConfig,
         root_dir: Path,
         periods: tuple[OrganizationMetricPeriod, ...],
         index_path: Path,
@@ -592,12 +720,20 @@ class OrgSummaryWriter:
         for period_key in _history_period_keys(root_dir):
             if period_key in period_index:
                 period = period_index[period_key]
+                period_state = _period_state_payload(
+                    period_grain=config.period.value,
+                    start_date=period.start_date,
+                    end_date=period.end_date,
+                    closed=period.closed,
+                    as_of=config.as_of,
+                )
                 history_entries.append(
                     {
                         "key": period.key,
                         "start_date": period.start_date.isoformat(),
                         "end_date": period.end_date.isoformat(),
                         "closed": period.closed,
+                        **period_state,
                         "markdown_path": _relative_path(
                             root_dir,
                             root_dir / period.key / ORG_SUMMARY_MARKDOWN_FILENAME,
@@ -659,6 +795,12 @@ class OrgSummaryWriter:
                 "start_date": latest_entry["start_date"],
                 "end_date": latest_entry["end_date"],
                 "closed": latest_entry["closed"],
+                "status": latest_entry["status"],
+                "label": latest_entry["label"],
+                "is_open": latest_entry["is_open"],
+                "is_closed": latest_entry["is_closed"],
+                "is_partial": latest_entry["is_partial"],
+                "observed_through_date": latest_entry["observed_through_date"],
                 "markdown_path": _relative_path(root_dir, latest_markdown_path),
                 "json_path": _relative_path(root_dir, latest_json_path),
                 "source_markdown_path": latest_entry["markdown_path"],
@@ -668,6 +810,7 @@ class OrgSummaryWriter:
             "target_org": config.org,
             "period_grain": config.period.value,
             "time_anchor": config.time_anchor.value,
+            "time_anchor_context": _time_anchor_context(config.time_anchor.value),
             "include_repos": list(
                 _canonical_repo_filters(config.include_repos, org=config.org)
             ),
@@ -687,13 +830,17 @@ class OrgSummaryWriter:
         latest_entry = _latest_history_entry(history_entries)
         history_rows = (
             [
-                "| Period | Start | End | Closed | JSON | Markdown |",
-                "| --- | --- | --- | --- | --- | --- |",
+                (
+                    "| Period | Start | End | Status | Partial | "
+                    "Observed Through | JSON | Markdown |"
+                ),
+                "| --- | --- | --- | --- | --- | --- | --- | --- |",
             ]
             + [
                 (
                     f"| {entry['key']} | {entry['start_date']} | {entry['end_date']} | "
-                    f"{_bool_text(bool(entry['closed']))} | {entry['json_path']} | "
+                    f"{entry['label']} | {_bool_text(bool(entry['is_partial']))} | "
+                    f"{entry['observed_through_date']} | {entry['json_path']} | "
                     f"{entry['markdown_path']} |"
                 )
                 for entry in history_entries
@@ -704,12 +851,21 @@ class OrgSummaryWriter:
         latest_lines = (
             [
                 f"- Latest period: {latest_entry['key']}",
+                f"- Latest period status: {latest_entry['label']}",
+                f"- Latest period partial: {_bool_text(bool(latest_entry['is_partial']))}",
+                (
+                    "- Latest period observed through: "
+                    f"{latest_entry['observed_through_date']}"
+                ),
                 f"- Latest JSON: {LATEST_DIRNAME}/{ORG_SUMMARY_JSON_FILENAME}",
                 f"- Latest Markdown: {LATEST_DIRNAME}/{ORG_SUMMARY_MARKDOWN_FILENAME}",
             ]
             if latest_entry is not None
             else [
                 "- Latest period: none",
+                "- Latest period status: none",
+                "- Latest period partial: none",
+                "- Latest period observed through: none",
                 "- Latest JSON: none",
                 "- Latest Markdown: none",
             ]
@@ -721,6 +877,10 @@ class OrgSummaryWriter:
                 f"- Target org: {config.org}",
                 f"- Period grain: {config.period.value}",
                 f"- Time anchor: {config.time_anchor.value}",
+                (
+                    "- Summary scope: "
+                    f"{_time_anchor_context(config.time_anchor.value)['description']}"
+                ),
                 f"- Include repos: {_repo_filters_text(_canonical_repo_filters(config.include_repos, org=config.org), empty='all')}",
                 f"- Exclude repos: {_repo_filters_text(_canonical_repo_filters(config.exclude_repos, org=config.org), empty='none')}",
                 *latest_lines,
@@ -740,6 +900,7 @@ class OrgSummaryWriter:
             "target_org": config.org,
             "period_grain": config.period.value,
             "time_anchor": config.time_anchor.value,
+            "time_anchor_context": _time_anchor_context(config.time_anchor.value),
             "include_repos": list(
                 _canonical_repo_filters(config.include_repos, org=config.org)
             ),
@@ -986,6 +1147,7 @@ class RunManifestWriter:
             "target_org": manifest.target_org,
             "period_grain": manifest.period_grain.value,
             "time_anchor": manifest.time_anchor.value,
+            "time_anchor_context": _time_anchor_context(manifest.time_anchor.value),
             "include_repos": list(
                 _canonical_repo_filters(manifest.include_repos, org=manifest.target_org)
             ),
@@ -1003,12 +1165,19 @@ class RunManifestWriter:
                 "refreshed_periods": [
                     _manifest_period_payload(
                         period,
+                        period_grain=manifest.period_grain.value,
                         closed=period.key in locked_period_keys,
+                        as_of=manifest.last_successful_run.as_of,
                     )
                     for period in manifest.refreshed_periods
                 ],
                 "locked_periods": [
-                    _manifest_period_payload(period, closed=period.closed)
+                    _manifest_period_payload(
+                        period,
+                        period_grain=manifest.period_grain.value,
+                        closed=period.closed,
+                        as_of=manifest.last_successful_run.as_of,
+                    )
                     for period in manifest.locked_periods
                 ],
             },
@@ -1022,10 +1191,14 @@ class RunManifestWriter:
         locked_period_keys = {period.key for period in manifest.locked_periods}
         refreshed_rows = _manifest_period_table_rows(
             manifest.refreshed_periods,
+            period_grain=manifest.period_grain.value,
+            as_of=manifest.last_successful_run.as_of,
             closed_period_keys=locked_period_keys,
         )
         locked_rows = _manifest_period_table_rows(
             manifest.locked_periods,
+            period_grain=manifest.period_grain.value,
+            as_of=manifest.last_successful_run.as_of,
             closed_period_keys=locked_period_keys,
         )
         return "\n".join(
@@ -1035,6 +1208,10 @@ class RunManifestWriter:
                 f"- Target org: {manifest.target_org}",
                 f"- Period grain: {manifest.period_grain.value}",
                 f"- Time anchor: {manifest.time_anchor.value}",
+                (
+                    "- Summary scope: "
+                    f"{_time_anchor_context(manifest.time_anchor.value)['description']}"
+                ),
                 f"- Include repos: {_repo_filters_text(_canonical_repo_filters(manifest.include_repos, org=manifest.target_org), empty='all')}",
                 f"- Exclude repos: {_repo_filters_text(_canonical_repo_filters(manifest.exclude_repos, org=manifest.target_org), empty='none')}",
                 f"- Latest manifest: {MANIFEST_FILENAME}",
@@ -1079,7 +1256,42 @@ class RunManifestWriter:
         return header == expected_header
 
     def _write_manifest_file(self, path: Path, manifest: RunManifest) -> None:
-        _write_json_file(path, manifest.model_dump(mode="json"))
+        _write_json_file(path, self._manifest_payload(manifest))
+
+    def _manifest_payload(
+        self,
+        manifest: RunManifest,
+    ) -> dict[str, object]:
+        locked_period_keys = {period.key for period in manifest.locked_periods}
+        payload = manifest.model_dump(mode="json")
+        payload["time_anchor_context"] = _time_anchor_context(manifest.time_anchor.value)
+        payload["refreshed_periods"] = [
+            {
+                **period,
+                **_period_state_payload(
+                    period_grain=manifest.period_grain.value,
+                    start_date=date.fromisoformat(str(period["start_date"])),
+                    end_date=date.fromisoformat(str(period["end_date"])),
+                    closed=bool(period["key"] in locked_period_keys),
+                    as_of=manifest.last_successful_run.as_of,
+                ),
+            }
+            for period in payload["refreshed_periods"]
+        ]
+        payload["locked_periods"] = [
+            {
+                **period,
+                **_period_state_payload(
+                    period_grain=manifest.period_grain.value,
+                    start_date=date.fromisoformat(str(period["start_date"])),
+                    end_date=date.fromisoformat(str(period["end_date"])),
+                    closed=bool(period["closed"]),
+                    as_of=manifest.last_successful_run.as_of,
+                ),
+            }
+            for period in payload["locked_periods"]
+        ]
+        return payload
 
     def _current_time(self) -> datetime:
         return datetime.now(UTC).replace(microsecond=0)
@@ -1209,30 +1421,53 @@ def _remove_directory(path: Path) -> None:
 def _manifest_period_payload(
     period: RawSnapshotPeriod | ReportingPeriod,
     *,
+    period_grain: str,
     closed: bool,
+    as_of: date,
 ) -> dict[str, object]:
     return {
         "key": period.key,
         "start_date": period.start_date.isoformat(),
         "end_date": period.end_date.isoformat(),
         "closed": closed,
+        **_period_state_payload(
+            period_grain=period_grain,
+            start_date=period.start_date,
+            end_date=period.end_date,
+            closed=closed,
+            as_of=as_of,
+        ),
     }
 
 
 def _manifest_period_table_rows(
     periods: Sequence[RawSnapshotPeriod | ReportingPeriod],
     *,
+    period_grain: str,
+    as_of: date,
     closed_period_keys: set[str],
 ) -> list[str]:
     if not periods:
         return ["No periods are available."]
-    rows = ["| Period | Start | End | Closed |", "| --- | --- | --- | --- |"]
+    rows = [
+        "| Period | Start | End | Status | Partial | Observed Through |",
+        "| --- | --- | --- | --- | --- | --- |",
+    ]
     for period in periods:
+        period_state = _period_state_payload(
+            period_grain=period_grain,
+            start_date=period.start_date,
+            end_date=period.end_date,
+            closed=period.key in closed_period_keys,
+            as_of=as_of,
+        )
         rows.append(
             (
                 f"| {period.key} | {period.start_date.isoformat()} | "
                 f"{period.end_date.isoformat()} | "
-                f"{_bool_text(period.key in closed_period_keys)} |"
+                f"{period_state['label']} | "
+                f"{_bool_text(bool(period_state['is_partial']))} | "
+                f"{period_state['observed_through_date']} |"
             )
         )
     return rows
@@ -1260,6 +1495,80 @@ def _bool_text(
     value: bool,
 ) -> str:
     return "true" if value else "false"
+
+
+def _time_anchor_context(
+    time_anchor: str,
+) -> dict[str, str]:
+    scope = _time_anchor_scope(time_anchor)
+    return {
+        "field": time_anchor,
+        "scope": scope,
+        "description": (
+            "All counts and summaries in this file are grouped by "
+            f"{scope}."
+        ),
+    }
+
+
+def _time_anchor_scope(
+    time_anchor: str,
+) -> str:
+    return f"pull_request.{time_anchor}"
+
+
+def _anchored_metric_label(
+    label: str,
+    time_anchor: str,
+) -> str:
+    return f"{label} ({_time_anchor_scope(time_anchor)})"
+
+
+def _period_state_payload(
+    *,
+    period_grain: str,
+    start_date: date,
+    end_date: date,
+    closed: bool,
+    as_of: date,
+) -> dict[str, object]:
+    observed_through_date = _period_observed_through_date(
+        start_date=start_date,
+        end_date=end_date,
+        closed=closed,
+        as_of=as_of,
+    )
+    status = _period_status(closed)
+    return {
+        "status": status,
+        "label": f"{status} {period_grain}",
+        "is_open": not closed,
+        "is_closed": closed,
+        "is_partial": not closed,
+        "observed_through_date": observed_through_date.isoformat(),
+    }
+
+
+def _period_observed_through_date(
+    *,
+    start_date: date,
+    end_date: date,
+    closed: bool,
+    as_of: date,
+) -> date:
+    if closed:
+        return end_date
+    if as_of < start_date:
+        return start_date
+    if as_of > end_date:
+        return end_date
+    return as_of
+
+
+def _period_status(
+    closed: bool,
+) -> str:
+    return "closed" if closed else "open"
 
 
 def _repo_filters_text(

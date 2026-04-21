@@ -250,6 +250,7 @@ class PullRequestMetricRecord(BaseModel):
     author_login: str | None
     merged: bool
     created_at: datetime
+    updated_at: datetime
     review_ready_at: datetime | None
     review_requested_at: datetime | None
     review_started_at: datetime | None
@@ -381,6 +382,32 @@ class OrgSummaryWriteResult(BaseModel):
     latest_markdown_path: Path | None
     latest_json_path: Path | None
     periods: tuple[OrgSummaryPeriodWriteResult, ...]
+
+
+class AnalysisReportPeriodWriteResult(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    key: str
+    start_date: date
+    end_date: date
+    closed: bool
+    directory: Path
+    html_path: Path
+    json_path: Path
+
+
+class AnalysisReportWriteResult(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    target_org: str
+    root_dir: Path
+    contract_path: Path
+    index_path: Path
+    readme_path: Path
+    latest_directory: Path | None
+    latest_html_path: Path | None
+    latest_json_path: Path | None
+    periods: tuple[AnalysisReportPeriodWriteResult, ...]
 
 
 class MetricValidationIssue(BaseModel):

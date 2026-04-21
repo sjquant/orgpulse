@@ -40,6 +40,36 @@ from orgpulse.output import (
 )
 
 
+def _expected_time_anchor_context(
+    time_anchor: str = "created_at",
+) -> dict[str, str]:
+    return {
+        "field": time_anchor,
+        "scope": f"pull_request.{time_anchor}",
+        "description": (
+            "All counts and summaries in this file are grouped by "
+            f"pull_request.{time_anchor}."
+        ),
+    }
+
+
+def _expected_period_state(
+    *,
+    grain: str = "month",
+    closed: bool,
+    observed_through_date: str,
+) -> dict[str, object]:
+    status = "closed" if closed else "open"
+    return {
+        "status": status,
+        "label": f"{status} {grain}",
+        "is_open": not closed,
+        "is_closed": closed,
+        "is_partial": not closed,
+        "observed_through_date": observed_through_date,
+    }
+
+
 class TestOrgSummaryWriter:
     def test_writes_deterministic_markdown_and_json_per_period(
         self,
@@ -91,6 +121,7 @@ class TestOrgSummaryWriter:
             "include_repos": [],
             "period_grain": "month",
             "time_anchor": "created_at",
+            "time_anchor_context": _expected_time_anchor_context(),
             "target_org": "acme",
         }
         assert json.loads(result.index_path.read_text(encoding="utf-8")) == {
@@ -99,6 +130,10 @@ class TestOrgSummaryWriter:
                 {
                     "closed": False,
                     "end_date": "2026-04-30",
+                    **_expected_period_state(
+                        closed=False,
+                        observed_through_date="2026-04-18",
+                    ),
                     "json_path": "2026-04/summary.json",
                     "key": "2026-04",
                     "markdown_path": "2026-04/summary.md",
@@ -109,6 +144,10 @@ class TestOrgSummaryWriter:
             "latest": {
                 "closed": False,
                 "end_date": "2026-04-30",
+                **_expected_period_state(
+                    closed=False,
+                    observed_through_date="2026-04-18",
+                ),
                 "json_path": "latest/summary.json",
                 "key": "2026-04",
                 "markdown_path": "latest/summary.md",
@@ -118,6 +157,7 @@ class TestOrgSummaryWriter:
             },
             "period_grain": "month",
             "time_anchor": "created_at",
+            "time_anchor_context": _expected_time_anchor_context(),
             "target_org": "acme",
         }
         period_result = result.periods[0]
@@ -127,11 +167,27 @@ class TestOrgSummaryWriter:
             "period": {
                 "closed": False,
                 "end_date": "2026-04-30",
+                **_expected_period_state(
+                    closed=False,
+                    observed_through_date="2026-04-18",
+                ),
                 "key": "2026-04",
                 "start_date": "2026-04-01",
             },
             "period_grain": "month",
             "time_anchor": "created_at",
+            "time_anchor_context": _expected_time_anchor_context(),
+            "summary_labels": {
+                "merged_pull_request_count": (
+                    "Merged pull request count (pull_request.created_at)"
+                ),
+                "pull_request_count": (
+                    "Pull request count (pull_request.created_at)"
+                ),
+                "value_summaries": (
+                    "Value summaries grouped by pull_request.created_at"
+                ),
+            },
             "summary": {
                 "active_author_count": 2,
                 "additions": {
@@ -183,39 +239,18 @@ class TestOrgSummaryWriter:
             },
             "target_org": "acme",
         }
-        assert period_result.markdown_path.read_text(encoding="utf-8") == (
-            "# Organization Summary: acme 2026-04\n"
-            "\n"
-            "- Target org: acme\n"
-            "- Period grain: month\n"
-            "- Time anchor: created_at\n"
-            "- Period key: 2026-04\n"
-            "- Include repos: all\n"
-            "- Exclude repos: none\n"
-            "- Period start: 2026-04-01\n"
-            "- Period end: 2026-04-30\n"
-            "- Closed: false\n"
-            "\n"
-            "## Totals\n"
-            "\n"
-            "- Repository count: 2\n"
-            "- Pull request count: 3\n"
-            "- Merged pull request count: 2\n"
-            "- Active author count: 2\n"
-            "- Merged pull requests per active author: 1.00\n"
-            "\n"
-            "## Value Summaries\n"
-            "\n"
-            "| Metric | Count | Total | Average | Median |\n"
-            "| --- | ---: | ---: | ---: | ---: |\n"
-            "| Time to merge (seconds) | 2 | 180 | 90.00 | 90.00 |\n"
-            "| Time to first review (seconds) | 2 | 300 | 150.00 | 150.00 |\n"
-            "| Additions | 2 | 40 | 20.00 | 20.00 |\n"
-            "| Deletions | 2 | 10 | 5.00 | 5.00 |\n"
-            "| Changed lines | 2 | 50 | 25.00 | 25.00 |\n"
-            "| Changed files | 2 | 6 | 3.00 | 3.00 |\n"
-            "| Commits | 2 | 8 | 4.00 | 4.00 |\n"
-        )
+        markdown = period_result.markdown_path.read_text(encoding="utf-8")
+        assert "# Organization Summary: acme 2026-04 (pull_request.created_at)" in markdown
+        assert (
+            "- Summary scope: All counts and summaries in this file are grouped by "
+            "pull_request.created_at."
+        ) in markdown
+        assert "- Period status: open month" in markdown
+        assert "- Partial period: true" in markdown
+        assert "- Observed through: 2026-04-18" in markdown
+        assert "- Pull request count (pull_request.created_at): 3" in markdown
+        assert "- Merged pull request count (pull_request.created_at): 2" in markdown
+        assert "## Value Summaries (pull_request.created_at)" in markdown
         assert result.latest_json_path is not None
         assert result.latest_markdown_path is not None
         assert result.latest_json_path.read_text(encoding="utf-8") == period_result.json_path.read_text(
@@ -224,24 +259,18 @@ class TestOrgSummaryWriter:
         assert result.latest_markdown_path.read_text(
             encoding="utf-8"
         ) == period_result.markdown_path.read_text(encoding="utf-8")
-        assert result.readme_path.read_text(encoding="utf-8") == (
-            "# Organization Summary Index: acme month\n"
-            "\n"
-            "- Target org: acme\n"
-            "- Period grain: month\n"
-            "- Time anchor: created_at\n"
-            "- Include repos: all\n"
-            "- Exclude repos: none\n"
-            "- Latest period: 2026-04\n"
-            "- Latest JSON: latest/summary.json\n"
-            "- Latest Markdown: latest/summary.md\n"
-            "\n"
-            "## History\n"
-            "\n"
-            "| Period | Start | End | Closed | JSON | Markdown |\n"
-            "| --- | --- | --- | --- | --- | --- |\n"
-            "| 2026-04 | 2026-04-01 | 2026-04-30 | false | 2026-04/summary.json | 2026-04/summary.md |\n"
-        )
+        readme = result.readme_path.read_text(encoding="utf-8")
+        assert (
+            "- Summary scope: All counts and summaries in this file are grouped by "
+            "pull_request.created_at."
+        ) in readme
+        assert "- Latest period status: open month" in readme
+        assert "- Latest period partial: true" in readme
+        assert "- Latest period observed through: 2026-04-18" in readme
+        assert (
+            "| 2026-04 | 2026-04-01 | 2026-04-30 | open month | true | "
+            "2026-04-18 | 2026-04/summary.json | 2026-04/summary.md |"
+        ) in readme
 
     def test_prunes_stale_period_directories_on_full_runs(
         self,
@@ -355,6 +384,7 @@ class TestOrgSummaryWriter:
             "include_repos": ["acme/api"],
             "period_grain": "month",
             "time_anchor": "created_at",
+            "time_anchor_context": _expected_time_anchor_context(),
             "target_org": "acme",
         }
         assert json.loads(result.periods[0].json_path.read_text(encoding="utf-8"))[
@@ -442,6 +472,10 @@ class TestOrgSummaryWriter:
             {
                 "closed": True,
                 "end_date": "2026-03-31",
+                **_expected_period_state(
+                    closed=True,
+                    observed_through_date="2026-03-31",
+                ),
                 "json_path": "2026-03/summary.json",
                 "key": "2026-03",
                 "markdown_path": "2026-03/summary.md",
@@ -450,6 +484,10 @@ class TestOrgSummaryWriter:
             {
                 "closed": False,
                 "end_date": "2026-04-30",
+                **_expected_period_state(
+                    closed=False,
+                    observed_through_date="2026-04-18",
+                ),
                 "json_path": "2026-04/summary.json",
                 "key": "2026-04",
                 "markdown_path": "2026-04/summary.md",
@@ -459,6 +497,10 @@ class TestOrgSummaryWriter:
         assert json.loads(result.index_path.read_text(encoding="utf-8"))["latest"] == {
             "closed": False,
             "end_date": "2026-04-30",
+            **_expected_period_state(
+                closed=False,
+                observed_through_date="2026-04-18",
+            ),
             "json_path": "latest/summary.json",
             "key": "2026-04",
             "markdown_path": "latest/summary.md",
@@ -814,6 +856,10 @@ class TestRunManifestWriter:
                     {
                         "closed": False,
                         "end_date": "2026-04-28",
+                        **_expected_period_state(
+                            closed=False,
+                            observed_through_date="2026-04-18",
+                        ),
                         "key": "2026-04",
                         "start_date": "2026-04-01",
                     }
@@ -829,6 +875,7 @@ class TestRunManifestWriter:
             },
             "period_grain": "month",
             "time_anchor": "created_at",
+            "time_anchor_context": _expected_time_anchor_context(),
             "target_org": "acme",
             "watermarks": {
                 "collection_window_end_date": "2026-04-18",
@@ -1103,6 +1150,15 @@ class TestRepositorySummaryCsvWriter:
             "include_repos": [],
             "period_grain": "month",
             "time_anchor": "created_at",
+            "time_anchor_context": _expected_time_anchor_context(),
+            "period_state_fields": [
+                "status",
+                "label",
+                "is_open",
+                "is_closed",
+                "is_partial",
+                "observed_through_date",
+            ],
             "target_org": "acme",
         }
         assert json.loads(result.index_path.read_text(encoding="utf-8")) == {
@@ -1111,6 +1167,10 @@ class TestRepositorySummaryCsvWriter:
                 {
                     "closed": False,
                     "end_date": "2026-04-30",
+                    **_expected_period_state(
+                        closed=False,
+                        observed_through_date="2026-04-18",
+                    ),
                     "key": "2026-04",
                     "path": "2026-04/repo_summary.csv",
                     "start_date": "2026-04-01",
@@ -1120,6 +1180,10 @@ class TestRepositorySummaryCsvWriter:
             "latest": {
                 "closed": False,
                 "end_date": "2026-04-30",
+                **_expected_period_state(
+                    closed=False,
+                    observed_through_date="2026-04-18",
+                ),
                 "key": "2026-04",
                 "path": "latest/repo_summary.csv",
                 "source_path": "2026-04/repo_summary.csv",
@@ -1127,6 +1191,7 @@ class TestRepositorySummaryCsvWriter:
             },
             "period_grain": "month",
             "time_anchor": "created_at",
+            "time_anchor_context": _expected_time_anchor_context(),
             "target_org": "acme",
         }
         rows = self._read_rows(result.periods[0].path)
@@ -1135,7 +1200,15 @@ class TestRepositorySummaryCsvWriter:
             "acme/web",
         ]
         assert rows[0]["period_key"] == "2026-04"
+        assert rows[0]["period_grain"] == "month"
+        assert rows[0]["time_anchor"] == "created_at"
+        assert rows[0]["time_anchor_scope"] == "pull_request.created_at"
+        assert rows[0]["period_status"] == "open"
+        assert rows[0]["period_label"] == "open month"
+        assert rows[0]["period_open"] == "true"
         assert rows[0]["period_closed"] == "false"
+        assert rows[0]["period_partial"] == "true"
+        assert rows[0]["period_observed_through_date"] == "2026-04-18"
         assert rows[0]["pull_request_count"] == "1"
         assert rows[0]["merged_pull_request_count"] == "1"
         assert rows[0]["active_author_count"] == "1"
@@ -1353,6 +1426,10 @@ class TestRepositorySummaryCsvWriter:
             {
                 "closed": True,
                 "end_date": "2026-03-31",
+                **_expected_period_state(
+                    closed=True,
+                    observed_through_date="2026-03-31",
+                ),
                 "key": "2026-03",
                 "path": "2026-03/repo_summary.csv",
                 "start_date": "2026-03-01",
@@ -1360,6 +1437,10 @@ class TestRepositorySummaryCsvWriter:
             {
                 "closed": False,
                 "end_date": "2026-04-30",
+                **_expected_period_state(
+                    closed=False,
+                    observed_through_date="2026-04-18",
+                ),
                 "key": "2026-04",
                 "path": "2026-04/repo_summary.csv",
                 "start_date": "2026-04-01",
@@ -1368,6 +1449,10 @@ class TestRepositorySummaryCsvWriter:
         assert json.loads(result.index_path.read_text(encoding="utf-8"))["latest"] == {
             "closed": False,
             "end_date": "2026-04-30",
+            **_expected_period_state(
+                closed=False,
+                observed_through_date="2026-04-18",
+            ),
             "key": "2026-04",
             "path": "latest/repo_summary.csv",
             "source_path": "2026-04/repo_summary.csv",

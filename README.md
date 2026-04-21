@@ -244,6 +244,32 @@ output/
       summary.md
 ```
 
+## Local Analysis
+
+`orgpulse analyze` reads the local snapshot and manifest outputs and builds
+focused analysis views without refetching GitHub data.
+
+- Supports `period`, `repository`, and `author` groupings
+- Respects `--since`, `--until`, `--time-anchor`, and `--top`
+- Writes JSON, CSV, Markdown, or interactive HTML to stdout
+- HTML output includes shared controls, single-series focus mode, and spike
+  diagnostics such as same-period-created ratio, older-PR ratio, top
+  contributing repositories, top updated dates, and timeline-event breakdowns
+
+Example HTML analysis:
+
+```bash
+uv run orgpulse analyze \
+  --org acme \
+  --grain month \
+  --group-by repository \
+  --time-anchor updated_at \
+  --since 2026-04-01 \
+  --until 2026-04-30 \
+  --format html \
+  --output-dir output > analysis.html
+```
+
 ### Raw snapshots
 
 - `raw/<grain>/<period>/pull_requests.csv`: normalized PR rows

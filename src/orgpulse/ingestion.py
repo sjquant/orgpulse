@@ -31,6 +31,7 @@ from orgpulse.models import (
     RunConfig,
     RunMode,
     TimeAnchor,
+    canonicalize_repo_filter,
     repo_filter_matches,
 )
 from orgpulse.types.github import (
@@ -263,7 +264,21 @@ class NormalizedRawSnapshotWriter:
         collection: PullRequestCollection,
     ) -> tuple[ReportingPeriod, ...]:
         if config.mode is RunMode.INCREMENTAL:
-            return (config.active_period,)
+            periods = self._build_periods_from_pull_requests(config, collection)
+            if not periods:
+                return (config.active_period,)
+            period_index = {period.key: period for period in periods}
+            period_index.setdefault(config.active_period.key, config.active_period)
+            return tuple(
+                period_index[key]
+                for key in sorted(
+                    period_index,
+                    key=lambda period_key: (
+                        period_index[period_key].start_date,
+                        period_key,
+                    ),
+                )
+            )
         if config.mode is RunMode.BACKFILL:
             assert config.backfill_start is not None
             assert config.backfill_end is not None
@@ -881,10 +896,40 @@ class GitHubIngestionService:
             "period_grain": config.period.value,
             "time_anchor": config.time_anchor.value,
             "mode": config.mode.value,
-            "include_repos": list(config.include_repos),
-            "exclude_repos": list(config.exclude_repos),
-            "collection_window": config.collection_window.model_dump(mode="json"),
+            "include_repos": self._canonical_checkpoint_repo_filters(
+                config.include_repos,
+                org=config.org,
+            ),
+            "exclude_repos": self._canonical_checkpoint_repo_filters(
+                config.exclude_repos,
+                org=config.org,
+            ),
+            "collection_window": self._checkpoint_collection_window_contract(config),
         }
+
+    def _canonical_checkpoint_repo_filters(
+        self,
+        repo_filters: tuple[str, ...],
+        *,
+        org: str,
+    ) -> list[str]:
+        return sorted(
+            canonicalize_repo_filter(repo_filter, org=org)
+            for repo_filter in repo_filters
+        )
+
+    def _checkpoint_collection_window_contract(
+        self,
+        config: RunConfig,
+    ) -> dict[str, object]:
+        if config.mode is RunMode.INCREMENTAL:
+            return {
+                "scope": config.collection_window.scope.value,
+                "start_date": None
+                if config.collection_window.start_date is None
+                else config.collection_window.start_date.isoformat(),
+            }
+        return config.collection_window.model_dump(mode="json")
 
     def _stable_repo_checkpoint_key(
         self,
@@ -938,8 +983,9 @@ class GitHubIngestionService:
         window: CollectionWindow,
     ) -> tuple[PullRequestRecord, ...]:
         owner, repository_name = repository.full_name.split("/", 1)
+        collection_time_anchor = self._collection_time_anchor(config)
         pull_request_nodes = self._load_pull_request_nodes_via_graphql(
-            config=config,
+            collection_time_anchor=collection_time_anchor,
             owner=owner,
             repository_name=repository_name,
             window=window,
@@ -955,7 +1001,7 @@ class GitHubIngestionService:
     def _load_pull_request_nodes_via_graphql(
         self,
         *,
-        config: RunConfig,
+        collection_time_anchor: TimeAnchor,
         owner: str,
         repository_name: str,
         window: CollectionWindow,
@@ -966,7 +1012,7 @@ class GitHubIngestionService:
         while True:
             response = self._run_github_operation(
                 call=lambda: self._graphql_query(
-                    time_anchor=config.time_anchor,
+                    time_anchor=collection_time_anchor,
                     owner=owner,
                     repository_name=repository_name,
                     cursor=cursor,
@@ -976,12 +1022,12 @@ class GitHubIngestionService:
             stop_loading = False
             for pull_request_node in pull_request_connection["nodes"]:
                 anchor_on = self._graphql_anchor_date(
-                    config.time_anchor,
+                    collection_time_anchor,
                     pull_request_node,
                 )
                 if not self._pull_request_is_within_window(anchor_on, window):
                     if self._should_stop_loading_pull_requests(
-                        time_anchor=config.time_anchor,
+                        time_anchor=collection_time_anchor,
                         anchor_on=anchor_on,
                         window=window,
                     ):
@@ -1260,17 +1306,19 @@ class GitHubIngestionService:
         repository: GitHubRepositoryLike,
         window: CollectionWindow,
     ) -> tuple[GitHubPullRequestLike, ...]:
+        collection_time_anchor = self._collection_time_anchor(config)
+
         def collect_pull_requests() -> tuple[GitHubPullRequestLike, ...]:
             pull_requests: list[GitHubPullRequestLike] = []
             for pull_request in repository.get_pulls(
                 state="all",
-                sort=config.time_anchor.github_rest_sort(),
+                sort=collection_time_anchor.github_rest_sort(),
                 direction="desc",
             ):
-                anchor_on = self._anchor_date(config.time_anchor, pull_request)
+                anchor_on = self._anchor_date(collection_time_anchor, pull_request)
                 if not self._pull_request_is_within_window(anchor_on, window):
                     if self._should_stop_loading_pull_requests(
-                        time_anchor=config.time_anchor,
+                        time_anchor=collection_time_anchor,
                         anchor_on=anchor_on,
                         window=window,
                     ):
@@ -1347,6 +1395,14 @@ class GitHubIngestionService:
         pull_request: PullRequestRecord,
     ) -> datetime | None:
         return time_anchor.pull_request_datetime(pull_request)
+
+    def _collection_time_anchor(
+        self,
+        config: RunConfig,
+    ) -> TimeAnchor:
+        if config.mode is RunMode.INCREMENTAL:
+            return TimeAnchor.UPDATED_AT
+        return config.time_anchor
 
     def _anchor_date(
         self,

@@ -1708,6 +1708,178 @@ class TestRunCommandRuntime:
         ]
         assert all(period["valid"] for period in payload["metric_validation"]["periods"])
 
+    def test_refreshes_cross_period_created_at_outputs_on_incremental_runs(
+        self,
+        runner: CliRunner,
+        github_auth_service: None,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path,
+    ) -> None:
+        """Refresh prior created-at periods when incremental collection updates an older pull request."""
+        # Given
+        previous_config = build_run_config(
+            org="acme",
+            as_of="2026-03-31",
+            output_dir=tmp_path,
+        )
+        previous_pull_request = PullRequestRecord(
+            repository_full_name="acme/api",
+            number=31,
+            title="Still open at month end",
+            state="open",
+            draft=False,
+            merged=False,
+            author_login="alice",
+            created_at=datetime.fromisoformat("2026-03-31T22:00:00"),
+            updated_at=datetime.fromisoformat("2026-03-31T22:00:00"),
+            closed_at=None,
+            merged_at=None,
+            additions=14,
+            deletions=2,
+            changed_files=3,
+            commits=2,
+            html_url="https://example.test/pr/31",
+        )
+        previous_collection = PullRequestCollection(
+            window=previous_config.collection_window,
+            pull_requests=(previous_pull_request,),
+            failures=(),
+        )
+        previous_snapshot = NormalizedRawSnapshotWriter().write(
+            previous_config,
+            previous_collection,
+        )
+        RunManifestWriter(
+            now=lambda: datetime.fromisoformat("2026-03-31T00:00:00+00:00")
+        ).write(
+            previous_config,
+            previous_collection,
+            previous_snapshot,
+            repository_count=1,
+        )
+        previous_pull_request_metrics = PullRequestMetricCollectionBuilder().build(
+            previous_config,
+            previous_snapshot,
+        )
+        RepositorySummaryCsvWriter().write(
+            previous_config,
+            RepositoryMetricCollectionBuilder().build(
+                previous_config,
+                previous_pull_request_metrics,
+            ),
+            refreshed_period_keys=tuple(period.key for period in previous_snapshot.periods),
+        )
+        OrgSummaryWriter().write(
+            previous_config,
+            OrganizationMetricCollectionBuilder().build(
+                previous_config,
+                previous_pull_request_metrics,
+            ),
+            refreshed_period_keys=tuple(period.key for period in previous_snapshot.periods),
+        )
+        march_summary_path = (
+            tmp_path / "org_summary" / "month" / "created_at" / "2026-03" / "summary.json"
+        )
+        assert (
+            json.loads(march_summary_path.read_text(encoding="utf-8"))["summary"][
+                "merged_pull_request_count"
+            ]
+            == 0
+        )
+        current_pull_request = PullRequestRecord(
+            repository_full_name="acme/api",
+            number=31,
+            title="Merged after month end",
+            state="closed",
+            draft=False,
+            merged=True,
+            author_login="alice",
+            created_at=datetime.fromisoformat("2026-03-31T22:00:00"),
+            updated_at=datetime.fromisoformat("2026-04-12T09:00:00"),
+            closed_at=datetime.fromisoformat("2026-04-12T09:00:00"),
+            merged_at=datetime.fromisoformat("2026-04-12T09:00:00"),
+            additions=14,
+            deletions=2,
+            changed_files=3,
+            commits=2,
+            html_url="https://example.test/pr/31",
+        )
+        inventory = RepositoryInventory(
+            organization_login="acme",
+            repositories=(),
+        )
+        collection = PullRequestCollection(
+            window=CollectionWindow(
+                scope=RunScope.OPEN_PERIOD,
+                start_date=datetime.fromisoformat("2026-04-01T00:00:00").date(),
+                end_date=datetime.fromisoformat("2026-04-18T00:00:00").date(),
+            ),
+            pull_requests=(current_pull_request,),
+            failures=(),
+        )
+        monkeypatch.setattr(
+            "orgpulse.cli.GitHubIngestionService",
+            lambda github_client: FakeCliIngestionService(
+                inventory=inventory,
+                collection=collection,
+            ),
+        )
+        monkeypatch.setattr(
+            "orgpulse.cli.NormalizedRawSnapshotWriter",
+            lambda: NormalizedRawSnapshotWriter(),
+        )
+        monkeypatch.setattr(
+            "orgpulse.cli.RunManifestWriter",
+            lambda: RunManifestWriter(
+                now=lambda: datetime.fromisoformat("2026-04-18T00:00:00+00:00")
+            ),
+        )
+        monkeypatch.setattr(
+            "orgpulse.cli.OrgSummaryWriter",
+            lambda: OrgSummaryWriter(),
+        )
+        monkeypatch.setattr(
+            "orgpulse.cli.RepositorySummaryCsvWriter",
+            lambda: RepositorySummaryCsvWriter(),
+        )
+
+        # When
+        result = runner.invoke(
+            app,
+            [
+                "run",
+                "--org",
+                "acme",
+                "--as-of",
+                "2026-04-18",
+                "--output-dir",
+                str(tmp_path),
+            ],
+        )
+
+        # Then
+        assert result.exit_code == 0
+        payload = json.loads(result.stdout)
+        assert [period["key"] for period in payload["raw_snapshot"]["periods"]] == [
+            "2026-03",
+            "2026-04",
+        ]
+        assert [period["key"] for period in payload["manifest"]["refreshed_periods"]] == [
+            "2026-03",
+            "2026-04",
+        ]
+        assert [period["key"] for period in payload["repo_summary"]["periods"]] == [
+            "2026-03",
+            "2026-04",
+        ]
+        assert [period["key"] for period in payload["org_summary"]["periods"]] == [
+            "2026-03",
+            "2026-04",
+        ]
+        march_summary = json.loads(march_summary_path.read_text(encoding="utf-8"))
+        assert march_summary["summary"]["merged_pull_request_count"] == 1
+        assert march_summary["summary"]["pull_request_count"] == 1
+
     def test_recalculates_only_requested_closed_period_outputs_on_backfill_runs(
         self,
         runner: CliRunner,

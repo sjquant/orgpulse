@@ -85,7 +85,7 @@ def run_command(
         RunMode | None,
         typer.Option(
             "--mode",
-            help="Run strategy: full rebuild ignores locks, incremental refreshes the current open period, and backfill refreshes an explicit closed-period range. Falls back to ORGPULSE_MODE.",
+            help="Run strategy: full rebuild ignores locks, incremental refreshes pull requests updated during the current open period, and backfill refreshes an explicit closed-period range. Falls back to ORGPULSE_MODE.",
         ),
     ] = None,
     time_anchor: Annotated[

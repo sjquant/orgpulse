@@ -921,6 +921,7 @@ class TestGitHubIngestionService:
         config = self._build_run_config(
             as_of="2026-04-18",
             output_dir=tmp_path,
+            include_repos=["api", "acme/web"],
         )
         inventory = RepositoryInventory(
             organization_login="acme",
@@ -932,6 +933,11 @@ class TestGitHubIngestionService:
 
         # When
         first_result = first_service.fetch_pull_requests(config, inventory)
+        second_config = self._build_run_config(
+            as_of="2026-04-19",
+            output_dir=tmp_path,
+            include_repos=["acme/api", "web"],
+        )
         second_service = GitHubIngestionService(
             cast(
                 GitHubIngestionClientLike,
@@ -955,7 +961,7 @@ class TestGitHubIngestionService:
                 ),
             )
         )
-        second_result = second_service.fetch_pull_requests(config, inventory)
+        second_result = second_service.fetch_pull_requests(second_config, inventory)
 
         # Then
         assert [pull_request.repository_full_name for pull_request in first_result.pull_requests] == [
@@ -985,12 +991,11 @@ class TestGitHubIngestionService:
             "completed_repositories": ["acme/api", "acme/web"],
             "contract": {
                 "collection_window": {
-                    "end_date": "2026-04-18",
                     "scope": "open_period",
                     "start_date": "2026-04-01",
                 },
                 "exclude_repos": [],
-                "include_repos": [],
+                "include_repos": ["acme/api", "acme/web"],
                 "mode": "incremental",
                 "period_grain": "month",
                 "target_org": "acme",
@@ -1118,6 +1123,64 @@ class TestGitHubIngestionService:
                 "requested_team_name": "",
             }
         ]
+
+    def test_refreshes_prior_anchor_periods_during_incremental_created_at_runs(
+        self,
+        tmp_path,
+    ) -> None:
+        """Refresh anchor periods touched by incremental updates while still keeping the active period output."""
+        # Given
+        writer = NormalizedRawSnapshotWriter()
+        config = self._build_run_config(
+            as_of="2026-04-18",
+            output_dir=tmp_path,
+        )
+        collection = PullRequestCollection(
+            window=config.collection_window,
+            pull_requests=(
+                self._build_pull_request_record(
+                    number=20,
+                    updated_at="2026-04-12T09:00:00",
+                    created_at="2026-03-31T23:00:00",
+                ),
+            ),
+            failures=(),
+        )
+
+        # When
+        result = writer.write(config, collection)
+
+        # Then
+        assert [period.key for period in result.periods] == ["2026-03", "2026-04"]
+        assert self._read_csv_rows(
+            tmp_path / "raw" / "month" / "created_at" / "2026-03" / "pull_requests.csv"
+        ) == [
+            {
+                "period_key": "2026-03",
+                "repository_full_name": "acme/api",
+                "pull_request_number": "20",
+                "title": "PR 20",
+                "state": "closed",
+                "draft": "False",
+                "merged": "True",
+                "author_login": "alice",
+                "created_at": "2026-03-31T23:00:00",
+                "updated_at": "2026-04-12T09:00:00",
+                "closed_at": "2026-04-12T09:00:00",
+                "merged_at": "2026-04-12T09:00:00",
+                "additions": "12",
+                "deletions": "4",
+                "changed_files": "3",
+                "commits": "2",
+                "html_url": "https://example.test/pr/20",
+            }
+        ]
+        assert (
+            self._read_csv_rows(
+                tmp_path / "raw" / "month" / "created_at" / "2026-04" / "pull_requests.csv"
+            )
+            == []
+        )
 
     def test_writes_empty_backfill_snapshots_for_requested_periods_without_rows(
         self,
@@ -1445,12 +1508,18 @@ class TestGitHubIngestionService:
         *,
         number: int,
         updated_at: str,
+        created_at: str | None = None,
         title: str | None = None,
         reviews: tuple[PullRequestReviewRecord, ...] = (),
         timeline_events: tuple[PullRequestTimelineEventRecord, ...] = (),
     ) -> PullRequestRecord:
         """Build a deterministic pull request record for snapshot rerun tests."""
-        timestamp = datetime.fromisoformat(updated_at)
+        updated_timestamp = datetime.fromisoformat(updated_at)
+        created_timestamp = (
+            updated_timestamp
+            if created_at is None
+            else datetime.fromisoformat(created_at)
+        )
         return PullRequestRecord(
             repository_full_name="acme/api",
             number=number,
@@ -1459,10 +1528,10 @@ class TestGitHubIngestionService:
             draft=False,
             merged=True,
             author_login="alice",
-            created_at=timestamp,
-            updated_at=timestamp,
-            closed_at=timestamp,
-            merged_at=timestamp,
+            created_at=created_timestamp,
+            updated_at=updated_timestamp,
+            closed_at=updated_timestamp,
+            merged_at=updated_timestamp,
             additions=12,
             deletions=4,
             changed_files=3,
@@ -1562,11 +1631,17 @@ class TestGitHubIngestionService:
         *,
         number: int,
         updated_at: str,
+        created_at: str | None = None,
         review_outcomes: list[ReviewFetchOutcome] | None = None,
         timeline_outcomes: list[TimelineFetchOutcome] | None = None,
     ) -> FakePullRequest:
         """Build a fake pull request object with deterministic metric fields."""
-        timestamp = datetime.fromisoformat(updated_at)
+        updated_timestamp = datetime.fromisoformat(updated_at)
+        created_timestamp = (
+            updated_timestamp
+            if created_at is None
+            else datetime.fromisoformat(created_at)
+        )
         return FakePullRequest(
             number=number,
             title=f"PR {number}",
@@ -1574,10 +1649,10 @@ class TestGitHubIngestionService:
             draft=False,
             merged=True,
             user=FakeActor(login="alice"),
-            created_at=timestamp,
-            updated_at=timestamp,
-            closed_at=timestamp,
-            merged_at=timestamp,
+            created_at=created_timestamp,
+            updated_at=updated_timestamp,
+            closed_at=updated_timestamp,
+            merged_at=updated_timestamp,
             additions=12,
             deletions=4,
             changed_files=3,

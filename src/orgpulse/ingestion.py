@@ -1,14 +1,16 @@
 from __future__ import annotations
 
 import csv
+import hashlib
 import shutil
 import time
 from collections.abc import Callable
 from datetime import date, datetime, timedelta
 from pathlib import Path
-from typing import TypeVar, cast
+from typing import Any, TypeVar, cast
 
 from github import Github, GithubException
+from requests.exceptions import RequestException
 
 from orgpulse.errors import GitHubApiError
 from orgpulse.models import (
@@ -26,6 +28,7 @@ from orgpulse.models import (
     RepositoryInventoryItem,
     RunConfig,
     RunMode,
+    TimeAnchor,
     repo_filter_matches,
 )
 from orgpulse.types.github import (
@@ -35,6 +38,7 @@ from orgpulse.types.github import (
     GitHubPullRequestLike,
     GitHubRepositoryLike,
     GitHubTeamLike,
+    GraphQLRequesterLike,
 )
 
 DEFAULT_MAX_RETRIES = 2
@@ -91,6 +95,120 @@ FIRST_REVIEW_TIMELINE_EVENTS = frozenset(
         "review_requested",
     }
 )
+PULL_REQUEST_GRAPHQL_QUERY_TEMPLATE = """
+query($owner: String!, $name: String!, $after: String) {
+  repository(owner: $owner, name: $name) {
+    pullRequests(
+      first: 50
+      after: $after
+      orderBy: {field: __ORDER_FIELD__, direction: DESC}
+    ) {
+      pageInfo {
+        hasNextPage
+        endCursor
+      }
+      nodes {
+        number
+        title
+        updatedAt
+        createdAt
+        closedAt
+        mergedAt
+        state
+        isDraft
+        additions
+        deletions
+        changedFiles
+        commits {
+          totalCount
+        }
+        url
+        author {
+          login
+        }
+        reviews(first: 50) {
+          pageInfo {
+            hasNextPage
+          }
+          nodes {
+            databaseId
+            state
+            submittedAt
+            author {
+              login
+            }
+            commit {
+              oid
+            }
+          }
+        }
+        timelineItems(
+          first: 50
+          itemTypes: [
+            REVIEW_REQUESTED_EVENT
+            REVIEW_REQUEST_REMOVED_EVENT
+            READY_FOR_REVIEW_EVENT
+            CONVERT_TO_DRAFT_EVENT
+          ]
+        ) {
+          pageInfo {
+            hasNextPage
+          }
+          nodes {
+            __typename
+            ... on ReviewRequestedEvent {
+              id
+              createdAt
+              actor {
+                login
+              }
+              requestedReviewer {
+                __typename
+                ... on User {
+                  login
+                }
+                ... on Team {
+                  name
+                }
+              }
+            }
+            ... on ReviewRequestRemovedEvent {
+              id
+              createdAt
+              actor {
+                login
+              }
+              requestedReviewer {
+                __typename
+                ... on User {
+                  login
+                }
+                ... on Team {
+                  name
+                }
+              }
+            }
+            ... on ReadyForReviewEvent {
+              id
+              createdAt
+              actor {
+                login
+              }
+            }
+            ... on ConvertToDraftEvent {
+              id
+              createdAt
+              actor {
+                login
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+"""
 SnapshotRow = dict[str, str | int | bool | None]
 T = TypeVar("T")
 
@@ -103,7 +221,11 @@ class NormalizedRawSnapshotWriter:
         config: RunConfig,
         collection: PullRequestCollection,
     ) -> RawSnapshotWriteResult:
-        root_dir = self._raw_snapshot_root_dir(config.output_dir, config.period.value)
+        root_dir = self._raw_snapshot_root_dir(
+            config.output_dir,
+            config.period.value,
+            config.time_anchor.value,
+        )
         snapshot_periods = self._build_snapshot_periods(config, collection)
         self._prune_stale_period_directories(
             config=config,
@@ -176,8 +298,15 @@ class NormalizedRawSnapshotWriter:
     ) -> tuple[ReportingPeriod, ...]:
         start_dates = sorted(
             {
-                config.period.start_for(pull_request.updated_at.date())
+                config.period.start_for(anchor_at.date())
                 for pull_request in collection.pull_requests
+                if (
+                    anchor_at := self._anchor_datetime(
+                        config.time_anchor,
+                        pull_request,
+                    )
+                )
+                is not None
             }
         )
         return tuple(
@@ -268,8 +397,13 @@ class NormalizedRawSnapshotWriter:
             timeline_event_count=len(timeline_event_rows),
         )
 
-    def _raw_snapshot_root_dir(self, output_dir: Path, period_grain: str) -> Path:
-        return output_dir / RAW_SNAPSHOT_DIRNAME / period_grain
+    def _raw_snapshot_root_dir(
+        self,
+        output_dir: Path,
+        period_grain: str,
+        time_anchor: str,
+    ) -> Path:
+        return output_dir / RAW_SNAPSHOT_DIRNAME / period_grain / time_anchor
 
     def _group_pull_requests_by_period(
         self,
@@ -278,12 +412,22 @@ class NormalizedRawSnapshotWriter:
     ) -> dict[str, tuple[PullRequestRecord, ...]]:
         grouped_pull_requests: dict[str, list[PullRequestRecord]] = {}
         for pull_request in pull_requests:
-            period_key = config.period.key_for(pull_request.updated_at.date())
+            anchor_at = self._anchor_datetime(config.time_anchor, pull_request)
+            if anchor_at is None:
+                continue
+            period_key = config.period.key_for(anchor_at.date())
             grouped_pull_requests.setdefault(period_key, []).append(pull_request)
         return {
             period_key: tuple(period_pull_requests)
             for period_key, period_pull_requests in grouped_pull_requests.items()
         }
+
+    def _anchor_datetime(
+        self,
+        time_anchor: TimeAnchor,
+        pull_request: PullRequestRecord,
+    ) -> datetime | None:
+        return time_anchor.pull_request_datetime(pull_request)
 
     def _pull_request_row(
         self, period_key: str, pull_request: PullRequestRecord
@@ -388,6 +532,8 @@ class GitHubIngestionService:
         now: Callable[[], float] = time.time,
     ) -> None:
         self._github_client = github_client
+        requester = github_client.requester
+        self._graphql_requester: GraphQLRequesterLike | None = requester
         self._max_retries = max_retries
         self._retry_backoff_seconds = retry_backoff_seconds
         self._sleep = sleep
@@ -401,6 +547,10 @@ class GitHubIngestionService:
         except GithubException as exc:
             raise GitHubApiError(
                 f"GitHub API request failed while loading repositories for '{config.org}': {self._message_for_exception(exc)}"
+            ) from exc
+        except RequestException as exc:
+            raise GitHubApiError(
+                f"GitHub API request failed while loading repositories for '{config.org}': {exc}"
             ) from exc
 
         return RepositoryInventory(
@@ -488,11 +638,12 @@ class GitHubIngestionService:
             try:
                 pull_requests.extend(
                     self._fetch_repository_pull_requests(
+                        config=config,
                         repository_full_name=repository.full_name,
                         window=window,
                     )
                 )
-            except GithubException as exc:
+            except (GithubException, RequestException) as exc:
                 failures.append(
                     self._build_collection_failure(
                         repository_full_name=repository.full_name,
@@ -508,7 +659,11 @@ class GitHubIngestionService:
                     pull_requests,
                     key=lambda pull_request: (
                         pull_request.repository_full_name,
-                        pull_request.updated_at,
+                        self._anchor_datetime(
+                            config.time_anchor,
+                            pull_request,
+                        )
+                        or pull_request.updated_at,
                         pull_request.number,
                     ),
                 )
@@ -519,11 +674,12 @@ class GitHubIngestionService:
     def _fetch_repository_pull_requests(
         self,
         *,
+        config: RunConfig,
         repository_full_name: str,
         window: CollectionWindow,
     ) -> tuple[PullRequestRecord, ...]:
         repository = self._load_repository(repository_full_name)
-        return self._load_pull_requests(repository, window)
+        return self._load_pull_requests(config, repository, window)
 
     def _load_repository(self, repository_full_name: str) -> GitHubRepositoryLike:
         return cast(
@@ -535,10 +691,14 @@ class GitHubIngestionService:
 
     def _load_pull_requests(
         self,
+        config: RunConfig,
         repository: GitHubRepositoryLike,
         window: CollectionWindow,
     ) -> tuple[PullRequestRecord, ...]:
-        pull_requests = self._load_pull_request_nodes(repository, window)
+        if self._graphql_requester is not None:
+            return self._load_pull_requests_via_graphql(config, repository, window)
+
+        pull_requests = self._load_pull_request_nodes(config, repository, window)
         return tuple(
             self._build_pull_request_record(
                 repository_full_name=repository.full_name,
@@ -547,21 +707,347 @@ class GitHubIngestionService:
             for pull_request in pull_requests
         )
 
+    def _load_pull_requests_via_graphql(
+        self,
+        config: RunConfig,
+        repository: GitHubRepositoryLike,
+        window: CollectionWindow,
+    ) -> tuple[PullRequestRecord, ...]:
+        owner, repository_name = repository.full_name.split("/", 1)
+        pull_request_nodes = self._load_pull_request_nodes_via_graphql(
+            config=config,
+            owner=owner,
+            repository_name=repository_name,
+            window=window,
+        )
+        return tuple(
+            self._build_graphql_pull_request_record(
+                repository=repository,
+                pull_request_node=pull_request_node,
+            )
+            for pull_request_node in pull_request_nodes
+        )
+
+    def _load_pull_request_nodes_via_graphql(
+        self,
+        *,
+        config: RunConfig,
+        owner: str,
+        repository_name: str,
+        window: CollectionWindow,
+    ) -> tuple[dict[str, Any], ...]:
+        pull_requests: list[dict[str, Any]] = []
+        cursor: str | None = None
+
+        while True:
+            response = self._run_github_operation(
+                call=lambda: self._graphql_query(
+                    time_anchor=config.time_anchor,
+                    owner=owner,
+                    repository_name=repository_name,
+                    cursor=cursor,
+                ),
+            )
+            pull_request_connection = response["data"]["repository"]["pullRequests"]
+            stop_loading = False
+            for pull_request_node in pull_request_connection["nodes"]:
+                anchor_on = self._graphql_anchor_date(
+                    config.time_anchor,
+                    pull_request_node,
+                )
+                if not self._pull_request_is_within_window(anchor_on, window):
+                    if self._should_stop_loading_pull_requests(
+                        time_anchor=config.time_anchor,
+                        anchor_on=anchor_on,
+                        window=window,
+                    ):
+                        stop_loading = True
+                        break
+                    continue
+                pull_requests.append(pull_request_node)
+
+            if stop_loading or not pull_request_connection["pageInfo"]["hasNextPage"]:
+                break
+            cursor = pull_request_connection["pageInfo"]["endCursor"]
+
+        return tuple(pull_requests)
+
+    def _graphql_query(
+        self,
+        *,
+        time_anchor: TimeAnchor,
+        owner: str,
+        repository_name: str,
+        cursor: str | None,
+    ) -> dict[str, Any]:
+        assert self._graphql_requester is not None
+        graphql_query = PULL_REQUEST_GRAPHQL_QUERY_TEMPLATE.replace(
+            "__ORDER_FIELD__",
+            time_anchor.github_graphql_order_field(),
+        )
+        _, response = self._graphql_requester.graphql_query(
+            graphql_query,
+            {
+                "owner": owner,
+                "name": repository_name,
+                "after": cursor,
+            },
+        )
+        return response
+
+    def _build_graphql_pull_request_record(
+        self,
+        *,
+        repository: GitHubRepositoryLike,
+        pull_request_node: dict[str, Any],
+    ) -> PullRequestRecord:
+        if self._graphql_pull_request_requires_rest_fallback(pull_request_node):
+            pull_request = self._load_pull_request_by_number(
+                repository,
+                pull_request_number=pull_request_node["number"],
+            )
+            return self._build_pull_request_record(
+                repository_full_name=repository.full_name,
+                pull_request=pull_request,
+            )
+
+        merged_at = self._optional_graphql_datetime(pull_request_node["mergedAt"])
+        state, merged = self._graphql_pull_request_state(
+            pull_request_node["state"],
+            merged_at=merged_at,
+        )
+        return PullRequestRecord(
+            repository_full_name=repository.full_name,
+            number=pull_request_node["number"],
+            title=pull_request_node["title"],
+            state=state,
+            draft=pull_request_node["isDraft"],
+            merged=merged,
+            author_login=self._graphql_actor_login(pull_request_node.get("author")),
+            created_at=self._parse_graphql_datetime(pull_request_node["createdAt"]),
+            updated_at=self._parse_graphql_datetime(pull_request_node["updatedAt"]),
+            closed_at=self._optional_graphql_datetime(pull_request_node["closedAt"]),
+            merged_at=merged_at,
+            additions=pull_request_node["additions"],
+            deletions=pull_request_node["deletions"],
+            changed_files=pull_request_node["changedFiles"],
+            commits=pull_request_node["commits"]["totalCount"],
+            html_url=pull_request_node["url"],
+            reviews=self._build_graphql_reviews(pull_request_node["reviews"]["nodes"]),
+            timeline_events=self._build_graphql_timeline_events(
+                pull_request_node["timelineItems"]["nodes"]
+            ),
+        )
+
+    def _graphql_pull_request_requires_rest_fallback(
+        self,
+        pull_request_node: dict[str, Any],
+    ) -> bool:
+        return (
+            pull_request_node["reviews"]["pageInfo"]["hasNextPage"]
+            or pull_request_node["timelineItems"]["pageInfo"]["hasNextPage"]
+        )
+
+    def _load_pull_request_by_number(
+        self,
+        repository: GitHubRepositoryLike,
+        *,
+        pull_request_number: int,
+    ) -> GitHubPullRequestLike:
+        return self._run_github_operation(
+            call=lambda: repository.get_pull(pull_request_number),
+        )
+
+    def _graphql_pull_request_state(
+        self,
+        graphql_state: str,
+        *,
+        merged_at: datetime | None,
+    ) -> tuple[str, bool]:
+        if merged_at is not None or graphql_state == "MERGED":
+            return "closed", True
+        if graphql_state == "OPEN":
+            return "open", False
+        return "closed", False
+
+    def _build_graphql_reviews(
+        self,
+        review_nodes: list[dict[str, Any]],
+    ) -> tuple[PullRequestReviewRecord, ...]:
+        reviews = [
+            PullRequestReviewRecord(
+                review_id=review_node["databaseId"],
+                state=review_node["state"],
+                author_login=self._graphql_actor_login(review_node.get("author")),
+                submitted_at=self._optional_graphql_datetime(
+                    review_node["submittedAt"]
+                ),
+                commit_id=self._graphql_commit_oid(review_node.get("commit")),
+            )
+            for review_node in review_nodes
+        ]
+        return tuple(
+            sorted(
+                reviews,
+                key=lambda review: (
+                    review.submitted_at.isoformat() if review.submitted_at else "",
+                    review.review_id,
+                ),
+            )
+        )
+
+    def _graphql_commit_oid(
+        self,
+        commit_node: dict[str, Any] | None,
+    ) -> str | None:
+        if commit_node is None:
+            return None
+        commit_oid = commit_node.get("oid")
+        if isinstance(commit_oid, str):
+            return commit_oid
+        return None
+
+    def _build_graphql_timeline_events(
+        self,
+        timeline_nodes: list[dict[str, Any]],
+    ) -> tuple[PullRequestTimelineEventRecord, ...]:
+        timeline_events = [
+            PullRequestTimelineEventRecord(
+                event_id=self._graphql_timeline_event_id(timeline_node),
+                event=self._graphql_timeline_event_name(timeline_node["__typename"]),
+                actor_login=self._graphql_actor_login(timeline_node.get("actor")),
+                created_at=self._optional_graphql_datetime(timeline_node["createdAt"]),
+                requested_reviewer_login=self._graphql_requested_reviewer_login(
+                    timeline_node.get("requestedReviewer")
+                ),
+                requested_team_name=self._graphql_requested_team_name(
+                    timeline_node.get("requestedReviewer")
+                ),
+            )
+            for timeline_node in timeline_nodes
+        ]
+        return tuple(
+            sorted(
+                timeline_events,
+                key=lambda timeline_event: (
+                    timeline_event.created_at.isoformat()
+                    if timeline_event.created_at
+                    else "",
+                    timeline_event.event,
+                    timeline_event.event_id,
+                ),
+            )
+        )
+
+    def _graphql_timeline_event_id(
+        self,
+        timeline_node: dict[str, Any],
+    ) -> int:
+        node_id = timeline_node.get("id")
+        if isinstance(node_id, str):
+            return self._stable_int_id(node_id)
+        event_signature = "|".join(
+            str(value)
+            for value in (
+                timeline_node.get("__typename"),
+                timeline_node.get("createdAt"),
+                self._graphql_actor_login(timeline_node.get("actor")),
+                self._graphql_requested_reviewer_login(
+                    timeline_node.get("requestedReviewer")
+                ),
+                self._graphql_requested_team_name(timeline_node.get("requestedReviewer")),
+            )
+        )
+        return self._stable_int_id(event_signature)
+
+    def _stable_int_id(
+        self,
+        value: str,
+    ) -> int:
+        return int.from_bytes(
+            hashlib.blake2b(value.encode("utf-8"), digest_size=8).digest(),
+            byteorder="big",
+        )
+
+    def _graphql_timeline_event_name(
+        self,
+        typename: str,
+    ) -> str:
+        if typename == "ReviewRequestedEvent":
+            return "review_requested"
+        if typename == "ReviewRequestRemovedEvent":
+            return "review_request_removed"
+        if typename == "ReadyForReviewEvent":
+            return "ready_for_review"
+        if typename == "ConvertToDraftEvent":
+            return "converted_to_draft"
+        raise AssertionError(f"unsupported GraphQL timeline event type: {typename}")
+
+    def _graphql_actor_login(
+        self,
+        actor_node: dict[str, Any] | None,
+    ) -> str | None:
+        if actor_node is None:
+            return None
+        actor_login = actor_node.get("login")
+        if isinstance(actor_login, str):
+            return actor_login
+        return None
+
+    def _graphql_requested_reviewer_login(
+        self,
+        reviewer_node: dict[str, Any] | None,
+    ) -> str | None:
+        if reviewer_node is None or reviewer_node.get("__typename") != "User":
+            return None
+        reviewer_login = reviewer_node.get("login")
+        if isinstance(reviewer_login, str):
+            return reviewer_login
+        return None
+
+    def _graphql_requested_team_name(
+        self,
+        reviewer_node: dict[str, Any] | None,
+    ) -> str | None:
+        if reviewer_node is None or reviewer_node.get("__typename") != "Team":
+            return None
+        team_name = reviewer_node.get("name")
+        if isinstance(team_name, str):
+            return team_name
+        return None
+
+    def _parse_graphql_datetime(
+        self,
+        value: str,
+    ) -> datetime:
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+
+    def _optional_graphql_datetime(
+        self,
+        value: str | None,
+    ) -> datetime | None:
+        if value is None:
+            return None
+        return self._parse_graphql_datetime(value)
+
     def _load_pull_request_nodes(
         self,
+        config: RunConfig,
         repository: GitHubRepositoryLike,
         window: CollectionWindow,
     ) -> tuple[GitHubPullRequestLike, ...]:
         def collect_pull_requests() -> tuple[GitHubPullRequestLike, ...]:
             pull_requests: list[GitHubPullRequestLike] = []
             for pull_request in repository.get_pulls(
-                state="all", sort="updated", direction="desc"
+                state="all",
+                sort=config.time_anchor.github_rest_sort(),
+                direction="desc",
             ):
-                if not self._pull_request_is_within_window(
-                    pull_request.updated_at.date(), window
-                ):
+                anchor_on = self._anchor_date(config.time_anchor, pull_request)
+                if not self._pull_request_is_within_window(anchor_on, window):
                     if self._should_stop_loading_pull_requests(
-                        updated_on=pull_request.updated_at.date(),
+                        time_anchor=config.time_anchor,
+                        anchor_on=anchor_on,
                         window=window,
                     ):
                         break
@@ -574,21 +1060,31 @@ class GitHubIngestionService:
         )
 
     def _pull_request_is_within_window(
-        self, updated_on: date, window: CollectionWindow
+        self,
+        anchor_on: date | None,
+        window: CollectionWindow,
     ) -> bool:
-        if updated_on > window.end_date:
+        if anchor_on is None:
+            return False
+        if anchor_on > window.end_date:
             return False
         if window.start_date is None:
             return True
-        return updated_on >= window.start_date
+        return anchor_on >= window.start_date
 
     def _should_stop_loading_pull_requests(
         self,
         *,
-        updated_on: date,
+        time_anchor: TimeAnchor,
+        anchor_on: date | None,
         window: CollectionWindow,
     ) -> bool:
-        return window.start_date is not None and updated_on < window.start_date
+        return (
+            time_anchor.supports_early_stop()
+            and window.start_date is not None
+            and anchor_on is not None
+            and anchor_on < window.start_date
+        )
 
     def _build_pull_request_record(
         self,
@@ -620,6 +1116,40 @@ class GitHubIngestionService:
             reviews=reviews,
             timeline_events=timeline_events,
         )
+
+    def _anchor_datetime(
+        self,
+        time_anchor: TimeAnchor,
+        pull_request: PullRequestRecord,
+    ) -> datetime | None:
+        return time_anchor.pull_request_datetime(pull_request)
+
+    def _anchor_date(
+        self,
+        time_anchor: TimeAnchor,
+        pull_request: GitHubPullRequestLike,
+    ) -> date | None:
+        if time_anchor is TimeAnchor.CREATED_AT:
+            return pull_request.created_at.date()
+        if time_anchor is TimeAnchor.UPDATED_AT:
+            return pull_request.updated_at.date()
+        if pull_request.merged_at is None:
+            return None
+        return pull_request.merged_at.date()
+
+    def _graphql_anchor_date(
+        self,
+        time_anchor: TimeAnchor,
+        pull_request_node: dict[str, Any],
+    ) -> date | None:
+        if time_anchor is TimeAnchor.CREATED_AT:
+            return self._parse_graphql_datetime(pull_request_node["createdAt"]).date()
+        if time_anchor is TimeAnchor.UPDATED_AT:
+            return self._parse_graphql_datetime(pull_request_node["updatedAt"]).date()
+        merged_at = self._optional_graphql_datetime(pull_request_node["mergedAt"])
+        if merged_at is None:
+            return None
+        return merged_at.date()
 
     def _load_pull_request_reviews(
         self,
@@ -662,12 +1192,10 @@ class GitHubIngestionService:
                     event=timeline_event.event,
                     actor_login=self._login_for(timeline_event.actor),
                     created_at=timeline_event.created_at,
-                    requested_reviewer_login=self._login_for(
-                        timeline_event.requested_reviewer
+                    requested_reviewer_login=self._requested_reviewer_login_for(
+                        timeline_event
                     ),
-                    requested_team_name=self._team_name_for(
-                        timeline_event.requested_team
-                    ),
+                    requested_team_name=self._requested_team_name_for(timeline_event),
                 )
                 for timeline_event in issue.get_timeline()
                 if timeline_event.event in FIRST_REVIEW_TIMELINE_EVENTS
@@ -689,6 +1217,48 @@ class GitHubIngestionService:
             call=collect_timeline_events,
         )
 
+    def _requested_reviewer_login_for(
+        self,
+        timeline_event,
+    ) -> str | None:
+        requested_reviewer = getattr(timeline_event, "requested_reviewer", None)
+        if requested_reviewer is not None:
+            return self._login_for(requested_reviewer)
+
+        raw_data = getattr(timeline_event, "raw_data", {})
+        if not isinstance(raw_data, dict):
+            return None
+
+        requested_reviewer_data = raw_data.get("requested_reviewer")
+        if not isinstance(requested_reviewer_data, dict):
+            return None
+
+        reviewer_login = requested_reviewer_data.get("login")
+        if isinstance(reviewer_login, str):
+            return reviewer_login
+        return None
+
+    def _requested_team_name_for(
+        self,
+        timeline_event,
+    ) -> str | None:
+        requested_team = getattr(timeline_event, "requested_team", None)
+        if requested_team is not None:
+            return self._team_name_for(requested_team)
+
+        raw_data = getattr(timeline_event, "raw_data", {})
+        if not isinstance(raw_data, dict):
+            return None
+
+        requested_team_data = raw_data.get("requested_team")
+        if not isinstance(requested_team_data, dict):
+            return None
+
+        team_name = requested_team_data.get("name")
+        if isinstance(team_name, str):
+            return team_name
+        return None
+
     def _login_for(self, actor: GitHubActorLike | None) -> str | None:
         if actor is None:
             return None
@@ -704,8 +1274,16 @@ class GitHubIngestionService:
         *,
         repository_full_name: str,
         operation: str,
-        exc: GithubException,
+        exc: GithubException | RequestException,
     ) -> RepositoryCollectionFailure:
+        if isinstance(exc, RequestException):
+            return RepositoryCollectionFailure(
+                repository_full_name=repository_full_name,
+                operation=operation,
+                status_code=0,
+                retriable=True,
+                message=str(exc),
+            )
         return RepositoryCollectionFailure(
             repository_full_name=repository_full_name,
             operation=operation,
@@ -727,6 +1305,11 @@ class GitHubIngestionService:
                 if attempt >= self._max_retries or not self._should_retry(exc):
                     raise
                 self._sleep_for_retry(exc, attempt)
+                attempt += 1
+            except RequestException:
+                if attempt >= self._max_retries:
+                    raise
+                self._sleep(self._retry_backoff_seconds * (2**attempt))
                 attempt += 1
 
     def _sleep_for_retry(self, exc: GithubException, attempt: int) -> None:

@@ -26,12 +26,19 @@ class GitHubTimelineEventLike(Protocol):
     event: str
     actor: GitHubActorLike | None
     created_at: datetime | None
-    requested_reviewer: GitHubActorLike | None
-    requested_team: GitHubTeamLike | None
+    raw_data: dict[str, object]
 
 
 class GitHubIssueLike(Protocol):
     def get_timeline(self) -> Iterable[GitHubTimelineEventLike]: ...
+
+
+class GraphQLRequesterLike(Protocol):
+    def graphql_query(
+        self,
+        query: str,
+        variables: dict[str, object],
+    ) -> tuple[dict[str, object], dict[str, object]]: ...
 
 
 class GitHubPullRequestLike(Protocol):
@@ -72,6 +79,8 @@ class GitHubRepositoryLike(Protocol):
         direction: str,
     ) -> Iterable[GitHubPullRequestLike]: ...
 
+    def get_pull(self, number: int) -> GitHubPullRequestLike: ...
+
 
 class GitHubOrganizationLike(Protocol):
     login: str
@@ -86,6 +95,8 @@ class GitHubOrganizationLike(Protocol):
 
 
 class GitHubIngestionClientLike(Protocol):
+    requester: GraphQLRequesterLike | None
+
     def get_organization(self, org: str) -> GitHubOrganizationLike: ...
 
     def get_repo(self, full_name: str) -> GitHubRepositoryLike: ...

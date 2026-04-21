@@ -39,6 +39,7 @@ from orgpulse.models import (
     RunManifest,
     RunMode,
     RunScope,
+    TimeAnchor,
 )
 from orgpulse.output import (
     REPOSITORY_SUMMARY_CSV_FIELDNAMES,
@@ -164,6 +165,7 @@ class FakeCliManifestWriter:
             manifest=RunManifest(
                 target_org=config.org,
                 period_grain=config.period,
+                time_anchor=config.time_anchor,
                 include_repos=config.include_repos,
                 exclude_repos=config.exclude_repos,
                 raw_snapshot_root_dir=raw_snapshot.root_dir,
@@ -335,6 +337,7 @@ class TestRunConfigParsing:
         # Then
         assert config.org == "acme"
         assert config.period == PeriodGrain.MONTH
+        assert config.time_anchor == TimeAnchor.CREATED_AT
         assert config.mode == RunMode.INCREMENTAL
         assert config.refresh_scope == RunScope.OPEN_PERIOD
         assert config.output_dir.as_posix() == "output"
@@ -358,6 +361,7 @@ class TestRunConfigParsing:
             "ORGPULSE_AS_OF": "2026-04-18",
             "ORGPULSE_ORG": "env-acme",
             "ORGPULSE_PERIOD": "week",
+            "ORGPULSE_TIME_ANCHOR": "updated_at",
             "ORGPULSE_OUTPUT_DIR": "env-output",
         }
 
@@ -370,6 +374,7 @@ class TestRunConfigParsing:
         assert payload["config"]["as_of"] == "2026-04-18"
         assert payload["config"]["org"] == "env-acme"
         assert payload["config"]["period"] == "week"
+        assert payload["config"]["time_anchor"] == "updated_at"
         assert payload["config"]["output_dir"] == "env-output"
         assert payload["config"]["active_period"]["start_date"] == "2026-04-13"
         assert payload["config"]["active_period"]["end_date"] == "2026-04-19"
@@ -386,11 +391,22 @@ class TestRunConfigParsing:
         env = {
             "ORGPULSE_ORG": "env-acme",
             "ORGPULSE_PERIOD": "month",
+            "ORGPULSE_TIME_ANCHOR": "updated_at",
         }
 
         # When
         result = runner.invoke(
-            app, ["run", "--org", "cli-acme", "--period", "week"], env=env
+            app,
+            [
+                "run",
+                "--org",
+                "cli-acme",
+                "--period",
+                "week",
+                "--time-anchor",
+                "merged_at",
+            ],
+            env=env,
         )
 
         # Then
@@ -398,6 +414,7 @@ class TestRunConfigParsing:
         assert result.exit_code == 0
         assert payload["config"]["org"] == "cli-acme"
         assert payload["config"]["period"] == "week"
+        assert payload["config"]["time_anchor"] == "merged_at"
         assert payload["github"]["organization_login"] == "cli-acme"
 
     def test_resolves_month_period_boundaries_from_as_of(self) -> None:
@@ -877,38 +894,38 @@ class TestRunCommandRuntime:
         assert payload["metric_validation"]["periods"][0]["issues"] == []
         assert payload["metric_validation_skipped_reason"] is None
         pull_requests_path = (
-            tmp_path / "raw" / "month" / "2026-04" / "pull_requests.csv"
+            tmp_path / "raw" / "month" / "created_at" / "2026-04" / "pull_requests.csv"
         )
-        manifest_path = tmp_path / "manifest" / "month" / "manifest.json"
-        manifest_index_path = tmp_path / "manifest" / "month" / "index.json"
-        manifest_readme_path = tmp_path / "manifest" / "month" / "README.md"
+        manifest_path = tmp_path / "manifest" / "month" / "created_at" / "manifest.json"
+        manifest_index_path = tmp_path / "manifest" / "month" / "created_at" / "index.json"
+        manifest_readme_path = tmp_path / "manifest" / "month" / "created_at" / "README.md"
         repo_summary_contract_path = (
-            tmp_path / "repo_summary" / "month" / "contract.json"
+            tmp_path / "repo_summary" / "month" / "created_at" / "contract.json"
         )
-        repo_summary_index_path = tmp_path / "repo_summary" / "month" / "index.json"
-        repo_summary_readme_path = tmp_path / "repo_summary" / "month" / "README.md"
+        repo_summary_index_path = tmp_path / "repo_summary" / "month" / "created_at" / "index.json"
+        repo_summary_readme_path = tmp_path / "repo_summary" / "month" / "created_at" / "README.md"
         repo_summary_latest_path = (
-            tmp_path / "repo_summary" / "month" / "latest" / "repo_summary.csv"
+            tmp_path / "repo_summary" / "month" / "created_at" / "latest" / "repo_summary.csv"
         )
         repo_summary_path = (
-            tmp_path / "repo_summary" / "month" / "2026-04" / "repo_summary.csv"
+            tmp_path / "repo_summary" / "month" / "created_at" / "2026-04" / "repo_summary.csv"
         )
         org_summary_contract_path = (
-            tmp_path / "org_summary" / "month" / "contract.json"
+            tmp_path / "org_summary" / "month" / "created_at" / "contract.json"
         )
-        org_summary_index_path = tmp_path / "org_summary" / "month" / "index.json"
-        org_summary_readme_path = tmp_path / "org_summary" / "month" / "README.md"
+        org_summary_index_path = tmp_path / "org_summary" / "month" / "created_at" / "index.json"
+        org_summary_readme_path = tmp_path / "org_summary" / "month" / "created_at" / "README.md"
         org_summary_latest_json_path = (
-            tmp_path / "org_summary" / "month" / "latest" / "summary.json"
+            tmp_path / "org_summary" / "month" / "created_at" / "latest" / "summary.json"
         )
         org_summary_latest_markdown_path = (
-            tmp_path / "org_summary" / "month" / "latest" / "summary.md"
+            tmp_path / "org_summary" / "month" / "created_at" / "latest" / "summary.md"
         )
         org_summary_json_path = (
-            tmp_path / "org_summary" / "month" / "2026-04" / "summary.json"
+            tmp_path / "org_summary" / "month" / "created_at" / "2026-04" / "summary.json"
         )
         org_summary_markdown_path = (
-            tmp_path / "org_summary" / "month" / "2026-04" / "summary.md"
+            tmp_path / "org_summary" / "month" / "created_at" / "2026-04" / "summary.md"
         )
         assert pull_requests_path.exists()
         assert manifest_path.exists()
@@ -960,6 +977,7 @@ class TestRunCommandRuntime:
                 "start_date": "2026-04-01",
             },
             "period_grain": "month",
+            "time_anchor": "created_at",
             "summary": {
                 "active_author_count": 1,
                 "additions": {
@@ -1118,11 +1136,11 @@ class TestRunCommandRuntime:
             ],
         )
         pull_requests_path = (
-            tmp_path / "raw" / "month" / "2026-04" / "pull_requests.csv"
+            tmp_path / "raw" / "month" / "created_at" / "2026-04" / "pull_requests.csv"
         )
-        manifest_path = tmp_path / "manifest" / "month" / "manifest.json"
+        manifest_path = tmp_path / "manifest" / "month" / "created_at" / "manifest.json"
         repo_summary_path = (
-            tmp_path / "repo_summary" / "month" / "2026-04" / "repo_summary.csv"
+            tmp_path / "repo_summary" / "month" / "created_at" / "2026-04" / "repo_summary.csv"
         )
         first_pull_requests_csv = pull_requests_path.read_text(encoding="utf-8")
         first_repo_summary_csv = repo_summary_path.read_text(encoding="utf-8")
@@ -1229,11 +1247,11 @@ class TestRunCommandRuntime:
             refreshed_period_keys=tuple(period.key for period in previous_snapshot.periods),
         )
         march_repo_summary = (
-            tmp_path / "repo_summary" / "month" / "2026-03" / "repo_summary.csv"
+            tmp_path / "repo_summary" / "month" / "created_at" / "2026-03" / "repo_summary.csv"
         )
         march_repo_summary_csv = march_repo_summary.read_text(encoding="utf-8")
         march_org_summary = (
-            tmp_path / "org_summary" / "month" / "2026-03" / "summary.json"
+            tmp_path / "org_summary" / "month" / "created_at" / "2026-03" / "summary.json"
         )
         march_org_summary_json = march_org_summary.read_text(encoding="utf-8")
         current_pull_request = PullRequestRecord(
@@ -1338,7 +1356,7 @@ class TestRunCommandRuntime:
         assert all(period["valid"] for period in payload["metric_validation"]["periods"])
         assert march_org_summary.read_text(encoding="utf-8") == march_org_summary_json
         april_repo_summary = (
-            tmp_path / "repo_summary" / "month" / "2026-04" / "repo_summary.csv"
+            tmp_path / "repo_summary" / "month" / "created_at" / "2026-04" / "repo_summary.csv"
         )
         assert march_repo_summary.read_text(encoding="utf-8") == march_repo_summary_csv
         assert "acme/web" in april_repo_summary.read_text(encoding="utf-8")
@@ -1431,7 +1449,7 @@ class TestRunCommandRuntime:
             ),
             refreshed_period_keys=tuple(period.key for period in previous_snapshot.periods),
         )
-        locked_period_dir = tmp_path / "raw" / "month" / "2026-03"
+        locked_period_dir = tmp_path / "raw" / "month" / "created_at" / "2026-03"
         locked_pull_requests_path = locked_period_dir / "pull_requests.csv"
         locked_reviews_path = locked_period_dir / "pull_request_reviews.csv"
         locked_timeline_events_path = (
@@ -1445,14 +1463,14 @@ class TestRunCommandRuntime:
             encoding="utf-8"
         )
         locked_repo_summary_path = (
-            tmp_path / "repo_summary" / "month" / "2026-03" / "repo_summary.csv"
+            tmp_path / "repo_summary" / "month" / "created_at" / "2026-03" / "repo_summary.csv"
         )
         locked_repo_summary_csv = locked_repo_summary_path.read_text(encoding="utf-8")
         locked_org_summary_json_path = (
-            tmp_path / "org_summary" / "month" / "2026-03" / "summary.json"
+            tmp_path / "org_summary" / "month" / "created_at" / "2026-03" / "summary.json"
         )
         locked_org_summary_markdown_path = (
-            tmp_path / "org_summary" / "month" / "2026-03" / "summary.md"
+            tmp_path / "org_summary" / "month" / "created_at" / "2026-03" / "summary.md"
         )
         locked_org_summary_json = locked_org_summary_json_path.read_text(
             encoding="utf-8"
@@ -1570,26 +1588,26 @@ class TestRunCommandRuntime:
             == locked_org_summary_markdown
         )
         refreshed_repo_summary_path = (
-            tmp_path / "repo_summary" / "month" / "2026-04" / "repo_summary.csv"
+            tmp_path / "repo_summary" / "month" / "created_at" / "2026-04" / "repo_summary.csv"
         )
         refreshed_org_summary_json_path = (
-            tmp_path / "org_summary" / "month" / "2026-04" / "summary.json"
+            tmp_path / "org_summary" / "month" / "created_at" / "2026-04" / "summary.json"
         )
         refreshed_org_summary_markdown_path = (
-            tmp_path / "org_summary" / "month" / "2026-04" / "summary.md"
+            tmp_path / "org_summary" / "month" / "created_at" / "2026-04" / "summary.md"
         )
-        repo_summary_index_path = tmp_path / "repo_summary" / "month" / "index.json"
+        repo_summary_index_path = tmp_path / "repo_summary" / "month" / "created_at" / "index.json"
         repo_summary_latest_path = (
-            tmp_path / "repo_summary" / "month" / "latest" / "repo_summary.csv"
+            tmp_path / "repo_summary" / "month" / "created_at" / "latest" / "repo_summary.csv"
         )
-        org_summary_index_path = tmp_path / "org_summary" / "month" / "index.json"
+        org_summary_index_path = tmp_path / "org_summary" / "month" / "created_at" / "index.json"
         org_summary_latest_json_path = (
-            tmp_path / "org_summary" / "month" / "latest" / "summary.json"
+            tmp_path / "org_summary" / "month" / "created_at" / "latest" / "summary.json"
         )
         org_summary_latest_markdown_path = (
-            tmp_path / "org_summary" / "month" / "latest" / "summary.md"
+            tmp_path / "org_summary" / "month" / "created_at" / "latest" / "summary.md"
         )
-        manifest_index_path = tmp_path / "manifest" / "month" / "index.json"
+        manifest_index_path = tmp_path / "manifest" / "month" / "created_at" / "index.json"
         refreshed_repo_summary_csv = refreshed_repo_summary_path.read_text(
             encoding="utf-8"
         )
@@ -1807,13 +1825,13 @@ class TestRunCommandRuntime:
             refreshed_period_keys=tuple(period.key for period in previous_snapshot.periods),
         )
         february_pull_requests_path = (
-            tmp_path / "raw" / "month" / "2026-02" / "pull_requests.csv"
+            tmp_path / "raw" / "month" / "created_at" / "2026-02" / "pull_requests.csv"
         )
         march_pull_requests_path = (
-            tmp_path / "raw" / "month" / "2026-03" / "pull_requests.csv"
+            tmp_path / "raw" / "month" / "created_at" / "2026-03" / "pull_requests.csv"
         )
         april_pull_requests_path = (
-            tmp_path / "raw" / "month" / "2026-04" / "pull_requests.csv"
+            tmp_path / "raw" / "month" / "created_at" / "2026-04" / "pull_requests.csv"
         )
         february_pull_requests_csv = february_pull_requests_path.read_text(
             encoding="utf-8"
@@ -1821,34 +1839,34 @@ class TestRunCommandRuntime:
         march_pull_requests_csv = march_pull_requests_path.read_text(encoding="utf-8")
         april_pull_requests_csv = april_pull_requests_path.read_text(encoding="utf-8")
         february_repo_summary_path = (
-            tmp_path / "repo_summary" / "month" / "2026-02" / "repo_summary.csv"
+            tmp_path / "repo_summary" / "month" / "created_at" / "2026-02" / "repo_summary.csv"
         )
         march_repo_summary_path = (
-            tmp_path / "repo_summary" / "month" / "2026-03" / "repo_summary.csv"
+            tmp_path / "repo_summary" / "month" / "created_at" / "2026-03" / "repo_summary.csv"
         )
         april_repo_summary_path = (
-            tmp_path / "repo_summary" / "month" / "2026-04" / "repo_summary.csv"
+            tmp_path / "repo_summary" / "month" / "created_at" / "2026-04" / "repo_summary.csv"
         )
         february_repo_summary_csv = february_repo_summary_path.read_text(encoding="utf-8")
         march_repo_summary_csv = march_repo_summary_path.read_text(encoding="utf-8")
         april_repo_summary_csv = april_repo_summary_path.read_text(encoding="utf-8")
         february_org_summary_json_path = (
-            tmp_path / "org_summary" / "month" / "2026-02" / "summary.json"
+            tmp_path / "org_summary" / "month" / "created_at" / "2026-02" / "summary.json"
         )
         march_org_summary_json_path = (
-            tmp_path / "org_summary" / "month" / "2026-03" / "summary.json"
+            tmp_path / "org_summary" / "month" / "created_at" / "2026-03" / "summary.json"
         )
         april_org_summary_json_path = (
-            tmp_path / "org_summary" / "month" / "2026-04" / "summary.json"
+            tmp_path / "org_summary" / "month" / "created_at" / "2026-04" / "summary.json"
         )
         february_org_summary_markdown_path = (
-            tmp_path / "org_summary" / "month" / "2026-02" / "summary.md"
+            tmp_path / "org_summary" / "month" / "created_at" / "2026-02" / "summary.md"
         )
         march_org_summary_markdown_path = (
-            tmp_path / "org_summary" / "month" / "2026-03" / "summary.md"
+            tmp_path / "org_summary" / "month" / "created_at" / "2026-03" / "summary.md"
         )
         april_org_summary_markdown_path = (
-            tmp_path / "org_summary" / "month" / "2026-04" / "summary.md"
+            tmp_path / "org_summary" / "month" / "created_at" / "2026-04" / "summary.md"
         )
         february_org_summary_json = february_org_summary_json_path.read_text(
             encoding="utf-8"
@@ -2079,7 +2097,7 @@ class TestRunCommandRuntime:
         assert all(period["valid"] for period in payload["metric_validation"]["periods"])
         assert json.loads(
             (
-                tmp_path / "repo_summary" / "month" / "index.json"
+                tmp_path / "repo_summary" / "month" / "created_at" / "index.json"
             ).read_text(encoding="utf-8")
         )["history"] == [
             {
@@ -2106,7 +2124,7 @@ class TestRunCommandRuntime:
         ]
         assert json.loads(
             (
-                tmp_path / "org_summary" / "month" / "index.json"
+                tmp_path / "org_summary" / "month" / "created_at" / "index.json"
             ).read_text(encoding="utf-8")
         )["latest"] == {
             "closed": True,
@@ -2120,7 +2138,7 @@ class TestRunCommandRuntime:
         }
         assert json.loads(
             (
-                tmp_path / "manifest" / "month" / "index.json"
+                tmp_path / "manifest" / "month" / "created_at" / "index.json"
             ).read_text(encoding="utf-8")
         )["history"] == {
             "locked_periods": [
@@ -2235,7 +2253,7 @@ class TestRunCommandRuntime:
         ]
         summary_payload = json.loads(
             (
-                tmp_path / "org_summary" / "month" / "2026-01" / "summary.json"
+                tmp_path / "org_summary" / "month" / "created_at" / "2026-01" / "summary.json"
             ).read_text(encoding="utf-8")
         )
         assert summary_payload == {
@@ -2248,6 +2266,7 @@ class TestRunCommandRuntime:
                 "start_date": "2026-01-01",
             },
             "period_grain": "month",
+            "time_anchor": "created_at",
             "summary": {
                 "active_author_count": 0,
                 "additions": {
@@ -2300,7 +2319,7 @@ class TestRunCommandRuntime:
             "target_org": "acme",
         }
         assert "Merged pull requests per active author: n/a" in (
-            tmp_path / "org_summary" / "month" / "2026-01" / "summary.md"
+            tmp_path / "org_summary" / "month" / "created_at" / "2026-01" / "summary.md"
         ).read_text(encoding="utf-8")
 
     def test_reports_metric_validation_failures_without_skipping_outputs(
@@ -2405,19 +2424,19 @@ class TestRunCommandRuntime:
     ) -> None:
         """Prune stale full-history raw outputs and overwrite the manifest with only the surviving periods."""
         # Given
-        stale_period_dir = tmp_path / "raw" / "month" / "2026-03"
+        stale_period_dir = tmp_path / "raw" / "month" / "created_at" / "2026-03"
         stale_period_dir.mkdir(parents=True)
         (stale_period_dir / "pull_requests.csv").write_text(
             "stale snapshot\n",
             encoding="utf-8",
         )
-        stale_org_summary_dir = tmp_path / "org_summary" / "month" / "2026-03"
+        stale_org_summary_dir = tmp_path / "org_summary" / "month" / "created_at" / "2026-03"
         stale_org_summary_dir.mkdir(parents=True)
         (stale_org_summary_dir / "summary.json").write_text(
             json.dumps({"target_org": "stale"}),
             encoding="utf-8",
         )
-        stale_manifest_path = tmp_path / "manifest" / "month" / "manifest.json"
+        stale_manifest_path = tmp_path / "manifest" / "month" / "created_at" / "manifest.json"
         stale_manifest_path.parent.mkdir(parents=True)
         stale_manifest_path.write_text(
             json.dumps({"target_org": "stale"}),
@@ -2514,7 +2533,7 @@ class TestRunCommandRuntime:
         ] == "acme"
         assert json.loads(
             (
-                tmp_path / "repo_summary" / "month" / "index.json"
+                tmp_path / "repo_summary" / "month" / "created_at" / "index.json"
             ).read_text(encoding="utf-8")
         )["history"] == [
             {
@@ -2527,7 +2546,7 @@ class TestRunCommandRuntime:
         ]
         assert json.loads(
             (
-                tmp_path / "org_summary" / "month" / "index.json"
+                tmp_path / "org_summary" / "month" / "created_at" / "index.json"
             ).read_text(encoding="utf-8")
         )["history"] == [
             {
@@ -2549,7 +2568,7 @@ class TestRunCommandRuntime:
     ) -> None:
         """Skip raw snapshot persistence when repo-scoped failures would make the output incomplete."""
         # Given
-        existing_snapshot = tmp_path / "raw" / "month" / "2026-04" / "pull_requests.csv"
+        existing_snapshot = tmp_path / "raw" / "month" / "created_at" / "2026-04" / "pull_requests.csv"
         existing_snapshot.parent.mkdir(parents=True)
         existing_snapshot.write_text("existing snapshot\n", encoding="utf-8")
         collection = PullRequestCollection(
@@ -2589,7 +2608,7 @@ class TestRunCommandRuntime:
             "orgpulse.cli.RepositorySummaryCsvWriter",
             lambda: UnexpectedRepositorySummaryWriter(),
         )
-        existing_manifest = tmp_path / "manifest" / "month" / "manifest.json"
+        existing_manifest = tmp_path / "manifest" / "month" / "created_at" / "manifest.json"
         existing_manifest.parent.mkdir(parents=True)
         existing_manifest.write_text(
             json.dumps({"target_org": "acme", "status": "previous"}),

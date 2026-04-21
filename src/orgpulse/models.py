@@ -72,6 +72,35 @@ class RunMode(StrEnum):
     BACKFILL = "backfill"
 
 
+class TimeAnchor(StrEnum):
+    CREATED_AT = "created_at"
+    UPDATED_AT = "updated_at"
+    MERGED_AT = "merged_at"
+
+    def pull_request_datetime(
+        self,
+        pull_request: "PullRequestRecord",
+    ) -> datetime | None:
+        if self is TimeAnchor.CREATED_AT:
+            return pull_request.created_at
+        if self is TimeAnchor.UPDATED_AT:
+            return pull_request.updated_at
+        return pull_request.merged_at
+
+    def github_rest_sort(self) -> str:
+        if self is TimeAnchor.CREATED_AT:
+            return "created"
+        return "updated"
+
+    def github_graphql_order_field(self) -> str:
+        if self is TimeAnchor.CREATED_AT:
+            return "CREATED_AT"
+        return "UPDATED_AT"
+
+    def supports_early_stop(self) -> bool:
+        return self is not TimeAnchor.MERGED_AT
+
+
 class RunScope(StrEnum):
     FULL_HISTORY = "full_history"
     OPEN_PERIOD = "open_period"
@@ -431,6 +460,7 @@ class RunManifest(BaseModel):
 
     target_org: str
     period_grain: PeriodGrain
+    time_anchor: TimeAnchor
     include_repos: tuple[str, ...]
     exclude_repos: tuple[str, ...]
     raw_snapshot_root_dir: Path
@@ -498,6 +528,7 @@ class RunConfig(BaseModel):
     )
     as_of: date = Field(default_factory=date.today)
     period: PeriodGrain = PeriodGrain.MONTH
+    time_anchor: TimeAnchor = TimeAnchor.CREATED_AT
     mode: RunMode = RunMode.INCREMENTAL
     output_dir: Path = Field(default_factory=lambda: Path("output"))
     include_repos: tuple[RepoSlug, ...] = ()

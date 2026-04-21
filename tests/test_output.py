@@ -75,11 +75,11 @@ class TestOrgSummaryWriter:
         )
 
         # Then
-        assert result.root_dir == tmp_path / "org_summary" / "month"
-        assert result.contract_path == tmp_path / "org_summary" / "month" / "contract.json"
-        assert result.index_path == tmp_path / "org_summary" / "month" / "index.json"
-        assert result.readme_path == tmp_path / "org_summary" / "month" / "README.md"
-        assert result.latest_directory == tmp_path / "org_summary" / "month" / "latest"
+        assert result.root_dir == tmp_path / "org_summary" / "month" / "created_at"
+        assert result.contract_path == tmp_path / "org_summary" / "month" / "created_at" / "contract.json"
+        assert result.index_path == tmp_path / "org_summary" / "month" / "created_at" / "index.json"
+        assert result.readme_path == tmp_path / "org_summary" / "month" / "created_at" / "README.md"
+        assert result.latest_directory == tmp_path / "org_summary" / "month" / "created_at" / "latest"
         assert result.latest_directory is not None
         assert result.latest_json_path is not None
         assert result.latest_markdown_path is not None
@@ -90,6 +90,7 @@ class TestOrgSummaryWriter:
             "exclude_repos": [],
             "include_repos": [],
             "period_grain": "month",
+            "time_anchor": "created_at",
             "target_org": "acme",
         }
         assert json.loads(result.index_path.read_text(encoding="utf-8")) == {
@@ -116,6 +117,7 @@ class TestOrgSummaryWriter:
                 "start_date": "2026-04-01",
             },
             "period_grain": "month",
+            "time_anchor": "created_at",
             "target_org": "acme",
         }
         period_result = result.periods[0]
@@ -129,6 +131,7 @@ class TestOrgSummaryWriter:
                 "start_date": "2026-04-01",
             },
             "period_grain": "month",
+            "time_anchor": "created_at",
             "summary": {
                 "active_author_count": 2,
                 "additions": {
@@ -185,6 +188,7 @@ class TestOrgSummaryWriter:
             "\n"
             "- Target org: acme\n"
             "- Period grain: month\n"
+            "- Time anchor: created_at\n"
             "- Period key: 2026-04\n"
             "- Include repos: all\n"
             "- Exclude repos: none\n"
@@ -225,6 +229,7 @@ class TestOrgSummaryWriter:
             "\n"
             "- Target org: acme\n"
             "- Period grain: month\n"
+            "- Time anchor: created_at\n"
             "- Include repos: all\n"
             "- Exclude repos: none\n"
             "- Latest period: 2026-04\n"
@@ -252,7 +257,7 @@ class TestOrgSummaryWriter:
                 "output_dir": tmp_path,
             }
         )
-        stale_period_dir = tmp_path / "org_summary" / "month" / "2026-03"
+        stale_period_dir = tmp_path / "org_summary" / "month" / "created_at" / "2026-03"
         stale_period_dir.mkdir(parents=True)
         (stale_period_dir / "summary.json").write_text(
             json.dumps({"target_org": "stale"}),
@@ -343,12 +348,13 @@ class TestOrgSummaryWriter:
         )
 
         # Then
-        assert (tmp_path / "org_summary" / "month" / "2026-03").exists() is False
+        assert (tmp_path / "org_summary" / "month" / "created_at" / "2026-03").exists() is False
         assert result.periods[0].directory.exists()
         assert json.loads(result.contract_path.read_text(encoding="utf-8")) == {
             "exclude_repos": [],
             "include_repos": ["acme/api"],
             "period_grain": "month",
+            "time_anchor": "created_at",
             "target_org": "acme",
         }
         assert json.loads(result.periods[0].json_path.read_text(encoding="utf-8"))[
@@ -416,7 +422,7 @@ class TestOrgSummaryWriter:
             refreshed_period_keys=("2026-03",),
         )
         locked_summary_path = (
-            tmp_path / "org_summary" / "month" / "2026-03" / "summary.json"
+            tmp_path / "org_summary" / "month" / "created_at" / "2026-03" / "summary.json"
         )
         locked_summary_payload = locked_summary_path.read_text(encoding="utf-8")
 
@@ -653,7 +659,7 @@ class TestRunManifestWriter:
             tmp_path,
             config=previous_config,
             raw_snapshot=RawSnapshotWriteResult(
-                root_dir=tmp_path / "raw" / "month",
+                root_dir=tmp_path / "raw" / "month" / "created_at",
                 periods=(
                     self._build_raw_snapshot_period(tmp_path, "2026-04"),
                 ),
@@ -688,7 +694,7 @@ class TestRunManifestWriter:
             tmp_path,
             period_keys=("2026-04",),
         )
-        incomplete_period_dir = tmp_path / "raw" / "month" / "2026-03"
+        incomplete_period_dir = tmp_path / "raw" / "month" / "created_at" / "2026-03"
         incomplete_period_dir.mkdir(parents=True)
         (incomplete_period_dir / "pull_requests.csv").write_text("", encoding="utf-8")
         self._write_manifest(
@@ -727,7 +733,7 @@ class TestRunManifestWriter:
         )
         self._write_complete_period(tmp_path, "2026-03")
         truncated_reviews = (
-            tmp_path / "raw" / "month" / "2026-03" / "pull_request_reviews.csv"
+            tmp_path / "raw" / "month" / "created_at" / "2026-03" / "pull_request_reviews.csv"
         )
         truncated_reviews.write_text("", encoding="utf-8")
         self._write_manifest(
@@ -794,10 +800,10 @@ class TestRunManifestWriter:
         )
 
         # Then
-        assert monthly_result.path == tmp_path / "manifest" / "month" / "manifest.json"
-        assert weekly_result.path == tmp_path / "manifest" / "week" / "manifest.json"
-        assert monthly_result.index_path == tmp_path / "manifest" / "month" / "index.json"
-        assert monthly_result.readme_path == tmp_path / "manifest" / "month" / "README.md"
+        assert monthly_result.path == tmp_path / "manifest" / "month" / "created_at" / "manifest.json"
+        assert weekly_result.path == tmp_path / "manifest" / "week" / "created_at" / "manifest.json"
+        assert monthly_result.index_path == tmp_path / "manifest" / "month" / "created_at" / "index.json"
+        assert monthly_result.readme_path == tmp_path / "manifest" / "month" / "created_at" / "README.md"
         assert monthly_result.path.exists()
         assert weekly_result.path.exists()
         assert json.loads(monthly_result.index_path.read_text(encoding="utf-8")) == {
@@ -822,6 +828,7 @@ class TestRunManifestWriter:
                 "refresh_scope": "open_period",
             },
             "period_grain": "month",
+            "time_anchor": "created_at",
             "target_org": "acme",
             "watermarks": {
                 "collection_window_end_date": "2026-04-18",
@@ -852,6 +859,7 @@ class TestRunManifestWriter:
         tmp_path,
         *,
         period_grain: str = "month",
+        time_anchor: str = "created_at",
         period_keys: tuple[str, ...],
     ) -> RawSnapshotWriteResult:
         """Build a raw snapshot result with deterministic period metadata."""
@@ -860,13 +868,19 @@ class TestRunManifestWriter:
                 tmp_path,
                 period_key,
                 period_grain=period_grain,
+                time_anchor=time_anchor,
             )
             for period_key in period_keys
         ]
         for period_key in period_keys:
-            self._write_complete_period(tmp_path, period_key, period_grain=period_grain)
+            self._write_complete_period(
+                tmp_path,
+                period_key,
+                period_grain=period_grain,
+                time_anchor=time_anchor,
+            )
         return RawSnapshotWriteResult(
-            root_dir=tmp_path / "raw" / period_grain,
+            root_dir=tmp_path / "raw" / period_grain / time_anchor,
             periods=tuple(periods),
         )
 
@@ -876,9 +890,10 @@ class TestRunManifestWriter:
         period_key: str,
         *,
         period_grain: str = "month",
+        time_anchor: str = "created_at",
     ) -> RawSnapshotPeriod:
         """Build deterministic raw snapshot period metadata for a period key."""
-        period_dir = tmp_path / "raw" / period_grain / period_key
+        period_dir = tmp_path / "raw" / period_grain / time_anchor / period_key
         period_dir.mkdir(parents=True, exist_ok=True)
         start_date, end_date = self._period_dates(period_key)
         return RawSnapshotPeriod(
@@ -900,9 +915,10 @@ class TestRunManifestWriter:
         period_key: str,
         *,
         period_grain: str = "month",
+        time_anchor: str = "created_at",
     ) -> None:
         """Write the full set of raw snapshot CSV files for a period directory."""
-        period_dir = tmp_path / "raw" / period_grain / period_key
+        period_dir = tmp_path / "raw" / period_grain / time_anchor / period_key
         period_dir.mkdir(parents=True, exist_ok=True)
         for filename, header in (
             ("pull_requests.csv", ",".join(PULL_REQUEST_FIELDNAMES)),
@@ -936,6 +952,7 @@ class TestRunManifestWriter:
         manifest = RunManifest(
             target_org=config.org,
             period_grain=config.period,
+            time_anchor=config.time_anchor,
             include_repos=config.include_repos,
             exclude_repos=config.exclude_repos,
             raw_snapshot_root_dir=raw_snapshot.root_dir,
@@ -956,7 +973,13 @@ class TestRunManifestWriter:
                 pull_request_count=0,
             ),
         )
-        manifest_path = tmp_path / "manifest" / config.period.value / "manifest.json"
+        manifest_path = (
+            tmp_path
+            / "manifest"
+            / config.period.value
+            / config.time_anchor.value
+            / "manifest.json"
+        )
         manifest_path.parent.mkdir(parents=True, exist_ok=True)
         manifest_path.write_text(
             json.dumps(manifest.model_dump(mode="json")),
@@ -1066,12 +1089,12 @@ class TestRepositorySummaryCsvWriter:
         )
 
         # Then
-        assert result.root_dir == tmp_path / "repo_summary" / "month"
-        assert result.contract_path == tmp_path / "repo_summary" / "month" / "contract.json"
-        assert result.index_path == tmp_path / "repo_summary" / "month" / "index.json"
-        assert result.readme_path == tmp_path / "repo_summary" / "month" / "README.md"
+        assert result.root_dir == tmp_path / "repo_summary" / "month" / "created_at"
+        assert result.contract_path == tmp_path / "repo_summary" / "month" / "created_at" / "contract.json"
+        assert result.index_path == tmp_path / "repo_summary" / "month" / "created_at" / "index.json"
+        assert result.readme_path == tmp_path / "repo_summary" / "month" / "created_at" / "README.md"
         assert result.latest_path == (
-            tmp_path / "repo_summary" / "month" / "latest" / "repo_summary.csv"
+            tmp_path / "repo_summary" / "month" / "created_at" / "latest" / "repo_summary.csv"
         )
         assert [period.key for period in result.periods] == ["2026-04"]
         assert result.periods[0].repository_count == 2
@@ -1079,6 +1102,7 @@ class TestRepositorySummaryCsvWriter:
             "exclude_repos": [],
             "include_repos": [],
             "period_grain": "month",
+            "time_anchor": "created_at",
             "target_org": "acme",
         }
         assert json.loads(result.index_path.read_text(encoding="utf-8")) == {
@@ -1102,6 +1126,7 @@ class TestRepositorySummaryCsvWriter:
                 "start_date": "2026-04-01",
             },
             "period_grain": "month",
+            "time_anchor": "created_at",
             "target_org": "acme",
         }
         rows = self._read_rows(result.periods[0].path)
@@ -1165,7 +1190,7 @@ class TestRepositorySummaryCsvWriter:
     ) -> None:
         """Prune stale repo summary period directories when a full rerun no longer emits them."""
         # Given
-        stale_period_dir = tmp_path / "repo_summary" / "month" / "2026-03"
+        stale_period_dir = tmp_path / "repo_summary" / "month" / "created_at" / "2026-03"
         stale_period_dir.mkdir(parents=True)
         (stale_period_dir / "repo_summary.csv").write_text(
             "stale export\n",
@@ -1269,7 +1294,7 @@ class TestRepositorySummaryCsvWriter:
             ),
         )
         locked_repo_summary_path = (
-            tmp_path / "repo_summary" / "month" / "2026-03" / "repo_summary.csv"
+            tmp_path / "repo_summary" / "month" / "created_at" / "2026-03" / "repo_summary.csv"
         )
         locked_repo_summary_csv = locked_repo_summary_path.read_text(encoding="utf-8")
         current_config = self._build_run_config(

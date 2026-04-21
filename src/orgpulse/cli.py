@@ -187,6 +187,8 @@ def run_command(
             if raw_snapshot is None
             else tuple(period.key for period in raw_snapshot.periods),
         )
+        if not collection.failures:
+            ingestion_service.clear_checkpoint(config)
     except AuthResolutionError as exc:
         typer.echo(f"orgpulse: GitHub authentication failed\n{exc}", err=True)
         raise typer.Exit(code=1) from exc

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 from datetime import datetime
 from unittest.mock import create_autospec
 
@@ -135,6 +136,9 @@ class FakeCliIngestionService:
                 failures=(),
             )
         )
+
+    def clear_checkpoint(self, config) -> None:
+        """Mirror the production ingestion interface without touching fixture state."""
 
 
 class FakeCliSnapshotWriter:
@@ -2650,3 +2654,139 @@ class TestRunCommandRuntime:
             "target_org": "acme",
             "status": "previous",
         }
+
+    def test_clears_checkpoint_after_successful_run(
+        self,
+        runner: CliRunner,
+        github_auth_service: None,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path,
+    ) -> None:
+        """Clear persisted repo checkpoints after the full run completes successfully."""
+        # Given
+        checkpoint_root = (
+            tmp_path
+            / "checkpoints"
+            / "month"
+            / "created_at"
+            / "incremental"
+            / "acme"
+        )
+        checkpoint_root.mkdir(parents=True)
+        (checkpoint_root / "manifest.json").write_text("{}", encoding="utf-8")
+        service = FakeCliIngestionService()
+        clear_calls: list[str] = []
+
+        def clear_checkpoint(config) -> None:
+            clear_calls.append(config.org)
+            shutil.rmtree(checkpoint_root)
+
+        monkeypatch.setattr(service, "clear_checkpoint", clear_checkpoint)
+        monkeypatch.setattr(
+            "orgpulse.cli.GitHubIngestionService",
+            lambda github_client: service,
+        )
+
+        # When
+        result = runner.invoke(
+            app,
+            [
+                "run",
+                "--org",
+                "acme",
+                "--as-of",
+                "2026-04-18",
+                "--output-dir",
+                str(tmp_path),
+            ],
+        )
+
+        # Then
+        assert result.exit_code == 0
+        assert clear_calls == ["acme"]
+        assert checkpoint_root.exists() is False
+
+    def test_keeps_checkpoint_after_partial_failure_run(
+        self,
+        runner: CliRunner,
+        github_auth_service: None,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path,
+    ) -> None:
+        """Keep repo checkpoints in place when collection failures prevent a complete run."""
+        # Given
+        checkpoint_root = (
+            tmp_path
+            / "checkpoints"
+            / "month"
+            / "created_at"
+            / "incremental"
+            / "acme"
+        )
+        checkpoint_root.mkdir(parents=True)
+        (checkpoint_root / "manifest.json").write_text("{}", encoding="utf-8")
+        service = FakeCliIngestionService(
+            collection=PullRequestCollection(
+                window=CollectionWindow(
+                    scope=RunScope.OPEN_PERIOD,
+                    start_date=datetime.fromisoformat("2026-04-01T00:00:00").date(),
+                    end_date=datetime.fromisoformat("2026-04-18T00:00:00").date(),
+                ),
+                pull_requests=(),
+                failures=(
+                    RepositoryCollectionFailure(
+                        repository_full_name="acme/web",
+                        operation="pull_requests",
+                        status_code=503,
+                        retriable=True,
+                        message="Service unavailable",
+                    ),
+                ),
+            )
+        )
+        clear_calls: list[str] = []
+
+        def clear_checkpoint(config) -> None:
+            clear_calls.append(config.org)
+            shutil.rmtree(checkpoint_root)
+
+        monkeypatch.setattr(service, "clear_checkpoint", clear_checkpoint)
+        monkeypatch.setattr(
+            "orgpulse.cli.GitHubIngestionService",
+            lambda github_client: service,
+        )
+        monkeypatch.setattr(
+            "orgpulse.cli.NormalizedRawSnapshotWriter",
+            lambda: UnexpectedSnapshotWriter(),
+        )
+        monkeypatch.setattr(
+            "orgpulse.cli.RunManifestWriter",
+            lambda: UnexpectedManifestWriter(),
+        )
+        monkeypatch.setattr(
+            "orgpulse.cli.OrgSummaryWriter",
+            lambda: UnexpectedOrgSummaryWriter(),
+        )
+        monkeypatch.setattr(
+            "orgpulse.cli.RepositorySummaryCsvWriter",
+            lambda: UnexpectedRepositorySummaryWriter(),
+        )
+
+        # When
+        result = runner.invoke(
+            app,
+            [
+                "run",
+                "--org",
+                "acme",
+                "--as-of",
+                "2026-04-18",
+                "--output-dir",
+                str(tmp_path),
+            ],
+        )
+
+        # Then
+        assert result.exit_code == 0
+        assert clear_calls == []
+        assert checkpoint_root.exists() is True

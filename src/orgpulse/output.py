@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import csv
 import json
 import shutil
 from collections.abc import Callable, Sequence
@@ -8,6 +7,7 @@ from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import cast
 
+from orgpulse.files import atomic_write_csv, atomic_write_json, atomic_write_text
 from orgpulse.ingestion import (
     PULL_REQUEST_FIELDNAMES,
     PULL_REQUEST_REVIEW_FIELDNAMES,
@@ -1091,29 +1091,21 @@ def _write_csv_file(
     fieldnames: tuple[str, ...],
     rows: list[dict[str, object]],
 ) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w", encoding="utf-8", newline="") as handle:
-        writer = csv.DictWriter(handle, fieldnames=fieldnames, lineterminator="\n")
-        writer.writeheader()
-        writer.writerows(rows)
+    atomic_write_csv(path=path, fieldnames=fieldnames, rows=rows)
 
 
 def _write_json_file(
     path: Path,
     payload: dict[str, object],
 ) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w", encoding="utf-8", newline="\n") as handle:
-        json.dump(payload, handle, indent=2, sort_keys=True)
-        handle.write("\n")
+    atomic_write_json(path, payload)
 
 
 def _write_text_file(
     path: Path,
     document: str,
 ) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(document, encoding="utf-8", newline="\n")
+    atomic_write_text(path, document)
 
 
 def _prune_stale_period_directories(

@@ -1,10 +1,11 @@
 from __future__ import annotations
 
-import csv
 import hashlib
+import json
 import shutil
 import time
 from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any, TypeVar, cast
@@ -13,6 +14,7 @@ from github import Github, GithubException
 from requests.exceptions import RequestException
 
 from orgpulse.errors import GitHubApiError
+from orgpulse.files import atomic_write_csv, atomic_write_json
 from orgpulse.models import (
     CollectionWindow,
     PeriodGrain,
@@ -44,6 +46,9 @@ from orgpulse.types.github import (
 DEFAULT_MAX_RETRIES = 2
 DEFAULT_RETRY_BACKOFF_SECONDS = 1.0
 RAW_SNAPSHOT_DIRNAME = "raw"
+CHECKPOINT_DIRNAME = "checkpoints"
+CHECKPOINT_MANIFEST_FILENAME = "manifest.json"
+CHECKPOINT_REPOSITORY_DIRNAME = "repositories"
 PULL_REQUEST_SNAPSHOT_FILENAME = "pull_requests.csv"
 PULL_REQUEST_REVIEW_SNAPSHOT_FILENAME = "pull_request_reviews.csv"
 PULL_REQUEST_TIMELINE_EVENT_SNAPSHOT_FILENAME = "pull_request_timeline_events.csv"
@@ -211,6 +216,12 @@ query($owner: String!, $name: String!, $after: String) {
 """
 SnapshotRow = dict[str, str | int | bool | None]
 T = TypeVar("T")
+
+
+@dataclass(frozen=True)
+class _CollectionCheckpoint:
+    pull_requests: tuple[PullRequestRecord, ...]
+    completed_repositories: frozenset[str]
 
 
 class NormalizedRawSnapshotWriter:
@@ -498,11 +509,7 @@ class NormalizedRawSnapshotWriter:
         fieldnames: tuple[str, ...],
         rows: list[SnapshotRow],
     ) -> None:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        with path.open("w", encoding="utf-8", newline="") as handle:
-            writer = csv.DictWriter(handle, fieldnames=fieldnames, lineterminator="\n")
-            writer.writeheader()
-            writer.writerows(rows)
+        atomic_write_csv(path=path, fieldnames=fieldnames, rows=rows)
 
     def _serialize_datetime(self, value: datetime | None) -> str:
         if value is None:
@@ -630,18 +637,25 @@ class GitHubIngestionService:
         inventory: RepositoryInventory,
     ) -> PullRequestCollection:
         """Fetch pull requests for the configured collection window across repositories."""
-        pull_requests: list[PullRequestRecord] = []
+        checkpoint = self._load_collection_checkpoint(config)
+        pull_requests = list(checkpoint.pull_requests)
         failures: list[RepositoryCollectionFailure] = []
         window = config.collection_window
 
         for repository in inventory.repositories:
+            if repository.full_name in checkpoint.completed_repositories:
+                continue
             try:
-                pull_requests.extend(
-                    self._fetch_repository_pull_requests(
-                        config=config,
-                        repository_full_name=repository.full_name,
-                        window=window,
-                    )
+                repository_pull_requests = self._fetch_repository_pull_requests(
+                    config=config,
+                    repository_full_name=repository.full_name,
+                    window=window,
+                )
+                pull_requests.extend(repository_pull_requests)
+                self._save_collection_checkpoint(
+                    config,
+                    repository_full_name=repository.full_name,
+                    pull_requests=repository_pull_requests,
                 )
             except (GithubException, RequestException) as exc:
                 failures.append(
@@ -670,6 +684,216 @@ class GitHubIngestionService:
             ),
             failures=tuple(failures),
         )
+
+    def clear_checkpoint(self, config: RunConfig) -> None:
+        """Delete any repo-scoped checkpoint state for the current run contract."""
+        checkpoint_root_dir = self._checkpoint_root_dir(config)
+        if checkpoint_root_dir.exists():
+            shutil.rmtree(checkpoint_root_dir)
+
+    def _load_collection_checkpoint(
+        self,
+        config: RunConfig,
+    ) -> _CollectionCheckpoint:
+        if config.checkpoint_policy.overwrite_checkpoint:
+            self.clear_checkpoint(config)
+            return _CollectionCheckpoint(
+                pull_requests=(),
+                completed_repositories=frozenset(),
+            )
+        if not config.checkpoint_policy.resume_from_checkpoint:
+            return _CollectionCheckpoint(
+                pull_requests=(),
+                completed_repositories=frozenset(),
+            )
+        manifest_payload = self._load_checkpoint_manifest_payload(config)
+        if manifest_payload is None:
+            return _CollectionCheckpoint(
+                pull_requests=(),
+                completed_repositories=frozenset(),
+            )
+        if manifest_payload.get("contract") != self._checkpoint_contract(config):
+            self.clear_checkpoint(config)
+            return _CollectionCheckpoint(
+                pull_requests=(),
+                completed_repositories=frozenset(),
+            )
+        completed_repositories = self._completed_checkpoint_repositories(
+            config,
+            manifest_payload,
+        )
+        pull_requests: list[PullRequestRecord] = []
+        for repository_full_name in completed_repositories:
+            checkpoint_pull_requests = self._load_checkpoint_pull_requests(
+                config,
+                repository_full_name=repository_full_name,
+            )
+            if checkpoint_pull_requests is None:
+                continue
+            pull_requests.extend(checkpoint_pull_requests)
+        return _CollectionCheckpoint(
+            pull_requests=tuple(pull_requests),
+            completed_repositories=frozenset(completed_repositories),
+        )
+
+    def _save_collection_checkpoint(
+        self,
+        config: RunConfig,
+        *,
+        repository_full_name: str,
+        pull_requests: tuple[PullRequestRecord, ...],
+    ) -> None:
+        if not config.checkpoint_policy.persist_checkpoint:
+            return
+        repository_path = self._checkpoint_repository_path(
+            config,
+            repository_full_name=repository_full_name,
+        )
+        atomic_write_json(
+            repository_path,
+            {
+                "repository_full_name": repository_full_name,
+                "pull_requests": [
+                    pull_request.model_dump(mode="json")
+                    for pull_request in pull_requests
+                ],
+            },
+        )
+        completed_repositories = self._completed_checkpoint_repositories(
+            config,
+            self._load_checkpoint_manifest_payload(config),
+        )
+        completed_repository_set = set(completed_repositories)
+        completed_repository_set.add(repository_full_name)
+        atomic_write_json(
+            self._checkpoint_manifest_path(config),
+            {
+                "contract": self._checkpoint_contract(config),
+                "completed_repositories": sorted(completed_repository_set),
+            },
+        )
+
+    def _load_checkpoint_manifest_payload(
+        self,
+        config: RunConfig,
+    ) -> dict[str, object] | None:
+        manifest_path = self._checkpoint_manifest_path(config)
+        if not manifest_path.exists():
+            return None
+        try:
+            payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return None
+        if not isinstance(payload, dict):
+            return None
+        return cast(dict[str, object], payload)
+
+    def _completed_checkpoint_repositories(
+        self,
+        config: RunConfig,
+        manifest_payload: dict[str, object] | None,
+    ) -> tuple[str, ...]:
+        if manifest_payload is None:
+            return ()
+        repository_names = manifest_payload.get("completed_repositories")
+        if not isinstance(repository_names, list):
+            return ()
+        valid_repositories: list[str] = []
+        for repository_name in repository_names:
+            if not isinstance(repository_name, str):
+                continue
+            if self._load_checkpoint_pull_requests(
+                config,
+                repository_full_name=repository_name,
+            ) is None:
+                continue
+            valid_repositories.append(repository_name)
+        return tuple(sorted(set(valid_repositories)))
+
+    def _load_checkpoint_pull_requests(
+        self,
+        config: RunConfig,
+        *,
+        repository_full_name: str,
+    ) -> tuple[PullRequestRecord, ...] | None:
+        repository_path = self._checkpoint_repository_path(
+            config,
+            repository_full_name=repository_full_name,
+        )
+        if not repository_path.exists():
+            return None
+        try:
+            payload = json.loads(repository_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return None
+        if not isinstance(payload, dict):
+            return None
+        if payload.get("repository_full_name") != repository_full_name:
+            return None
+        pull_request_payloads = payload.get("pull_requests")
+        if not isinstance(pull_request_payloads, list):
+            return None
+        try:
+            return tuple(
+                PullRequestRecord.model_validate(pull_request_payload)
+                for pull_request_payload in pull_request_payloads
+            )
+        except Exception:
+            return None
+
+    def _checkpoint_root_dir(
+        self,
+        config: RunConfig,
+    ) -> Path:
+        return (
+            config.output_dir
+            / CHECKPOINT_DIRNAME
+            / config.period.value
+            / config.time_anchor.value
+            / config.mode.value
+            / config.org
+        )
+
+    def _checkpoint_manifest_path(
+        self,
+        config: RunConfig,
+    ) -> Path:
+        return self._checkpoint_root_dir(config) / CHECKPOINT_MANIFEST_FILENAME
+
+    def _checkpoint_repository_path(
+        self,
+        config: RunConfig,
+        *,
+        repository_full_name: str,
+    ) -> Path:
+        return (
+            self._checkpoint_root_dir(config)
+            / CHECKPOINT_REPOSITORY_DIRNAME
+            / f"{self._stable_repo_checkpoint_key(repository_full_name)}.json"
+        )
+
+    def _checkpoint_contract(
+        self,
+        config: RunConfig,
+    ) -> dict[str, object]:
+        return {
+            "target_org": config.org,
+            "period_grain": config.period.value,
+            "time_anchor": config.time_anchor.value,
+            "mode": config.mode.value,
+            "include_repos": list(config.include_repos),
+            "exclude_repos": list(config.exclude_repos),
+            "collection_window": config.collection_window.model_dump(mode="json"),
+        }
+
+    def _stable_repo_checkpoint_key(
+        self,
+        repository_full_name: str,
+    ) -> str:
+        return hashlib.blake2b(
+            repository_full_name.encode("utf-8"),
+            digest_size=8,
+        ).hexdigest()
 
     def _fetch_repository_pull_requests(
         self,

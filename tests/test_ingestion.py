@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import csv
+import json
+import tempfile
 from collections import deque
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -882,6 +884,120 @@ class TestGitHubIngestionService:
         assert result.failures[0].retriable is True
         assert result.failures[0].message == "Review API unavailable"
 
+    def test_resumes_completed_repositories_from_checkpoint_after_partial_failure(
+        self,
+        tmp_path,
+    ) -> None:
+        """Resume completed repositories from a persisted checkpoint after a partial incremental failure."""
+        # Given
+        api_repository = self._build_repository(
+            "acme/api",
+            pull_outcomes=[
+                [
+                    self._build_pull_request(
+                        number=7,
+                        updated_at="2026-04-11T10:00:00",
+                    ),
+                ]
+            ],
+        )
+        first_service = GitHubIngestionService(
+            cast(
+                GitHubIngestionClientLike,
+                FakeGithubClient(
+                    organizations={},
+                    repositories={
+                        "acme/api": [api_repository],
+                        "acme/web": [
+                            self._build_github_exception(
+                                status=403,
+                                message="Forbidden",
+                            )
+                        ],
+                    },
+                ),
+            )
+        )
+        config = self._build_run_config(
+            as_of="2026-04-18",
+            output_dir=tmp_path,
+        )
+        inventory = RepositoryInventory(
+            organization_login="acme",
+            repositories=(
+                self._build_inventory_item("acme/api"),
+                self._build_inventory_item("acme/web"),
+            ),
+        )
+
+        # When
+        first_result = first_service.fetch_pull_requests(config, inventory)
+        second_service = GitHubIngestionService(
+            cast(
+                GitHubIngestionClientLike,
+                FakeGithubClient(
+                    organizations={},
+                    repositories={
+                        "acme/web": [
+                            self._build_repository(
+                                "acme/web",
+                                pull_outcomes=[
+                                    [
+                                        self._build_pull_request(
+                                            number=8,
+                                            updated_at="2026-04-12T10:00:00",
+                                        ),
+                                    ]
+                                ],
+                            )
+                        ]
+                    },
+                ),
+            )
+        )
+        second_result = second_service.fetch_pull_requests(config, inventory)
+
+        # Then
+        assert [pull_request.repository_full_name for pull_request in first_result.pull_requests] == [
+            "acme/api"
+        ]
+        assert [failure.repository_full_name for failure in first_result.failures] == [
+            "acme/web"
+        ]
+        assert [
+            pull_request.repository_full_name for pull_request in second_result.pull_requests
+        ] == ["acme/api", "acme/web"]
+        assert [pull_request.number for pull_request in second_result.pull_requests] == [
+            7,
+            8,
+        ]
+        assert second_result.failures == ()
+        checkpoint_manifest_path = (
+            tmp_path
+            / "checkpoints"
+            / "month"
+            / "created_at"
+            / "incremental"
+            / "acme"
+            / "manifest.json"
+        )
+        assert json.loads(checkpoint_manifest_path.read_text(encoding="utf-8")) == {
+            "completed_repositories": ["acme/api", "acme/web"],
+            "contract": {
+                "collection_window": {
+                    "end_date": "2026-04-18",
+                    "scope": "open_period",
+                    "start_date": "2026-04-01",
+                },
+                "exclude_repos": [],
+                "include_repos": [],
+                "mode": "incremental",
+                "period_grain": "month",
+                "target_org": "acme",
+                "time_anchor": "created_at",
+            },
+        }
+
     def test_writes_normalized_raw_snapshots_partitioned_by_period(
         self,
         tmp_path,
@@ -1419,7 +1535,13 @@ class TestGitHubIngestionService:
 
     def _build_run_config(self, **overrides: object) -> RunConfig:
         """Build the minimal run configuration needed for ingestion tests."""
-        return RunConfig.model_validate({"org": "acme", **overrides})
+        return RunConfig.model_validate(
+            {
+                "org": "acme",
+                "output_dir": tempfile.mkdtemp(prefix="orgpulse-test-"),
+                **overrides,
+            }
+        )
 
     def _build_repository(
         self,

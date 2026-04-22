@@ -1,0 +1,1346 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ overview.org }} productivity leaderboard</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #070b12;
+      --panel: #0d1320;
+      --panel-2: #101827;
+      --line: #1d2738;
+      --line-strong: #2b3952;
+      --text: #e8edf7;
+      --muted: #8ea0bf;
+      --accent: #75c7ff;
+      --accent-2: #7ee0b3;
+      --accent-3: #f0b35f;
+      --danger: #ff8b8b;
+      --shadow: 0 10px 30px rgba(0, 0, 0, 0.28);
+    }
+
+    * { box-sizing: border-box; }
+
+    html, body {
+      margin: 0;
+      min-height: 100%;
+      background:
+        linear-gradient(180deg, rgba(117, 199, 255, 0.05), transparent 220px),
+        linear-gradient(180deg, #060910 0%, var(--bg) 100%);
+      color: var(--text);
+      font-family: "IBM Plex Sans", "Helvetica Neue", sans-serif;
+    }
+
+    body { padding: 24px 20px 36px; }
+
+    .shell {
+      max-width: 1440px;
+      margin: 0 auto;
+    }
+
+    .hero {
+      display: grid;
+      grid-template-columns: minmax(0, 1.2fr) minmax(320px, 0.8fr);
+      gap: 16px;
+      margin-bottom: 16px;
+    }
+
+    .panel {
+      background: linear-gradient(180deg, rgba(16, 24, 39, 0.96), rgba(10, 16, 28, 0.98));
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: var(--shadow);
+    }
+
+    .hero-panel,
+    .insight-panel,
+    .section-panel {
+      padding: 18px 20px;
+    }
+
+    .eyebrow,
+    .section-kicker {
+      margin: 0 0 10px;
+      color: var(--accent);
+      font-size: 0.72rem;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+      font-weight: 700;
+    }
+
+    h1, h2, h3, p { margin-top: 0; }
+
+    h1 {
+      margin-bottom: 10px;
+      font-size: clamp(2rem, 2.8vw, 3.3rem);
+      line-height: 0.98;
+      letter-spacing: -0.03em;
+      font-family: "Space Grotesk", "IBM Plex Sans", sans-serif;
+    }
+
+    h2 {
+      margin-bottom: 8px;
+      font-size: 1.05rem;
+      letter-spacing: -0.01em;
+    }
+
+    .subtitle,
+    .section-copy,
+    .insight-card p,
+    .table-footnote {
+      color: var(--muted);
+      line-height: 1.55;
+    }
+
+    .hero-meta {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 10px;
+      margin-top: 16px;
+    }
+
+    .meta-box,
+    .stat-card {
+      background: rgba(255, 255, 255, 0.02);
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 12px 14px;
+    }
+
+    .meta-label,
+    .stat-label {
+      display: block;
+      margin-bottom: 6px;
+      color: var(--muted);
+      font-size: 0.72rem;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      font-weight: 700;
+    }
+
+    .meta-value {
+      font-size: 0.95rem;
+      font-weight: 700;
+    }
+
+    .insight-panel h2 {
+      margin-bottom: 12px;
+    }
+
+    .insight-list {
+      display: grid;
+      gap: 10px;
+    }
+
+    .insight-card {
+      border-left: 3px solid var(--accent);
+      background: rgba(255, 255, 255, 0.02);
+      padding: 12px 12px 12px 14px;
+    }
+
+    .insight-card h3 {
+      margin-bottom: 6px;
+      font-size: 0.92rem;
+    }
+
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(6, minmax(0, 1fr));
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+
+    .stat-value {
+      font-size: 1.8rem;
+      line-height: 1;
+      font-weight: 800;
+      font-family: "Space Grotesk", "IBM Plex Sans", sans-serif;
+    }
+
+    .stat-subvalue {
+      margin-top: 8px;
+      color: var(--muted);
+      font-size: 0.88rem;
+      line-height: 1.45;
+    }
+
+    .section-grid {
+      display: grid;
+      gap: 16px;
+    }
+
+    .chart-panel {
+      display: grid;
+      gap: 14px;
+    }
+
+    .tab-strip {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .tab-button {
+      border: 1px solid var(--line-strong);
+      background: rgba(255, 255, 255, 0.02);
+      color: var(--muted);
+      border-radius: 6px;
+      padding: 8px 12px;
+      font: inherit;
+      cursor: pointer;
+    }
+
+    .tab-button.active {
+      color: var(--text);
+      background: rgba(117, 199, 255, 0.12);
+      border-color: var(--accent);
+    }
+
+    .chart-root {
+      min-height: 320px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 10px;
+      background: rgba(255, 255, 255, 0.015);
+    }
+
+    .chart-root svg {
+      display: block;
+      width: 100%;
+      height: 320px;
+      overflow: visible;
+    }
+
+    .chart-axis {
+      fill: var(--muted);
+      font-size: 11px;
+      font-family: "IBM Plex Mono", "SFMono-Regular", monospace;
+    }
+
+    .chart-title {
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      align-items: center;
+      color: var(--muted);
+      font-size: 0.88rem;
+    }
+
+    .chart-legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .legend-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 10px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.02);
+      color: var(--muted);
+      font-size: 0.8rem;
+    }
+
+    .legend-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 999px;
+    }
+
+    .section-actions {
+      display: flex;
+      justify-content: flex-end;
+      margin-bottom: 12px;
+    }
+
+    .table-wrap {
+      width: 100%;
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+    }
+
+    .two-col {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+      gap: 16px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.92rem;
+    }
+
+    th, td {
+      padding: 10px 8px;
+      border-bottom: 1px solid var(--line);
+      text-align: left;
+      vertical-align: middle;
+    }
+
+    th {
+      color: var(--muted);
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      font-weight: 700;
+    }
+
+    td.num {
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+      font-family: "IBM Plex Mono", "SFMono-Regular", monospace;
+    }
+
+    .rank {
+      color: var(--muted);
+      width: 42px;
+    }
+
+    .leader {
+      min-width: 180px;
+    }
+
+    .leader strong {
+      display: block;
+      font-size: 0.96rem;
+      color: var(--text);
+    }
+
+    .leader span {
+      display: block;
+      margin-top: 4px;
+      color: var(--muted);
+      font-size: 0.82rem;
+    }
+
+    .bar-cell {
+      min-width: 200px;
+    }
+
+    .bar-track {
+      width: 100%;
+      height: 8px;
+      background: rgba(255, 255, 255, 0.05);
+      border-radius: 999px;
+      overflow: hidden;
+      margin-bottom: 6px;
+    }
+
+    .bar-fill {
+      height: 100%;
+      background: linear-gradient(90deg, var(--accent), var(--accent-2));
+      border-radius: 999px;
+    }
+
+    .bar-meta {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      color: var(--muted);
+      font-size: 0.8rem;
+    }
+
+    .tag-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 12px;
+    }
+
+    .tag {
+      padding: 7px 10px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      color: var(--muted);
+      font-size: 0.82rem;
+      background: rgba(255, 255, 255, 0.02);
+    }
+
+    .ghost-button,
+    .author-button {
+      border: 1px solid var(--line-strong);
+      background: rgba(255, 255, 255, 0.02);
+      color: var(--text);
+      border-radius: 6px;
+      padding: 8px 12px;
+      font: inherit;
+      cursor: pointer;
+    }
+
+    .ghost-button:hover,
+    .author-button:hover,
+    .author-button.active {
+      background: rgba(117, 199, 255, 0.12);
+      border-color: var(--accent);
+    }
+
+    .hidden {
+      display: none;
+    }
+
+    .detail-shell {
+      display: grid;
+      gap: 14px;
+    }
+
+    .detail-tabs {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .detail-grid {
+      display: grid;
+      grid-template-columns: repeat(6, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .detail-card {
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 12px;
+      background: rgba(255, 255, 255, 0.02);
+    }
+
+    .detail-card strong {
+      display: block;
+      margin-bottom: 6px;
+      color: var(--muted);
+      font-size: 0.72rem;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+    }
+
+    .detail-card span {
+      font-size: 1.1rem;
+      font-weight: 700;
+    }
+
+    .state-list {
+      display: grid;
+      gap: 10px;
+    }
+
+    .state-row {
+      display: grid;
+      grid-template-columns: 160px minmax(0, 1fr) 70px;
+      gap: 12px;
+      align-items: center;
+    }
+
+    .state-track {
+      height: 10px;
+      background: rgba(255, 255, 255, 0.05);
+      border-radius: 999px;
+      overflow: hidden;
+    }
+
+    .state-fill {
+      height: 100%;
+      background: linear-gradient(90deg, var(--accent-3), var(--accent));
+    }
+
+    .small-note {
+      color: var(--muted);
+      font-size: 0.82rem;
+    }
+
+    @media (max-width: 1180px) {
+      .hero,
+      .two-col,
+      .stats-grid,
+      .detail-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .hero-meta {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+    }
+
+    @media (max-width: 720px) {
+      body { padding: 14px 12px 24px; }
+
+       .hero-panel,
+       .insight-panel,
+       .section-panel {
+        padding: 14px;
+      }
+
+      .hero-meta {
+        grid-template-columns: 1fr;
+      }
+
+      .table-wrap {
+        overflow-x: visible;
+      }
+
+      table,
+      tbody,
+      tr,
+      td {
+        display: block;
+        width: 100%;
+      }
+
+      thead {
+        display: none;
+      }
+
+      tr {
+        margin-bottom: 12px;
+        padding: 12px;
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        background: rgba(255, 255, 255, 0.02);
+      }
+
+      td {
+        padding: 7px 0;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+      }
+
+      td:last-child {
+        border-bottom: 0;
+      }
+
+      td::before {
+        content: attr(data-label);
+        display: block;
+        margin-bottom: 4px;
+        color: var(--muted);
+        font-size: 0.7rem;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        font-weight: 700;
+      }
+
+      td.rank::before {
+        content: "Rank";
+      }
+
+      .leader,
+      .bar-cell,
+      td.num {
+        min-width: 0;
+        text-align: left;
+      }
+
+      .bar-track {
+        margin-top: 6px;
+      }
+
+      .state-row {
+        grid-template-columns: 1fr;
+      }
+
+      .bar-cell {
+        min-width: 0;
+      }
+
+      .chart-root svg {
+        height: 240px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <section class="hero">
+      <div class="panel hero-panel">
+        <p class="eyebrow">Engineering Productivity Leaderboard</p>
+        <h1>{{ overview.org }} review and throughput board</h1>
+        <p class="subtitle">
+          Static leaderboard view for the selected window. This version removes tabs,
+          click interactions, and PR list clutter so the focus stays on who shipped,
+          who reviewed, where flow concentrated, and how review latency moved with PR size.
+        </p>
+        <div class="hero-meta">
+          <div class="meta-box">
+            <span class="meta-label">Window</span>
+            <span class="meta-value">{{ overview.since }} to {{ overview.until }}</span>
+          </div>
+          <div class="meta-box">
+            <span class="meta-label">Anchor</span>
+            <span class="meta-value">{{ overview.time_anchor }}</span>
+          </div>
+          <div class="meta-box">
+            <span class="meta-label">Top repository</span>
+            <span class="meta-value">{{ overview.top_repository }}</span>
+          </div>
+          <div class="meta-box">
+            <span class="meta-label">Top author</span>
+            <span class="meta-value">{{ overview.top_author }}</span>
+          </div>
+        </div>
+      </div>
+      <aside class="panel insight-panel">
+        <p class="section-kicker">Key findings</p>
+        <h2>Immediate readout</h2>
+        <div class="insight-list">
+          {% for insight in insights %}
+          <div class="insight-card">
+            <h3>{{ insight.title }}</h3>
+            <p>{{ insight.body }}</p>
+          </div>
+          {% endfor %}
+        </div>
+      </aside>
+    </section>
+
+    <section class="stats-grid">
+      <article class="stat-card">
+        <span class="stat-label">PR throughput</span>
+        <div class="stat-value">{{ overview.pull_requests }}</div>
+        <div class="stat-subvalue">{{ overview.merged_pull_requests }} merged / {{ overview.open_pull_requests }} open</div>
+      </article>
+      <article class="stat-card">
+        <span class="stat-label">Review coverage</span>
+        <div class="stat-value">{{ overview.review_coverage_pct }}%</div>
+        <div class="stat-subvalue">{{ overview.review_submissions }} total review submissions</div>
+      </article>
+      <article class="stat-card">
+        <span class="stat-label">Median first review</span>
+        <div class="stat-value">{{ overview.median_first_review_hours or "-" }}</div>
+        <div class="stat-subvalue">hours from ready/request to first review</div>
+      </article>
+      <article class="stat-card">
+        <span class="stat-label">Median merge time</span>
+        <div class="stat-value">{{ overview.median_merge_hours or "-" }}</div>
+        <div class="stat-subvalue">hours from PR creation to merge</div>
+      </article>
+      <article class="stat-card">
+        <span class="stat-label">Changed lines</span>
+        <div class="stat-value">{{ overview.total_changed_lines }}</div>
+        <div class="stat-subvalue">{{ overview.average_changed_lines_per_pr }} lines per PR on average</div>
+      </article>
+      <article class="stat-card">
+        <span class="stat-label">Reviewers</span>
+        <div class="stat-value">{{ overview.unique_reviewers }}</div>
+        <div class="stat-subvalue">{{ overview.average_reviews_per_pr }} reviews per PR on average</div>
+      </article>
+    </section>
+
+    <div class="section-grid">
+      <section class="panel section-panel chart-panel">
+        <p class="section-kicker">Trend charts</p>
+        <h2>Weekly and monthly movement, graphed</h2>
+        <p class="section-copy">Switch the metric and time grain to compare throughput, code volume, and review speed without leaving the page.</p>
+        <div class="two-col">
+          <div class="tab-strip" id="trend-metric-tabs">
+            <button type="button" class="tab-button active" data-metric="pull_requests">PR throughput</button>
+            <button type="button" class="tab-button" data-metric="changed_lines">Changed lines</button>
+            <button type="button" class="tab-button" data-metric="median_first_review_hours">First review</button>
+            <button type="button" class="tab-button" data-metric="median_merge_hours">Merge time</button>
+          </div>
+          <div class="tab-strip" id="trend-grain-tabs">
+            <button type="button" class="tab-button active" data-grain="weekly">Weekly</button>
+            <button type="button" class="tab-button" data-grain="monthly">Monthly</button>
+          </div>
+        </div>
+        <div class="chart-title">
+          <span id="trend-chart-title">PR throughput by week</span>
+          <div class="chart-legend">
+            <span class="legend-chip"><span class="legend-dot" style="background: var(--accent)"></span>Primary metric</span>
+            <span class="legend-chip"><span class="legend-dot" style="background: var(--accent-3)"></span>Review/merge comparison</span>
+          </div>
+        </div>
+        <div id="trend-chart-root" class="chart-root"></div>
+      </section>
+
+      <section class="two-col">
+        <article class="panel section-panel">
+          <p class="section-kicker">Weekly trend</p>
+          <h2>Created-time weekly movement</h2>
+          <p class="section-copy">Week-over-week flow by PR creation period. Use the deltas to see acceleration and slowdown.</p>
+          <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Week</th>
+                <th class="num">PRs</th>
+                <th class="num">Delta</th>
+                <th class="num">Merged</th>
+                <th class="num">Open</th>
+                <th class="num">Changed lines</th>
+                <th class="num">Line delta</th>
+                <th class="num">Reviews / PR</th>
+                <th class="num">Median first review (h)</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in weekly_trends %}
+              <tr>
+                <td class="leader" data-label="Week">
+                  <strong>{{ row.period_key }}</strong>
+                  <span>created_at basis</span>
+                </td>
+                <td class="num" data-label="PRs">{{ row.pull_requests }}</td>
+                <td class="num" data-label="Delta">{{ row.pull_request_delta if row.pull_request_delta is not none else "-" }}</td>
+                <td class="num" data-label="Merged">{{ row.merged_pull_requests }}</td>
+                <td class="num" data-label="Open">{{ row.open_pull_requests }}</td>
+                <td class="num" data-label="Changed lines">{{ row.changed_lines }}</td>
+                <td class="num" data-label="Line delta">{{ row.changed_lines_delta if row.changed_lines_delta is not none else "-" }}</td>
+                <td class="num" data-label="Reviews / PR">{{ row.average_reviews_per_pr or "-" }}</td>
+                <td class="num" data-label="Median first review (h)">{{ row.median_first_review_hours or "-" }}</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+          </div>
+        </article>
+
+        <article class="panel section-panel">
+          <p class="section-kicker">Monthly trend</p>
+          <h2>Created-time monthly movement</h2>
+          <p class="section-copy">Month-level summary for throughput, code volume, and review responsiveness.</p>
+          <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Month</th>
+                <th class="num">PRs</th>
+                <th class="num">Merged</th>
+                <th class="num">Open</th>
+                <th class="num">Changed lines</th>
+                <th class="num">Reviews / PR</th>
+                <th class="num">Median first review (h)</th>
+                <th class="num">Median merge (h)</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in monthly_trends %}
+              <tr>
+                <td class="leader" data-label="Month">
+                  <strong>{{ row.period_key }}</strong>
+                  <span>created_at basis</span>
+                </td>
+                <td class="num" data-label="PRs">{{ row.pull_requests }}</td>
+                <td class="num" data-label="Merged">{{ row.merged_pull_requests }}</td>
+                <td class="num" data-label="Open">{{ row.open_pull_requests }}</td>
+                <td class="num" data-label="Changed lines">{{ row.changed_lines }}</td>
+                <td class="num" data-label="Reviews / PR">{{ row.average_reviews_per_pr or "-" }}</td>
+                <td class="num" data-label="Median first review (h)">{{ row.median_first_review_hours or "-" }}</td>
+                <td class="num" data-label="Median merge (h)">{{ row.median_merge_hours or "-" }}</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+          </div>
+        </article>
+      </section>
+
+      <section class="panel section-panel">
+        <p class="section-kicker">Author leaderboard</p>
+        <h2>Who drove the most delivery</h2>
+        <p class="section-copy">PR count is the primary rank. Click an author to inspect that person's delivery profile and period changes.</p>
+        <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th class="rank">#</th>
+              <th>Author</th>
+              <th>PR share</th>
+              <th class="num">PRs</th>
+              <th class="num">Merged</th>
+              <th class="num">Open</th>
+              <th class="num">Changed lines</th>
+              <th class="num">Commits</th>
+              <th class="num">Reviews / PR</th>
+              <th class="num">Median first review (h)</th>
+              <th class="num">Median merge (h)</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in authors %}
+            <tr>
+              <td class="rank" data-label="Rank">{{ loop.index }}</td>
+              <td class="leader" data-label="Author">
+                <strong>
+                  <button
+                    type="button"
+                    class="author-button{% if default_author == row.author_login %} active{% endif %}"
+                    data-author="{{ row.author_login }}"
+                  >
+                    {{ row.author_login }}
+                  </button>
+                </strong>
+                <span>{{ row.share_of_prs_pct }}% of org PR flow</span>
+              </td>
+              <td class="bar-cell" data-label="PR share">
+                <div class="bar-track">
+                  <div class="bar-fill" style="width: {{ row.share_of_prs_pct or 0 }}%"></div>
+                </div>
+                <div class="bar-meta">
+                  <span>{{ row.share_of_prs_pct }}%</span>
+                  <span>{{ row.median_changed_lines }} median lines</span>
+                </div>
+              </td>
+              <td class="num" data-label="PRs">{{ row.pull_requests }}</td>
+              <td class="num" data-label="Merged">{{ row.merged_pull_requests }}</td>
+              <td class="num" data-label="Open">{{ row.open_pull_requests }}</td>
+              <td class="num" data-label="Changed lines">{{ row.changed_lines }}</td>
+              <td class="num" data-label="Commits">{{ row.commits }}</td>
+              <td class="num" data-label="Reviews / PR">{{ row.average_reviews_per_pr }}</td>
+              <td class="num" data-label="Median first review (h)">{{ row.median_first_review_hours or "-" }}</td>
+              <td class="num" data-label="Median merge (h)">{{ row.median_merge_hours or "-" }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        </div>
+      </section>
+
+      <section class="panel section-panel">
+        <p class="section-kicker">Author spec</p>
+        <h2 id="author-detail-title">Person detail</h2>
+        <p class="section-copy">Focused view of one person at a time: core output, repo concentration, and week/month change.</p>
+        <div class="two-col">
+          <div class="detail-tabs" id="author-detail-metric-tabs">
+            <button type="button" class="tab-button active" data-author-metric="pull_requests">Throughput</button>
+            <button type="button" class="tab-button" data-author-metric="changed_lines">Changed lines</button>
+            <button type="button" class="tab-button" data-author-metric="median_first_review_hours">Review speed</button>
+            <button type="button" class="tab-button" data-author-metric="median_merge_hours">Merge speed</button>
+          </div>
+          <div class="detail-tabs" id="author-detail-grain-tabs">
+            <button type="button" class="tab-button active" data-author-grain="weekly">Weekly</button>
+            <button type="button" class="tab-button" data-author-grain="monthly">Monthly</button>
+            <button type="button" class="tab-button" data-author-grain="mix">Size mix</button>
+          </div>
+        </div>
+        <div class="chart-title">
+          <span id="author-chart-title">Author chart</span>
+          <div class="chart-legend">
+            <span class="legend-chip"><span class="legend-dot" style="background: var(--accent-2)"></span>Selected author</span>
+          </div>
+        </div>
+        <div id="author-chart-root" class="chart-root"></div>
+        <div id="author-detail-root" class="detail-shell"></div>
+      </section>
+
+      <section class="two-col">
+        <article class="panel section-panel">
+          <p class="section-kicker">Reviewer leaderboard</p>
+          <h2>Who carried review load</h2>
+          <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th class="rank">#</th>
+                <th>Reviewer</th>
+                <th class="num">Submissions</th>
+                <th class="num">PRs reviewed</th>
+                <th class="num">Approvals</th>
+                <th class="num">Changes requested</th>
+                <th class="num">Comments</th>
+                <th class="num">Authors supported</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in reviewers %}
+              <tr>
+                <td class="rank" data-label="Rank">{{ loop.index }}</td>
+                <td class="leader" data-label="Reviewer">
+                  <strong>{{ row.reviewer_login }}</strong>
+                  <span>{{ row.pull_requests_reviewed }} PRs touched</span>
+                </td>
+                <td class="num" data-label="Submissions">{{ row.review_submissions }}</td>
+                <td class="num" data-label="PRs reviewed">{{ row.pull_requests_reviewed }}</td>
+                <td class="num" data-label="Approvals">{{ row.approvals }}</td>
+                <td class="num" data-label="Changes requested">{{ row.changes_requested }}</td>
+                <td class="num" data-label="Comments">{{ row.comments }}</td>
+                <td class="num" data-label="Authors supported">{{ row.authors_supported }}</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+          </div>
+        </article>
+
+        <article class="panel section-panel">
+          <p class="section-kicker">Repository leaderboard</p>
+          <h2>Where throughput concentrated</h2>
+          <p class="section-copy">Top 10 are shown first. Use the button to reveal the remaining repositories.</p>
+          {% if repositories_rest %}
+          <div class="section-actions">
+            <button type="button" id="repository-toggle" class="ghost-button">
+              Show {{ repositories_rest|length }} more repositories
+            </button>
+          </div>
+          {% endif %}
+          <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th class="rank">#</th>
+                <th>Repository</th>
+                <th>PR share</th>
+                <th class="num">PRs</th>
+                <th class="num">Merged</th>
+                <th class="num">Open</th>
+                <th class="num">Authors</th>
+                <th class="num">Reviews / PR</th>
+                <th class="num">Median first review (h)</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in repositories_top %}
+              <tr>
+                <td class="rank" data-label="Rank">{{ loop.index }}</td>
+                <td class="leader" data-label="Repository">
+                  <strong>{{ row.repository_full_name }}</strong>
+                  <span>{{ row.changed_lines }} changed lines</span>
+                </td>
+                <td class="bar-cell" data-label="PR share">
+                  <div class="bar-track">
+                    <div class="bar-fill" style="width: {{ row.share_of_prs_pct or 0 }}%"></div>
+                  </div>
+                  <div class="bar-meta">
+                    <span>{{ row.share_of_prs_pct }}%</span>
+                    <span>{{ row.changed_lines }} lines</span>
+                  </div>
+                </td>
+                <td class="num" data-label="PRs">{{ row.pull_requests }}</td>
+                <td class="num" data-label="Merged">{{ row.merged_pull_requests }}</td>
+                <td class="num" data-label="Open">{{ row.open_pull_requests }}</td>
+                <td class="num" data-label="Authors">{{ row.authors }}</td>
+                <td class="num" data-label="Reviews / PR">{{ row.average_reviews_per_pr }}</td>
+                <td class="num" data-label="Median first review (h)">{{ row.median_first_review_hours or "-" }}</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+            {% if repositories_rest %}
+            <tbody id="repository-extra" class="hidden">
+              {% for row in repositories_rest %}
+              <tr>
+                <td class="rank" data-label="Rank">{{ loop.index + 10 }}</td>
+                <td class="leader" data-label="Repository">
+                  <strong>{{ row.repository_full_name }}</strong>
+                  <span>{{ row.changed_lines }} changed lines</span>
+                </td>
+                <td class="bar-cell" data-label="PR share">
+                  <div class="bar-track">
+                    <div class="bar-fill" style="width: {{ row.share_of_prs_pct or 0 }}%"></div>
+                  </div>
+                  <div class="bar-meta">
+                    <span>{{ row.share_of_prs_pct }}%</span>
+                    <span>{{ row.changed_lines }} lines</span>
+                  </div>
+                </td>
+                <td class="num" data-label="PRs">{{ row.pull_requests }}</td>
+                <td class="num" data-label="Merged">{{ row.merged_pull_requests }}</td>
+                <td class="num" data-label="Open">{{ row.open_pull_requests }}</td>
+                <td class="num" data-label="Authors">{{ row.authors }}</td>
+                <td class="num" data-label="Reviews / PR">{{ row.average_reviews_per_pr }}</td>
+                <td class="num" data-label="Median first review (h)">{{ row.median_first_review_hours or "-" }}</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+            {% endif %}
+          </table>
+          </div>
+        </article>
+      </section>
+
+      <section class="two-col">
+        <article class="panel section-panel">
+          <p class="section-kicker">Review latency by PR size</p>
+          <h2>How bigger changes slowed flow</h2>
+          <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Size</th>
+                <th class="num">PRs</th>
+                <th class="num">Median lines</th>
+                <th class="num">Median first review (h)</th>
+                <th class="num">Median merge (h)</th>
+                <th class="num">Reviews / PR</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in size_buckets %}
+              <tr>
+                <td class="leader" data-label="Size">
+                  <strong>{{ row.bucket }}</strong>
+                  <span>Size bucket</span>
+                </td>
+                <td class="num" data-label="PRs">{{ row.pull_requests }}</td>
+                <td class="num" data-label="Median lines">{{ row.median_changed_lines or "-" }}</td>
+                <td class="num" data-label="Median first review (h)">{{ row.median_first_review_hours or "-" }}</td>
+                <td class="num" data-label="Median merge (h)">{{ row.median_merge_hours or "-" }}</td>
+                <td class="num" data-label="Reviews / PR">{{ row.average_reviews_per_pr or "-" }}</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+          </div>
+          <div class="tag-row">
+            <span class="tag">XS: up to 100 changed lines</span>
+            <span class="tag">S: 101-400</span>
+            <span class="tag">M: 401-1000</span>
+            <span class="tag">L: 1001-3000</span>
+            <span class="tag">XL: 3001+</span>
+          </div>
+        </article>
+
+        <article class="panel section-panel">
+          <p class="section-kicker">Review mix</p>
+          <h2>What kind of review feedback dominated</h2>
+          <div class="state-list">
+            {% for row in review_state_rows %}
+            <div class="state-row">
+              <div class="leader">
+                <strong>{{ row.state }}</strong>
+                <span>{{ row.count }} submissions</span>
+              </div>
+              <div class="state-track">
+                <div class="state-fill" style="width: {{ row.share_pct or 0 }}%"></div>
+              </div>
+              <div class="num">{{ row.share_pct or "-" }}%</div>
+            </div>
+            {% endfor %}
+          </div>
+          <p class="table-footnote">
+            Most of the review load in this window came from comment-only reviews, with
+            approvals and change requests making up the remainder. This split is useful
+            when you want to distinguish coordination overhead from formal gatekeeping.
+          </p>
+        </article>
+      </section>
+    </div>
+  </div>
+  <script id="author-details-data" type="application/json">{{ author_details_json | safe }}</script>
+  <script>
+    const authorDetails = JSON.parse(document.getElementById("author-details-data").textContent);
+    const authorButtons = Array.from(document.querySelectorAll(".author-button"));
+    const authorDetailRoot = document.getElementById("author-detail-root");
+    const authorDetailTitle = document.getElementById("author-detail-title");
+    const authorChartRoot = document.getElementById("author-chart-root");
+    const authorChartTitle = document.getElementById("author-chart-title");
+    const repositoryToggle = document.getElementById("repository-toggle");
+    const repositoryExtra = document.getElementById("repository-extra");
+    const trendChartRoot = document.getElementById("trend-chart-root");
+    const trendChartTitle = document.getElementById("trend-chart-title");
+    const trendMetricTabs = Array.from(document.querySelectorAll("#trend-metric-tabs .tab-button"));
+    const trendGrainTabs = Array.from(document.querySelectorAll("#trend-grain-tabs .tab-button"));
+    const authorMetricTabs = Array.from(document.querySelectorAll("#author-detail-metric-tabs .tab-button"));
+    const authorGrainTabs = Array.from(document.querySelectorAll("#author-detail-grain-tabs .tab-button"));
+    const trendSeries = {
+      weekly: {{ weekly_trends | tojson }},
+      monthly: {{ monthly_trends | tojson }},
+    };
+    let activeTrendMetric = "pull_requests";
+    let activeTrendGrain = "weekly";
+    let activeAuthorMetric = "pull_requests";
+    let activeAuthorGrain = "weekly";
+    let activeAuthor = "{{ default_author }}";
+
+    if (repositoryToggle && repositoryExtra) {
+      repositoryToggle.addEventListener("click", () => {
+        const isHidden = repositoryExtra.classList.contains("hidden");
+        repositoryExtra.classList.toggle("hidden", !isHidden);
+        repositoryToggle.textContent = isHidden
+          ? "Collapse repository list"
+          : `Show ${repositoryExtra.querySelectorAll("tr").length} more repositories`;
+      });
+    }
+
+    for (const button of authorButtons) {
+      button.addEventListener("click", () => {
+        for (const other of authorButtons) {
+          other.classList.toggle("active", other === button);
+        }
+        activeAuthor = button.dataset.author;
+        renderAuthorDetail(activeAuthor);
+      });
+    }
+
+    for (const button of trendMetricTabs) {
+      button.addEventListener("click", () => {
+        activeTrendMetric = button.dataset.metric;
+        syncTabs(trendMetricTabs, button);
+        renderTrendChart();
+      });
+    }
+
+    for (const button of trendGrainTabs) {
+      button.addEventListener("click", () => {
+        activeTrendGrain = button.dataset.grain;
+        syncTabs(trendGrainTabs, button);
+        renderTrendChart();
+      });
+    }
+
+    for (const button of authorMetricTabs) {
+      button.addEventListener("click", () => {
+        activeAuthorMetric = button.dataset.authorMetric;
+        syncTabs(authorMetricTabs, button);
+        renderAuthorDetail(activeAuthor);
+      });
+    }
+
+    for (const button of authorGrainTabs) {
+      button.addEventListener("click", () => {
+        activeAuthorGrain = button.dataset.authorGrain;
+        syncTabs(authorGrainTabs, button);
+        renderAuthorDetail(activeAuthor);
+      });
+    }
+
+    renderTrendChart();
+    renderAuthorDetail(activeAuthor);
+
+    function renderAuthorDetail(authorLogin) {
+      const detail = authorDetails[authorLogin];
+      if (!detail) {
+        authorDetailRoot.innerHTML = "";
+        authorDetailTitle.textContent = "Person detail";
+        return;
+      }
+      const summary = detail.summary;
+      authorDetailTitle.textContent = `${authorLogin} spec`;
+      renderAuthorChart(detail, authorLogin);
+      authorDetailRoot.innerHTML = `
+        <div class="detail-grid">
+          ${detailCard("PRs", summary.pull_requests)}
+          ${detailCard("Merged", summary.merged_pull_requests)}
+          ${detailCard("Open", summary.open_pull_requests)}
+          ${detailCard("Merge rate", formatMetric(summary.merge_rate_pct, "%"))}
+          ${detailCard("Avg lines / PR", formatMetric(summary.average_changed_lines_per_pr))}
+          ${detailCard("Avg commits / PR", formatMetric(summary.average_commits_per_pr))}
+        </div>
+        <div class="two-col">
+          <div>
+            <p class="section-kicker">Top repositories</p>
+            ${renderMiniTable(
+              [
+                ["Repository", "repository_full_name"],
+                ["PRs", "pull_requests"],
+                ["Changed lines", "changed_lines"],
+              ],
+              detail.top_repositories,
+            )}
+          </div>
+          <div>
+            <p class="section-kicker">Size mix</p>
+            ${renderMiniTable(
+              [
+                ["Size", "bucket"],
+                ["PRs", "pull_requests"],
+              ],
+              detail.size_mix,
+            )}
+          </div>
+        </div>
+        <div class="two-col">
+          <div>
+            <p class="section-kicker">Weekly change</p>
+            ${renderMiniTable(
+              [
+                ["Week", "period_key"],
+                ["PRs", "pull_requests"],
+                ["Merged", "merged_pull_requests"],
+                ["Lines", "changed_lines"],
+              ],
+              detail.weekly_trends,
+            )}
+          </div>
+          <div>
+            <p class="section-kicker">Monthly change</p>
+            ${renderMiniTable(
+              [
+                ["Month", "period_key"],
+                ["PRs", "pull_requests"],
+                ["Merged", "merged_pull_requests"],
+                ["Lines", "changed_lines"],
+              ],
+              detail.monthly_trends,
+            )}
+          </div>
+        </div>
+      `;
+    }
+
+    function renderTrendChart() {
+      const rows = trendSeries[activeTrendGrain];
+      const label = activeTrendGrain === "weekly" ? "week" : "month";
+      trendChartTitle.textContent = `${metricLabel(activeTrendMetric)} by ${label}`;
+      renderSeriesChart({
+        element: trendChartRoot,
+        rows,
+        metric: activeTrendMetric,
+        labelKey: "period_key",
+        secondaryMetric: activeTrendMetric === "pull_requests" ? "review_submissions" : null,
+      });
+    }
+
+    function renderAuthorChart(detail, authorLogin) {
+      if (activeAuthorGrain === "mix") {
+        authorChartTitle.textContent = `${authorLogin} size mix`;
+        renderBarChart({
+          element: authorChartRoot,
+          rows: detail.size_mix,
+          labelKey: "bucket",
+          valueKey: "pull_requests",
+        });
+        return;
+      }
+      const rows = detail[`${activeAuthorGrain}_trends`];
+      const label = activeAuthorGrain === "weekly" ? "week" : "month";
+      authorChartTitle.textContent = `${authorLogin} ${metricLabel(activeAuthorMetric)} by ${label}`;
+      renderSeriesChart({
+        element: authorChartRoot,
+        rows,
+        metric: activeAuthorMetric,
+        labelKey: "period_key",
+      });
+    }
+
+    function renderSeriesChart({ element, rows, metric, labelKey, secondaryMetric = null }) {
+      if (!rows || rows.length === 0) {
+        element.innerHTML = "";
+        return;
+      }
+      const width = 920;
+      const height = 320;
+      const padding = { top: 20, right: 18, bottom: 42, left: 56 };
+      const plotWidth = width - padding.left - padding.right;
+      const plotHeight = height - padding.top - padding.bottom;
+      const primaryValues = rows.map((row) => Number(row[metric] ?? 0));
+      const secondaryValues = secondaryMetric
+        ? rows.map((row) => Number(row[secondaryMetric] ?? 0))
+        : [];
+      const maxValue = Math.max(1, ...primaryValues, ...secondaryValues);
+      const stepX = rows.length > 1 ? plotWidth / (rows.length - 1) : plotWidth / 2;
+      const yFor = (value) => padding.top + plotHeight - (value / maxValue) * plotHeight;
+      const xFor = (index) => padding.left + index * stepX;
+      const linePath = rows.map((row, index) => `${index === 0 ? "M" : "L"} ${xFor(index)} ${yFor(Number(row[metric] ?? 0))}`).join(" ");
+      let secondaryPath = "";
+      if (secondaryMetric) {
+        secondaryPath = rows.map((row, index) => `${index === 0 ? "M" : "L"} ${xFor(index)} ${yFor(Number(row[secondaryMetric] ?? 0))}`).join(" ");
+      }
+      const points = rows.map((row, index) => `
+        <circle cx="${xFor(index)}" cy="${yFor(Number(row[metric] ?? 0))}" r="4" fill="${getCss("--accent")}"></circle>
+        <text x="${xFor(index)}" y="${height - 12}" text-anchor="middle" class="chart-axis">${formatCell(row[labelKey])}</text>
+      `).join("");
+      const ticks = [0, 0.25, 0.5, 0.75, 1].map((ratio) => {
+        const value = Math.round(maxValue * ratio);
+        const y = padding.top + plotHeight - plotHeight * ratio;
+        return `
+          <line x1="${padding.left}" x2="${width - padding.right}" y1="${y}" y2="${y}" stroke="rgba(255,255,255,0.06)"></line>
+          <text x="${padding.left - 10}" y="${y + 4}" text-anchor="end" class="chart-axis">${value}</text>
+        `;
+      }).join("");
+      element.innerHTML = `
+        <svg viewBox="0 0 ${width} ${height}" preserveAspectRatio="none">
+          ${ticks}
+          <path d="${linePath}" fill="none" stroke="${getCss("--accent")}" stroke-width="3" stroke-linecap="round"></path>
+          ${secondaryPath ? `<path d="${secondaryPath}" fill="none" stroke="${getCss("--accent-3")}" stroke-width="2" stroke-dasharray="6 6"></path>` : ""}
+          ${points}
+        </svg>
+      `;
+    }
+
+    function renderBarChart({ element, rows, labelKey, valueKey }) {
+      if (!rows || rows.length === 0) {
+        element.innerHTML = "";
+        return;
+      }
+      const width = 920;
+      const height = 320;
+      const padding = { top: 20, right: 18, bottom: 42, left: 56 };
+      const plotWidth = width - padding.left - padding.right;
+      const plotHeight = height - padding.top - padding.bottom;
+      const maxValue = Math.max(1, ...rows.map((row) => Number(row[valueKey] ?? 0)));
+      const groupWidth = plotWidth / rows.length;
+      const barWidth = Math.min(56, groupWidth * 0.58);
+      const bars = rows.map((row, index) => {
+        const value = Number(row[valueKey] ?? 0);
+        const barHeight = (value / maxValue) * plotHeight;
+        const x = padding.left + index * groupWidth + (groupWidth - barWidth) / 2;
+        const y = padding.top + plotHeight - barHeight;
+        const labelX = padding.left + index * groupWidth + groupWidth / 2;
+        return `
+          <rect x="${x}" y="${y}" width="${barWidth}" height="${barHeight}" rx="5" fill="${getCss("--accent-2")}"></rect>
+          <text x="${labelX}" y="${height - 12}" text-anchor="middle" class="chart-axis">${formatCell(row[labelKey])}</text>
+        `;
+      }).join("");
+      const ticks = [0, 0.25, 0.5, 0.75, 1].map((ratio) => {
+        const value = Math.round(maxValue * ratio);
+        const y = padding.top + plotHeight - plotHeight * ratio;
+        return `
+          <line x1="${padding.left}" x2="${width - padding.right}" y1="${y}" y2="${y}" stroke="rgba(255,255,255,0.06)"></line>
+          <text x="${padding.left - 10}" y="${y + 4}" text-anchor="end" class="chart-axis">${value}</text>
+        `;
+      }).join("");
+      element.innerHTML = `
+        <svg viewBox="0 0 ${width} ${height}" preserveAspectRatio="none">
+          ${ticks}
+          ${bars}
+        </svg>
+      `;
+    }
+
+    function renderMiniTable(columns, rows) {
+      const head = columns.map(([label]) => `<th>${label}</th>`).join("");
+      const body = rows.map((row) => `
+        <tr>
+          ${columns.map(([, key]) => `<td>${formatCell(row[key])}</td>`).join("")}
+        </tr>
+      `).join("");
+      return `<div class="table-wrap"><table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>`;
+    }
+
+    function detailCard(label, value) {
+      return `<div class="detail-card"><strong>${label}</strong><span>${value}</span></div>`;
+    }
+
+    function formatMetric(value, suffix = "") {
+      if (value === null || value === undefined || value === "") {
+        return "-";
+      }
+      return `${formatCell(value)}${suffix}`;
+    }
+
+    function metricLabel(metric) {
+      const labels = {
+        pull_requests: "PR throughput",
+        changed_lines: "Changed lines",
+        median_first_review_hours: "Median first review",
+        median_merge_hours: "Median merge",
+      };
+      return labels[metric] || metric;
+    }
+
+    function syncTabs(buttons, activeButton) {
+      for (const button of buttons) {
+        button.classList.toggle("active", button === activeButton);
+      }
+    }
+
+    function getCss(variableName) {
+      return getComputedStyle(document.documentElement).getPropertyValue(variableName).trim();
+    }
+
+    function formatCell(value) {
+      if (value === null || value === undefined || value === "") {
+        return "-";
+      }
+      if (typeof value === "number") {
+        return value.toLocaleString(undefined, { maximumFractionDigits: 2 });
+      }
+      return String(value)
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;");
+    }
+  </script>
+</body>
+</html>

@@ -197,13 +197,32 @@ class AnalysisService:
         self,
         manifest: RunManifest,
     ) -> RawSnapshotWriteResult:
+        period_index = self._snapshot_period_index(manifest)
         return RawSnapshotWriteResult(
             root_dir=manifest.raw_snapshot_root_dir,
             periods=tuple(
-                self._build_snapshot_period(manifest.raw_snapshot_root_dir, period)
-                for period in (*manifest.locked_periods, *manifest.refreshed_periods)
+                period_index[key]
+                for key in sorted(
+                    period_index,
+                    key=lambda period_key: (
+                        period_index[period_key].start_date,
+                        period_key,
+                    ),
+                )
             ),
         )
+
+    def _snapshot_period_index(
+        self,
+        manifest: RunManifest,
+    ) -> dict[str, RawSnapshotPeriod]:
+        return {
+            period.key: self._build_snapshot_period(
+                manifest.raw_snapshot_root_dir,
+                period,
+            )
+            for period in (*manifest.locked_periods, *manifest.refreshed_periods)
+        }
 
     def _load_pull_request_metrics(
         self,
@@ -234,6 +253,7 @@ class AnalysisService:
             key=period.key,
             start_date=period.start_date,
             end_date=period.end_date,
+            closed=period.closed,
             directory=period_dir,
             pull_requests_path=period_dir / "pull_requests.csv",
             pull_request_count=0,
@@ -349,7 +369,30 @@ class AnalysisService:
         )
         if config.top_n is None:
             return tuple(rows)
-        return tuple(rows[-config.top_n :])
+        return self._top_period_rows(rows, config.top_n)
+
+    def _top_period_rows(
+        self,
+        rows: list[AnalysisRow],
+        top_n: int,
+    ) -> tuple[AnalysisRow, ...]:
+        top_rows = sorted(
+            rows,
+            key=lambda row: (
+                -row.pull_request_count,
+                -(row.period_start_date or date.min).toordinal(),
+                row.group_value,
+            ),
+        )[:top_n]
+        return tuple(
+            sorted(
+                top_rows,
+                key=lambda row: (
+                    row.period_start_date or date.min,
+                    row.group_value,
+                ),
+            )
+        )
 
     def _grouped_rows(
         self,

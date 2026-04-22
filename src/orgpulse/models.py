@@ -225,6 +225,7 @@ class RawSnapshotPeriod(BaseModel):
     key: str
     start_date: date
     end_date: date
+    closed: bool = False
     directory: Path
     pull_requests_path: Path
     pull_request_count: int

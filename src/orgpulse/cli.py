@@ -340,8 +340,12 @@ def reaggregate_command(
         )
         raise typer.Exit(code=1)
 
-    collection = _canonical_inventory_collection(config, canonical_pull_requests)
-    repository_count = _canonical_inventory_repository_count(canonical_pull_requests)
+    filtered_pull_requests = _reaggregate_pull_requests(
+        config,
+        canonical_pull_requests=canonical_pull_requests,
+    )
+    collection = _canonical_inventory_collection(config, filtered_pull_requests)
+    repository_count = _canonical_inventory_repository_count(filtered_pull_requests)
     (
         raw_snapshot,
         raw_snapshot_skipped_reason,
@@ -380,7 +384,7 @@ def reaggregate_command(
                 "source": {
                     "kind": "canonical_raw_inventory",
                     "repository_count": repository_count,
-                    "pull_request_count": len(canonical_pull_requests),
+                    "pull_request_count": len(filtered_pull_requests),
                 },
                 "collection": {
                     "window": collection.window.model_dump(mode="json"),
@@ -685,6 +689,7 @@ def _build_snapshot_period(
         key=period.key,
         start_date=period.start_date,
         end_date=period.end_date,
+        closed=period.closed,
         directory=period_dir,
         pull_requests_path=pull_requests_path,
         pull_request_count=_count_snapshot_rows(pull_requests_path),
@@ -703,6 +708,22 @@ def _count_snapshot_rows(path: Path) -> int:
             return max(sum(1 for _ in handle) - 1, 0)
     except OSError:
         return 0
+
+
+def _reaggregate_pull_requests(
+    config: RunConfig,
+    *,
+    canonical_pull_requests: tuple[PullRequestRecord, ...],
+) -> tuple[PullRequestRecord, ...]:
+    return tuple(
+        pull_request
+        for pull_request in canonical_pull_requests
+        if (
+            anchor_at := config.time_anchor.pull_request_datetime(pull_request)
+        )
+        is not None
+        and anchor_at.date() <= config.collection_window.end_date
+    )
 
 
 def _canonical_inventory_collection(

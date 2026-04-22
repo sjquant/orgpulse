@@ -430,6 +430,7 @@ class NormalizedRawSnapshotWriter:
             key=snapshot_period.key,
             start_date=snapshot_period.start_date,
             end_date=snapshot_period.end_date,
+            closed=snapshot_period.closed,
             directory=period_dir,
             pull_requests_path=pull_requests_path,
             pull_request_count=len(pull_request_rows),

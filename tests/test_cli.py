@@ -1282,6 +1282,110 @@ class TestRunCommandRuntime:
             }
         ]
 
+    def test_reaggregate_respects_requested_as_of_when_inventory_has_future_rows(
+        self,
+        runner: CliRunner,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path,
+    ) -> None:
+        """Reaggregate only rows whose selected anchor falls on or before the requested as-of date."""
+        # Given
+        seed_config = build_run_config(
+            org="acme",
+            as_of="2026-05-20",
+            mode=RunMode.FULL,
+            output_dir=tmp_path,
+        )
+        seed_collection = PullRequestCollection(
+            window=seed_config.collection_window,
+            pull_requests=(
+                PullRequestRecord(
+                    repository_full_name="acme/api",
+                    number=41,
+                    title="April work",
+                    state="closed",
+                    draft=False,
+                    merged=True,
+                    author_login="alice",
+                    created_at=datetime.fromisoformat("2026-04-10T09:00:00"),
+                    updated_at=datetime.fromisoformat("2026-04-12T09:00:00"),
+                    closed_at=datetime.fromisoformat("2026-04-12T09:00:00"),
+                    merged_at=datetime.fromisoformat("2026-04-12T09:00:00"),
+                    additions=8,
+                    deletions=2,
+                    changed_files=2,
+                    commits=2,
+                    html_url="https://example.test/pr/41",
+                ),
+                PullRequestRecord(
+                    repository_full_name="acme/api",
+                    number=42,
+                    title="Future work",
+                    state="closed",
+                    draft=False,
+                    merged=True,
+                    author_login="alice",
+                    created_at=datetime.fromisoformat("2026-05-10T09:00:00"),
+                    updated_at=datetime.fromisoformat("2026-05-12T09:00:00"),
+                    closed_at=datetime.fromisoformat("2026-05-12T09:00:00"),
+                    merged_at=datetime.fromisoformat("2026-05-12T09:00:00"),
+                    additions=9,
+                    deletions=3,
+                    changed_files=3,
+                    commits=3,
+                    html_url="https://example.test/pr/42",
+                ),
+            ),
+            failures=(),
+        )
+        NormalizedRawSnapshotWriter().write(seed_config, seed_collection)
+        monkeypatch.setattr(
+            "orgpulse.cli.resolve_auth_token",
+            lambda config: (_ for _ in ()).throw(
+                AssertionError("reaggregate should not resolve GitHub auth")
+            ),
+        )
+
+        # When
+        result = runner.invoke(
+            app,
+            [
+                "reaggregate",
+                "--org",
+                "acme",
+                "--as-of",
+                "2026-04-18",
+                "--period",
+                "month",
+                "--time-anchor",
+                "created_at",
+                "--output-dir",
+                str(tmp_path),
+            ],
+        )
+
+        # Then
+        assert result.exit_code == 0
+        payload = json.loads(result.stdout)
+        assert payload["source"] == {
+            "kind": "canonical_raw_inventory",
+            "pull_request_count": 1,
+            "repository_count": 1,
+        }
+        assert [period["key"] for period in payload["raw_snapshot"]["periods"]] == [
+            "2026-04"
+        ]
+        with (
+            tmp_path
+            / "raw"
+            / "month"
+            / "created_at"
+            / "2026-04"
+            / "pull_requests.csv"
+        ).open(newline="", encoding="utf-8") as handle:
+            rows = list(csv.DictReader(handle))
+        assert [row["pull_request_number"] for row in rows] == ["41"]
+
     def test_rewrites_identical_outputs_safely_on_rerun(
         self,
         runner: CliRunner,
@@ -3506,6 +3610,117 @@ class TestAnalyzeCommand:
         assert rows[0]["merged_pull_request_count"] == "2"
         assert rows[0]["period_key"] == ""
 
+    def test_writes_period_analysis_top_n_from_largest_periods(
+        self,
+        runner: CliRunner,
+        github_auth_service: None,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path,
+        pull_request_factory,
+    ) -> None:
+        """Write period-grouped top-N output using the largest periods instead of the latest periods."""
+        # Given
+        collection = PullRequestCollection(
+            window=CollectionWindow(
+                scope=RunScope.FULL_HISTORY,
+                start_date=None,
+                end_date=datetime.fromisoformat("2026-02-28T00:00:00").date(),
+            ),
+            pull_requests=(
+                pull_request_factory(
+                    repository_full_name="acme/api",
+                    number=51,
+                    title="January one",
+                    author_login="alice",
+                    created_at=datetime.fromisoformat("2026-01-03T09:00:00"),
+                    updated_at=datetime.fromisoformat("2026-01-04T09:00:00"),
+                    closed_at=datetime.fromisoformat("2026-01-05T09:00:00"),
+                    merged=True,
+                    merged_at=datetime.fromisoformat("2026-01-05T09:00:00"),
+                ),
+                pull_request_factory(
+                    repository_full_name="acme/api",
+                    number=52,
+                    title="January two",
+                    author_login="bob",
+                    created_at=datetime.fromisoformat("2026-01-10T09:00:00"),
+                    updated_at=datetime.fromisoformat("2026-01-11T09:00:00"),
+                    closed_at=datetime.fromisoformat("2026-01-12T09:00:00"),
+                    merged=True,
+                    merged_at=datetime.fromisoformat("2026-01-12T09:00:00"),
+                ),
+                pull_request_factory(
+                    repository_full_name="acme/web",
+                    number=53,
+                    title="January three",
+                    author_login="carol",
+                    created_at=datetime.fromisoformat("2026-01-14T09:00:00"),
+                    updated_at=datetime.fromisoformat("2026-01-15T09:00:00"),
+                    closed_at=datetime.fromisoformat("2026-01-16T09:00:00"),
+                    merged=True,
+                    merged_at=datetime.fromisoformat("2026-01-16T09:00:00"),
+                ),
+                pull_request_factory(
+                    repository_full_name="acme/web",
+                    number=54,
+                    title="February one",
+                    author_login="dana",
+                    created_at=datetime.fromisoformat("2026-02-10T09:00:00"),
+                    updated_at=datetime.fromisoformat("2026-02-11T09:00:00"),
+                    closed_at=datetime.fromisoformat("2026-02-12T09:00:00"),
+                    merged=True,
+                    merged_at=datetime.fromisoformat("2026-02-12T09:00:00"),
+                ),
+            ),
+            failures=(),
+        )
+        _configure_production_cli_runtime(
+            monkeypatch,
+            collection=collection,
+        )
+        run_result = runner.invoke(
+            app,
+            [
+                "run",
+                "--org",
+                "acme",
+                "--mode",
+                "full",
+                "--as-of",
+                "2026-02-28",
+                "--output-dir",
+                str(tmp_path),
+            ],
+        )
+        assert run_result.exit_code == 0
+
+        # When
+        result = runner.invoke(
+            app,
+            [
+                "analyze",
+                "--org",
+                "acme",
+                "--grain",
+                "month",
+                "--group-by",
+                "period",
+                "--top",
+                "1",
+                "--output-dir",
+                str(tmp_path),
+                "--format",
+                "json",
+            ],
+        )
+
+        # Then
+        assert result.exit_code == 0
+        payload = json.loads(result.stdout)
+        assert len(payload["rows"]) == 1
+        assert payload["rows"][0]["group_value"] == "2026-01"
+        assert payload["rows"][0]["pull_request_count"] == 3
+
     def test_writes_author_analysis_as_markdown(
         self,
         runner: CliRunner,
@@ -3784,6 +3999,150 @@ class TestAnalyzeCommand:
                 },
             ],
         }
+        repository_entities = payload["views"]["repository"]["entities"]
+        assert [entity["key"] for entity in repository_entities] == [
+            "acme/api",
+            "acme/web",
+        ]
+        assert repository_entities[0]["totals"]["pull_request_count"] == 2
+        assert repository_entities[0]["totals"]["merged_pull_request_count"] == 1
+        assert repository_entities[0]["totals"]["median_time_to_merge_hours"] == 147.0
+        assert repository_entities[1]["totals"]["pull_request_count"] == 1
+        assert repository_entities[1]["totals"]["median_time_to_merge_hours"] == 99.0
+
+    def test_writes_html_analysis_totals_using_all_period_metrics(
+        self,
+        runner: CliRunner,
+        github_auth_service: None,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path,
+        pull_request_factory,
+    ) -> None:
+        """Write HTML analysis totals with medians derived from all matched pull requests instead of summed period medians."""
+        # Given
+        collection = PullRequestCollection(
+            window=CollectionWindow(
+                scope=RunScope.FULL_HISTORY,
+                start_date=None,
+                end_date=datetime.fromisoformat("2026-02-28T00:00:00").date(),
+            ),
+            pull_requests=(
+                pull_request_factory(
+                    repository_full_name="acme/api",
+                    number=61,
+                    title="January API work",
+                    author_login="alice",
+                    created_at=datetime.fromisoformat("2026-01-01T09:00:00"),
+                    updated_at=datetime.fromisoformat("2026-01-02T09:00:00"),
+                    closed_at=datetime.fromisoformat("2026-01-02T09:00:00"),
+                    merged=True,
+                    merged_at=datetime.fromisoformat("2026-01-02T09:00:00"),
+                ),
+                pull_request_factory(
+                    repository_full_name="acme/api",
+                    number=62,
+                    title="February API work",
+                    author_login="alice",
+                    created_at=datetime.fromisoformat("2026-02-01T09:00:00"),
+                    updated_at=datetime.fromisoformat("2026-02-05T09:00:00"),
+                    closed_at=datetime.fromisoformat("2026-02-05T09:00:00"),
+                    merged=True,
+                    merged_at=datetime.fromisoformat("2026-02-05T09:00:00"),
+                ),
+            ),
+            failures=(),
+        )
+        _configure_production_cli_runtime(
+            monkeypatch,
+            collection=collection,
+        )
+        run_result = runner.invoke(
+            app,
+            [
+                "run",
+                "--org",
+                "acme",
+                "--mode",
+                "full",
+                "--as-of",
+                "2026-02-28",
+                "--output-dir",
+                str(tmp_path),
+            ],
+        )
+        assert run_result.exit_code == 0
+
+        # When
+        result = runner.invoke(
+            app,
+            [
+                "analyze",
+                "--org",
+                "acme",
+                "--grain",
+                "month",
+                "--group-by",
+                "repository",
+                "--output-dir",
+                str(tmp_path),
+                "--format",
+                "html",
+            ],
+        )
+
+        # Then
+        assert result.exit_code == 0
+        payload_match = re.search(
+            r'<script id="report-data" type="application/json">(.*?)</script>',
+            result.stdout,
+            re.S,
+        )
+        assert payload_match is not None
+        payload = json.loads(payload_match.group(1))
+        assert payload["views"]["repository"]["entities"] == [
+            {
+                "key": "acme/api",
+                "label": "acme/api",
+                "period_values": [
+                    {
+                        "closed": True,
+                        "end_date": "2026-01-31",
+                        "key": "2026-01",
+                        "label": "2026-01",
+                        "start_date": "2026-01-01",
+                        "values": {
+                            "median_time_to_first_review_hours": None,
+                            "median_time_to_merge_hours": 24.0,
+                            "merged_pull_request_count": 1,
+                            "pull_request_count": 1,
+                            "total_changed_lines": 10,
+                        },
+                    },
+                    {
+                        "closed": False,
+                        "end_date": "2026-02-28",
+                        "key": "2026-02",
+                        "label": "2026-02",
+                        "start_date": "2026-02-01",
+                        "values": {
+                            "median_time_to_first_review_hours": None,
+                            "median_time_to_merge_hours": 96.0,
+                            "merged_pull_request_count": 1,
+                            "pull_request_count": 1,
+                            "total_changed_lines": 10,
+                        },
+                    },
+                ],
+                "totals": {
+                    "median_time_to_first_review_hours": None,
+                    "median_time_to_merge_hours": 60.0,
+                    "merged_pull_request_count": 2,
+                    "pull_request_count": 2,
+                    "total_changed_lines": 20,
+                },
+            }
+        ]
+        assert [period["closed"] for period in payload["periods"]] == [True, False]
 
     def test_fails_when_local_analysis_inputs_are_missing(
         self,

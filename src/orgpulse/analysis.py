@@ -11,6 +11,7 @@ from statistics import fmean, median
 from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator
 
 from orgpulse.config import get_settings
+from orgpulse.distribution import trim_upper_tail, validate_distribution_percentile
 from orgpulse.errors import AnalysisInputError
 from orgpulse.metrics import PullRequestMetricCollectionBuilder
 from orgpulse.models import (
@@ -56,6 +57,7 @@ class AnalysisConfig(BaseModel):
     top_n: int | None = Field(default=None, ge=1)
     since: date | None = None
     until: date | None = None
+    distribution_percentile: int = 100
     export_format: AnalysisExportFormat = AnalysisExportFormat.JSON
 
     @field_validator("output_dir", mode="before")
@@ -76,6 +78,14 @@ class AnalysisConfig(BaseModel):
         if since is not None and value is not None and value < since:
             raise ValueError("--until must be on or after --since")
         return value
+
+    @field_validator("distribution_percentile")
+    @classmethod
+    def validate_distribution_percentile_value(
+        cls,
+        value: int,
+    ) -> int:
+        return validate_distribution_percentile(value)
 
 
 class AnalysisRow(BaseModel):
@@ -119,6 +129,7 @@ class AnalysisResult(BaseModel):
     since: date | None
     until: date | None
     top_n: int | None
+    distribution_percentile: int
     matched_pull_request_count: int
     rows: tuple[AnalysisRow, ...]
     export_format: AnalysisExportFormat
@@ -151,6 +162,7 @@ class AnalysisService:
             since=config.since,
             until=config.until,
             top_n=config.top_n,
+            distribution_percentile=config.distribution_percentile,
             matched_pull_request_count=len(filtered_metrics),
             rows=rows,
             export_format=config.export_format,
@@ -279,6 +291,7 @@ class AnalysisService:
             default_top_n=8 if config.top_n is None else config.top_n,
             since=config.since,
             until=config.until,
+            distribution_percentile=config.distribution_percentile,
             matched_pull_request_count=len(filtered_metrics),
             filtered_metrics=filtered_metrics,
             raw_snapshot=raw_snapshot,
@@ -356,6 +369,7 @@ class AnalysisService:
                 period_key=period.key,
                 period_start_date=period.start_date,
                 period_end_date=period.end_date,
+                distribution_percentile=config.distribution_percentile,
                 pull_request_metrics=tuple(metrics_by_period_key.get(period.key, ())),
             )
             for period in pull_request_metrics.periods
@@ -413,6 +427,7 @@ class AnalysisService:
                 period_key=None,
                 period_start_date=None,
                 period_end_date=None,
+                distribution_percentile=config.distribution_percentile,
                 pull_request_metrics=tuple(group_metrics),
             )
             for group_value, group_metrics in metrics_by_group.items()
@@ -434,6 +449,7 @@ class AnalysisService:
         period_key: str | None,
         period_start_date: date | None,
         period_end_date: date | None,
+        distribution_percentile: int,
         pull_request_metrics: tuple[PullRequestMetricRecord, ...],
     ) -> AnalysisRow:
         merged_pull_request_count = len(
@@ -451,24 +467,37 @@ class AnalysisService:
                 metric.time_to_merge_seconds
                 for metric in pull_request_metrics
                 if metric.time_to_merge_seconds is not None
-            )
+            ),
+            distribution_percentile=distribution_percentile,
         )
         time_to_first_review = self._summary(
             tuple(
                 metric.time_to_first_review_seconds
                 for metric in pull_request_metrics
                 if metric.time_to_first_review_seconds is not None
-            )
+            ),
+            distribution_percentile=distribution_percentile,
         )
-        additions = self._summary(tuple(metric.additions for metric in pull_request_metrics))
-        deletions = self._summary(tuple(metric.deletions for metric in pull_request_metrics))
+        additions = self._summary(
+            tuple(metric.additions for metric in pull_request_metrics),
+            distribution_percentile=distribution_percentile,
+        )
+        deletions = self._summary(
+            tuple(metric.deletions for metric in pull_request_metrics),
+            distribution_percentile=distribution_percentile,
+        )
         changed_lines = self._summary(
-            tuple(metric.changed_lines for metric in pull_request_metrics)
+            tuple(metric.changed_lines for metric in pull_request_metrics),
+            distribution_percentile=distribution_percentile,
         )
         changed_files = self._summary(
-            tuple(metric.changed_files for metric in pull_request_metrics)
+            tuple(metric.changed_files for metric in pull_request_metrics),
+            distribution_percentile=distribution_percentile,
         )
-        commits = self._summary(tuple(metric.commits for metric in pull_request_metrics))
+        commits = self._summary(
+            tuple(metric.commits for metric in pull_request_metrics),
+            distribution_percentile=distribution_percentile,
+        )
         return AnalysisRow(
             group_value=group_value,
             period_key=period_key,
@@ -502,8 +531,14 @@ class AnalysisService:
     def _summary(
         self,
         values: tuple[int, ...],
+        *,
+        distribution_percentile: int,
     ) -> MetricValueSummary:
-        if not values:
+        trimmed_values = trim_upper_tail(
+            values,
+            percentile=distribution_percentile,
+        )
+        if not trimmed_values:
             return MetricValueSummary(
                 count=0,
                 total=0,
@@ -511,10 +546,10 @@ class AnalysisService:
                 median=None,
             )
         return MetricValueSummary(
-            count=len(values),
-            total=sum(values),
-            average=fmean(values),
-            median=float(median(values)),
+            count=len(trimmed_values),
+            total=sum(trimmed_values),
+            average=fmean(trimmed_values),
+            median=float(median(trimmed_values)),
         )
 
     def _per_active_author(
@@ -537,6 +572,7 @@ def build_analysis_config(
     top_n: int | None = None,
     since: date | str | None = None,
     until: date | str | None = None,
+    distribution_percentile: int | None = None,
     export_format: AnalysisExportFormat | None = None,
 ) -> AnalysisConfig:
     settings = get_settings()
@@ -560,6 +596,8 @@ def build_analysis_config(
         payload["since"] = since
     if until is not None:
         payload["until"] = until
+    if distribution_percentile is not None:
+        payload["distribution_percentile"] = distribution_percentile
     return AnalysisConfig.model_validate(payload)
 
 
@@ -603,6 +641,7 @@ def _render_markdown(
         f"- Time anchor: {result.time_anchor.value}",
         f"- Since: {result.since.isoformat() if result.since is not None else 'all'}",
         f"- Until: {result.until.isoformat() if result.until is not None else 'all'}",
+        f"- Distribution percentile: {result.distribution_percentile}",
         f"- Matched pull requests: {result.matched_pull_request_count}",
         f"- Top N: {result.top_n if result.top_n is not None else 'all'}",
         "",

@@ -250,8 +250,11 @@ output/
 focused analysis views without refetching GitHub data.
 
 - Supports `period`, `repository`, and `author` groupings
-- Respects `--since`, `--until`, `--time-anchor`, and `--top`
+- Respects `--since`, `--until`, `--time-anchor`, `--top`, and
+  `--distribution-percentile`
 - Writes JSON, CSV, Markdown, or interactive HTML to stdout
+- Trims upper-tail outliers from distribution-based metrics with
+  `--distribution-percentile 95|99|100` where `100` keeps all values
 - HTML output includes shared controls, single-series focus mode, and spike
   diagnostics such as same-period-created ratio, older-PR ratio, top
   contributing repositories, top updated dates, and timeline-event breakdowns
@@ -266,6 +269,7 @@ uv run orgpulse analyze \
   --time-anchor updated_at \
   --since 2026-04-01 \
   --until 2026-04-30 \
+  --distribution-percentile 95 \
   --format html \
   --output-dir output > analysis.html
 ```

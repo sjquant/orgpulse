@@ -370,7 +370,7 @@
 
     function initialize() {
       reportTitle.textContent = `${report.target_org} diagnostics`;
-      reportSubtitle.textContent = `${report.grain} grain anchored on ${report.time_anchor} with ${report.matched_pull_request_count} matched pull requests`;
+      reportSubtitle.textContent = `${report.grain} grain anchored on ${report.time_anchor} with ${report.matched_pull_request_count} matched pull requests and a ${report.distribution_percentile}th percentile distribution cutoff`;
       populateViewOptions();
       populatePeriodOptions();
       syncMetricOptions();

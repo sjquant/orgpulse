@@ -3721,6 +3721,117 @@ class TestAnalyzeCommand:
         assert payload["rows"][0]["group_value"] == "2026-01"
         assert payload["rows"][0]["pull_request_count"] == 3
 
+    def test_trims_distribution_metrics_with_percentile_cutoff(
+        self,
+        runner: CliRunner,
+        github_auth_service: None,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path,
+        pull_request_factory,
+    ) -> None:
+        """Trim upper-tail outliers from distribution-based analysis summaries."""
+        # Given
+        collection = PullRequestCollection(
+            window=CollectionWindow(
+                scope=RunScope.FULL_HISTORY,
+                start_date=None,
+                end_date=datetime.fromisoformat("2026-04-30T00:00:00").date(),
+            ),
+            pull_requests=(
+                pull_request_factory(
+                    repository_full_name="acme/api",
+                    number=71,
+                    title="Normal API work",
+                    author_login="alice",
+                    created_at=datetime.fromisoformat("2026-04-01T09:00:00"),
+                    updated_at=datetime.fromisoformat("2026-04-02T10:00:00"),
+                    closed_at=datetime.fromisoformat("2026-04-03T09:00:00"),
+                    merged=True,
+                    merged_at=datetime.fromisoformat("2026-04-03T09:00:00"),
+                    additions=8,
+                    deletions=2,
+                ),
+                pull_request_factory(
+                    repository_full_name="acme/api",
+                    number=72,
+                    title="Normal API follow-up",
+                    author_login="bob",
+                    created_at=datetime.fromisoformat("2026-04-04T09:00:00"),
+                    updated_at=datetime.fromisoformat("2026-04-05T10:00:00"),
+                    closed_at=datetime.fromisoformat("2026-04-06T09:00:00"),
+                    merged=True,
+                    merged_at=datetime.fromisoformat("2026-04-06T09:00:00"),
+                    additions=16,
+                    deletions=4,
+                ),
+                pull_request_factory(
+                    repository_full_name="acme/api",
+                    number=73,
+                    title="Large migration",
+                    author_login="carol",
+                    created_at=datetime.fromisoformat("2026-04-07T09:00:00"),
+                    updated_at=datetime.fromisoformat("2026-04-08T10:00:00"),
+                    closed_at=datetime.fromisoformat("2026-05-30T09:00:00"),
+                    merged=True,
+                    merged_at=datetime.fromisoformat("2026-05-30T09:00:00"),
+                    additions=1000,
+                    deletions=0,
+                ),
+            ),
+            failures=(),
+        )
+        _configure_production_cli_runtime(
+            monkeypatch,
+            collection=collection,
+        )
+        run_result = runner.invoke(
+            app,
+            [
+                "run",
+                "--org",
+                "acme",
+                "--mode",
+                "full",
+                "--as-of",
+                "2026-04-30",
+                "--output-dir",
+                str(tmp_path),
+            ],
+        )
+        assert run_result.exit_code == 0
+
+        # When
+        result = runner.invoke(
+            app,
+            [
+                "analyze",
+                "--org",
+                "acme",
+                "--grain",
+                "month",
+                "--group-by",
+                "period",
+                "--distribution-percentile",
+                "95",
+                "--output-dir",
+                str(tmp_path),
+                "--format",
+                "json",
+            ],
+        )
+
+        # Then
+        assert result.exit_code == 0
+        payload = json.loads(result.stdout)
+        assert payload["distribution_percentile"] == 95
+        assert payload["matched_pull_request_count"] == 3
+        row = payload["rows"][0]
+        assert row["pull_request_count"] == 3
+        assert row["changed_lines_total"] == 30
+        assert row["changed_lines_average"] == 15.0
+        assert row["time_to_merge_count"] == 2
+        assert row["time_to_merge_average_seconds"] == 172800.0
+
     def test_writes_author_analysis_as_markdown(
         self,
         runner: CliRunner,
@@ -3953,6 +4064,7 @@ class TestAnalyzeCommand:
         assert payload_match is not None
         payload = json.loads(payload_match.group(1))
         assert payload["initial_view"] == "repository"
+        assert payload["distribution_percentile"] == 100
         assert set(payload["views"].keys()) == {"author", "period", "repository"}
         assert payload["matched_pull_request_count"] == 3
         assert payload["periods"][0]["diagnostics"] == {
@@ -4143,6 +4255,35 @@ class TestAnalyzeCommand:
             }
         ]
         assert [period["closed"] for period in payload["periods"]] == [True, False]
+
+    def test_rejects_unsupported_distribution_percentile(
+        self,
+        runner: CliRunner,
+        tmp_path,
+    ) -> None:
+        """Reject unsupported percentile cutoffs before analysis starts."""
+        # Given
+
+        # When
+        result = runner.invoke(
+            app,
+            [
+                "analyze",
+                "--org",
+                "acme",
+                "--grain",
+                "month",
+                "--distribution-percentile",
+                "90",
+                "--output-dir",
+                str(tmp_path),
+            ],
+        )
+
+        # Then
+        assert result.exit_code == 2
+        assert "orgpulse: invalid analysis configuration" in result.stderr
+        assert "distribution percentile must be one of 95, 99, 100" in result.stderr
 
     def test_fails_when_local_analysis_inputs_are_missing(
         self,

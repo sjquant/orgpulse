@@ -471,6 +471,13 @@ def analyze_command(
             help="Inclusive ISO date upper bound for the selected time anchor.",
         ),
     ] = None,
+    distribution_percentile: Annotated[
+        int | None,
+        typer.Option(
+            "--distribution-percentile",
+            help="Upper-tail percentile retained for distribution-based metrics. Use 95, 99, or 100.",
+        ),
+    ] = None,
     time_anchor: Annotated[
         TimeAnchor | None,
         typer.Option(
@@ -503,6 +510,7 @@ def analyze_command(
             top_n=top_n,
             since=since,
             until=until,
+            distribution_percentile=distribution_percentile,
             export_format=export_format,
         )
     except ValidationError as exc:

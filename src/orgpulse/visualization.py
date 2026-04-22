@@ -12,6 +12,7 @@ from typing import cast
 
 from jinja2 import Environment, FileSystemLoader, Template, select_autoescape
 
+from orgpulse.distribution import trim_upper_tail
 from orgpulse.models import (
     OrganizationMetricCollection,
     PullRequestMetricCollection,
@@ -81,6 +82,7 @@ def build_analysis_report_payload(
     default_top_n: int,
     since: date | None,
     until: date | None,
+    distribution_percentile: int,
     matched_pull_request_count: int,
     filtered_metrics: tuple[PullRequestMetricRecord, ...],
     raw_snapshot: RawSnapshotWriteResult,
@@ -96,6 +98,7 @@ def build_analysis_report_payload(
                 period_descriptor=period_descriptor,
                 period_metrics=metrics_by_period.get(period_key, ()),
                 raw_period=raw_periods.get(period_key),
+                distribution_percentile=distribution_percentile,
             )
         )
     repository_view = _build_entity_view(
@@ -105,11 +108,13 @@ def build_analysis_report_payload(
             metric.repository_full_name,
             metric.repository_full_name,
         ),
+        distribution_percentile=distribution_percentile,
     )
     author_view = _build_entity_view(
         period_catalog=period_catalog,
         filtered_metrics=filtered_metrics,
         identity_builder=lambda metric: _author_identity(metric.author_login),
+        distribution_percentile=distribution_percentile,
     )
     return {
         "target_org": target_org,
@@ -119,6 +124,7 @@ def build_analysis_report_payload(
         "default_top_n": default_top_n,
         "since": None if since is None else since.isoformat(),
         "until": None if until is None else until.isoformat(),
+        "distribution_percentile": distribution_percentile,
         "matched_pull_request_count": matched_pull_request_count,
         "default_period_key": (
             period_reports[-1]["key"] if period_reports else ""
@@ -163,6 +169,7 @@ def build_organization_report_payload(
         default_top_n=8,
         since=None,
         until=None,
+        distribution_percentile=100,
         matched_pull_request_count=sum(
             len(period.pull_request_metrics)
             for period in pull_request_metrics.periods
@@ -264,8 +271,12 @@ def _build_period_report(
     period_descriptor: dict[str, object],
     period_metrics: tuple[PullRequestMetricRecord, ...],
     raw_period: dict[str, tuple[dict[str, str], ...]] | None,
+    distribution_percentile: int,
 ) -> dict[str, object]:
-    summary = _aggregate_metric_summary(period_metrics)
+    summary = _aggregate_metric_summary(
+        period_metrics,
+        distribution_percentile=distribution_percentile,
+    )
     return {
         **period_descriptor,
         "summary": summary,
@@ -280,6 +291,8 @@ def _build_period_report(
 
 def _aggregate_metric_summary(
     metrics: Sequence[PullRequestMetricRecord],
+    *,
+    distribution_percentile: int,
 ) -> dict[str, int | float | None]:
     merged_pull_request_count = sum(1 for metric in metrics if metric.merged)
     active_author_count = len(
@@ -289,16 +302,26 @@ def _aggregate_metric_summary(
             if metric.author_login is not None
         }
     )
-    time_to_merge_values = [
-        metric.time_to_merge_seconds
-        for metric in metrics
-        if metric.time_to_merge_seconds is not None
-    ]
-    time_to_first_review_values = [
-        metric.time_to_first_review_seconds
-        for metric in metrics
-        if metric.time_to_first_review_seconds is not None
-    ]
+    time_to_merge_values = trim_upper_tail(
+        [
+            metric.time_to_merge_seconds
+            for metric in metrics
+            if metric.time_to_merge_seconds is not None
+        ],
+        percentile=distribution_percentile,
+    )
+    time_to_first_review_values = trim_upper_tail(
+        [
+            metric.time_to_first_review_seconds
+            for metric in metrics
+            if metric.time_to_first_review_seconds is not None
+        ],
+        percentile=distribution_percentile,
+    )
+    changed_line_values = trim_upper_tail(
+        [metric.changed_lines for metric in metrics],
+        percentile=distribution_percentile,
+    )
     return {
         "pull_request_count": len(metrics),
         "merged_pull_request_count": merged_pull_request_count,
@@ -321,7 +344,7 @@ def _aggregate_metric_summary(
         "time_to_first_review_median_hours": _hours_from_seconds(
             _median(time_to_first_review_values)
         ),
-        "total_changed_lines": sum(metric.changed_lines for metric in metrics),
+        "total_changed_lines": sum(changed_line_values),
     }
 
 
@@ -443,6 +466,7 @@ def _build_entity_view(
     period_catalog: Sequence[dict[str, object]],
     filtered_metrics: tuple[PullRequestMetricRecord, ...],
     identity_builder,
+    distribution_percentile: int,
 ) -> dict[str, object]:
     entities_by_period: dict[str, dict[str, list[PullRequestMetricRecord]]] = defaultdict(
         lambda: defaultdict(list)
@@ -465,6 +489,7 @@ def _build_entity_view(
                 period_catalog=period_catalog,
                 entity_metrics=tuple(entity_metrics[entity_key]),
                 entities_by_period=entities_by_period,
+                distribution_percentile=distribution_percentile,
             )
             for entity_key in sorted(entity_labels)
         ],
@@ -478,6 +503,7 @@ def _build_entity_report(
     period_catalog: Sequence[dict[str, object]],
     entity_metrics: tuple[PullRequestMetricRecord, ...],
     entities_by_period: dict[str, dict[str, list[PullRequestMetricRecord]]],
+    distribution_percentile: int,
 ) -> dict[str, object]:
     period_values = [
         {
@@ -486,7 +512,8 @@ def _build_entity_report(
                 entities_by_period.get(cast(str, period_descriptor["key"]), {}).get(
                     entity_key,
                     [],
-                )
+                ),
+                distribution_percentile=distribution_percentile,
             ),
         }
         for period_descriptor in period_catalog
@@ -495,27 +522,42 @@ def _build_entity_report(
         "key": entity_key,
         "label": entity_label,
         "period_values": period_values,
-        "totals": _entity_totals(entity_metrics),
+        "totals": _entity_totals(
+            entity_metrics,
+            distribution_percentile=distribution_percentile,
+        ),
     }
 
 
 def _entity_period_values(
     metrics: Sequence[PullRequestMetricRecord],
+    *,
+    distribution_percentile: int,
 ) -> dict[str, int | float | None]:
-    merge_values = [
-        metric.time_to_merge_seconds
-        for metric in metrics
-        if metric.time_to_merge_seconds is not None
-    ]
-    first_review_values = [
-        metric.time_to_first_review_seconds
-        for metric in metrics
-        if metric.time_to_first_review_seconds is not None
-    ]
+    merge_values = trim_upper_tail(
+        [
+            metric.time_to_merge_seconds
+            for metric in metrics
+            if metric.time_to_merge_seconds is not None
+        ],
+        percentile=distribution_percentile,
+    )
+    first_review_values = trim_upper_tail(
+        [
+            metric.time_to_first_review_seconds
+            for metric in metrics
+            if metric.time_to_first_review_seconds is not None
+        ],
+        percentile=distribution_percentile,
+    )
+    changed_line_values = trim_upper_tail(
+        [metric.changed_lines for metric in metrics],
+        percentile=distribution_percentile,
+    )
     return {
         "pull_request_count": len(metrics),
         "merged_pull_request_count": sum(1 for metric in metrics if metric.merged),
-        "total_changed_lines": sum(metric.changed_lines for metric in metrics),
+        "total_changed_lines": sum(changed_line_values),
         "median_time_to_merge_hours": _hours_from_seconds(_median(merge_values)),
         "median_time_to_first_review_hours": _hours_from_seconds(
             _median(first_review_values)
@@ -525,21 +567,33 @@ def _entity_period_values(
 
 def _entity_totals(
     metrics: Sequence[PullRequestMetricRecord],
+    *,
+    distribution_percentile: int,
 ) -> dict[str, int | float | None]:
-    merge_values = [
-        metric.time_to_merge_seconds
-        for metric in metrics
-        if metric.time_to_merge_seconds is not None
-    ]
-    first_review_values = [
-        metric.time_to_first_review_seconds
-        for metric in metrics
-        if metric.time_to_first_review_seconds is not None
-    ]
+    merge_values = trim_upper_tail(
+        [
+            metric.time_to_merge_seconds
+            for metric in metrics
+            if metric.time_to_merge_seconds is not None
+        ],
+        percentile=distribution_percentile,
+    )
+    first_review_values = trim_upper_tail(
+        [
+            metric.time_to_first_review_seconds
+            for metric in metrics
+            if metric.time_to_first_review_seconds is not None
+        ],
+        percentile=distribution_percentile,
+    )
+    changed_line_values = trim_upper_tail(
+        [metric.changed_lines for metric in metrics],
+        percentile=distribution_percentile,
+    )
     return {
         "pull_request_count": len(metrics),
         "merged_pull_request_count": sum(1 for metric in metrics if metric.merged),
-        "total_changed_lines": sum(metric.changed_lines for metric in metrics),
+        "total_changed_lines": sum(changed_line_values),
         "median_time_to_merge_hours": _hours_from_seconds(_median(merge_values)),
         "median_time_to_first_review_hours": _hours_from_seconds(
             _median(first_review_values)

@@ -16,7 +16,10 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode, urlparse
 from urllib.request import Request, urlopen
 
-from jinja2 import Environment, FileSystemLoader, select_autoescape
+from render_manual_org_dashboard import (
+    prepare_manual_dashboard_payload,
+    render_manual_dashboard_html,
+)
 
 MAX_SEARCH_PAGE_SIZE = 100
 MAX_WORKERS = 12
@@ -375,16 +378,8 @@ def _write_outputs(
         writer = csv.DictWriter(handle, fieldnames=list(rows[0].keys()))
         writer.writeheader()
         writer.writerows(rows)
-    template = _template_environment().get_template("manual_org_dashboard.html.j2")
     html_path.write_text(
-        template.render(
-            dashboard_payload_json=json.dumps(payload, ensure_ascii=False).replace(
-                "</script>",
-                "<\\/script>",
-            ),
-            overview=payload["overview"],
-            insights=payload["insights"],
-        ),
+        render_manual_dashboard_html(prepare_manual_dashboard_payload(payload)),
         encoding="utf-8",
     )
     print(
@@ -1084,14 +1079,6 @@ def _round(value: float | None) -> float | None:
     if value is None:
         return None
     return round(value, 2)
-
-
-def _template_environment() -> Environment:
-    return Environment(
-        loader=FileSystemLoader(str(Path(__file__).resolve().parents[1] / "src" / "orgpulse" / "templates")),
-        autoescape=select_autoescape(["html", "html.j2", "xml"]),
-    )
-
 
 if __name__ == "__main__":
     main()

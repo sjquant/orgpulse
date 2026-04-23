@@ -9,12 +9,21 @@ from statistics import median
 from typing import Any
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
-from markupsafe import Markup
+from markupsafe import Markup, escape
+
+from orgpulse.distribution import (
+    trim_upper_tail,
+    upper_percentile_threshold,
+    validate_distribution_percentile,
+)
 
 
 def main() -> None:
     args = _parse_args()
-    payload = _load_payload(args.input_json)
+    payload = _load_payload(
+        args.input_json,
+        distribution_percentile=args.distribution_percentile,
+    )
     html = _render_html(payload)
     args.output_html.write_text(html, encoding="utf-8")
     print(
@@ -22,6 +31,7 @@ def main() -> None:
             {
                 "input_json": str(args.input_json),
                 "output_html": str(args.output_html),
+                "distribution_percentile": args.distribution_percentile,
             },
             ensure_ascii=False,
         )
@@ -34,14 +44,28 @@ def _parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--input-json", type=Path, required=True)
     parser.add_argument("--output-html", type=Path, required=True)
+    parser.add_argument(
+        "--distribution-percentile",
+        type=int,
+        default=100,
+        choices=(95, 99, 100),
+        help="Upper-tail percentile retained for distribution-based metrics.",
+    )
     return parser.parse_args()
 
 
-def _load_payload(path: Path) -> dict[str, Any]:
-    return _prepare_payload(json.loads(path.read_text(encoding="utf-8")))
+def _load_payload(
+    path: Path,
+    *,
+    distribution_percentile: int,
+) -> dict[str, Any]:
+    return prepare_manual_dashboard_payload(
+        json.loads(path.read_text(encoding="utf-8")),
+        distribution_percentile=distribution_percentile,
+    )
 
 
-def _render_html(payload: dict[str, Any]) -> str:
+def render_manual_dashboard_html(payload: dict[str, Any]) -> str:
     template = _template_environment().get_template("manual_org_dashboard.html.j2")
     return template.render(
         overview=payload["overview"],
@@ -59,18 +83,67 @@ def _render_html(payload: dict[str, Any]) -> str:
     )
 
 
-def _prepare_payload(payload: dict[str, Any]) -> dict[str, Any]:
+def _render_html(payload: dict[str, Any]) -> str:
+    return render_manual_dashboard_html(payload)
+
+
+def prepare_manual_dashboard_payload(
+    payload: dict[str, Any],
+    *,
+    distribution_percentile: int = 100,
+) -> dict[str, Any]:
+    validate_distribution_percentile(distribution_percentile)
     pull_requests = payload["pull_requests"]
+    distribution_thresholds = _build_distribution_thresholds(
+        pull_requests,
+        distribution_percentile=distribution_percentile,
+    )
+    payload["distribution_percentile"] = distribution_percentile
+    payload["overview"] = _build_overview(
+        payload,
+        pull_requests=pull_requests,
+        distribution_percentile=distribution_percentile,
+        distribution_thresholds=distribution_thresholds,
+    )
+    payload["authors"] = _build_author_rows(
+        pull_requests,
+        distribution_percentile=distribution_percentile,
+        distribution_thresholds=distribution_thresholds,
+    )
+    payload["repositories"] = _build_repository_rows(
+        pull_requests,
+        distribution_percentile=distribution_percentile,
+        distribution_thresholds=distribution_thresholds,
+    )
+    payload["size_buckets"] = _build_size_bucket_rows(
+        pull_requests,
+        distribution_percentile=distribution_percentile,
+        distribution_thresholds=distribution_thresholds,
+    )
+    payload["insights"] = _build_insights(payload)
     payload["repositories_top"] = payload["repositories"][:10]
     payload["repositories_rest"] = payload["repositories"][10:]
-    payload["weekly_trends"] = _build_trend_rows(pull_requests, grain="week")
-    payload["monthly_trends"] = _build_trend_rows(pull_requests, grain="month")
+    payload["weekly_trends"] = _build_trend_rows(
+        pull_requests,
+        grain="week",
+        distribution_percentile=distribution_percentile,
+        distribution_thresholds=distribution_thresholds,
+    )
+    payload["monthly_trends"] = _build_trend_rows(
+        pull_requests,
+        grain="month",
+        distribution_percentile=distribution_percentile,
+        distribution_thresholds=distribution_thresholds,
+    )
     payload["default_author"] = (
         payload["authors"][0]["author_login"] if payload["authors"] else None
     )
     author_details = _build_author_details(
         authors=payload["authors"],
+        reviewers=payload["reviewers"],
         pull_requests=pull_requests,
+        distribution_percentile=distribution_percentile,
+        distribution_thresholds=distribution_thresholds,
     )
     payload["author_details_json"] = json.dumps(
         author_details,
@@ -79,10 +152,347 @@ def _prepare_payload(payload: dict[str, Any]) -> dict[str, Any]:
     return payload
 
 
+def _build_overview(
+    payload: dict[str, Any],
+    *,
+    pull_requests: list[dict[str, Any]],
+    distribution_percentile: int,
+    distribution_thresholds: dict[str, float | None],
+) -> dict[str, Any]:
+    source_overview = payload["overview"]
+    changed_lines = _summary(
+        _trimmed_values(
+            pull_requests,
+            "changed_lines",
+            distribution_percentile=distribution_percentile,
+            distribution_thresholds=distribution_thresholds,
+        )
+    )
+    commits = _summary(
+        _trimmed_values(
+            pull_requests,
+            "commits",
+            distribution_percentile=distribution_percentile,
+            distribution_thresholds=distribution_thresholds,
+        )
+    )
+    first_review_values = _trimmed_values(
+        pull_requests,
+        "first_review_hours",
+        distribution_percentile=distribution_percentile,
+        distribution_thresholds=distribution_thresholds,
+    )
+    merge_values = _trimmed_values(
+        pull_requests,
+        "merge_hours",
+        distribution_percentile=distribution_percentile,
+        distribution_thresholds=distribution_thresholds,
+    )
+    close_values = _trimmed_values(
+        pull_requests,
+        "close_hours",
+        distribution_percentile=distribution_percentile,
+        distribution_thresholds=distribution_thresholds,
+    )
+    return {
+        **source_overview,
+        "generated_at": source_overview["generated_at"],
+        "pull_requests": len(pull_requests),
+        "merged_pull_requests": sum(
+            1 for pull_request in pull_requests if pull_request["merged_at"] is not None
+        ),
+        "open_pull_requests": sum(
+            1 for pull_request in pull_requests if pull_request["state"] == "open"
+        ),
+        "repositories": len(
+            {pull_request["repository_full_name"] for pull_request in pull_requests}
+        ),
+        "authors": len({pull_request["author_login"] for pull_request in pull_requests}),
+        "review_submissions": sum(
+            int(pull_request["review_count"]) for pull_request in pull_requests
+        ),
+        "total_changed_lines": int(changed_lines["total"]),
+        "total_commits": int(commits["total"]),
+        "median_first_review_hours": _round(_median_or_none(first_review_values)),
+        "median_merge_hours": _round(_median_or_none(merge_values)),
+        "median_close_hours": _round(_median_or_none(close_values)),
+        "average_reviews_per_pr": _round(
+            (
+                sum(int(pull_request["review_count"]) for pull_request in pull_requests)
+                / len(pull_requests)
+            )
+            if pull_requests
+            else None
+        ),
+        "average_changed_lines_per_pr": _round(changed_lines["average"]),
+        "review_coverage_pct": _round(
+            (
+                sum(1 for pull_request in pull_requests if pull_request["review_count"] > 0)
+                / len(pull_requests)
+                * 100
+            )
+            if pull_requests
+            else None
+        ),
+        "merge_rate_pct": _round(
+            (
+                sum(1 for pull_request in pull_requests if pull_request["merged_at"])
+                / len(pull_requests)
+                * 100
+            )
+            if pull_requests
+            else None
+        ),
+        "distribution_percentile": distribution_percentile,
+    }
+
+
+def _build_author_rows(
+    pull_requests: list[dict[str, Any]],
+    *,
+    distribution_percentile: int,
+    distribution_thresholds: dict[str, float | None],
+) -> list[dict[str, Any]]:
+    grouped: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for pull_request in pull_requests:
+        grouped[str(pull_request["author_login"])].append(pull_request)
+    total_pull_requests = len(pull_requests)
+    rows = [
+        _author_row(
+            author_login,
+            author_pull_requests,
+            total_pull_requests=total_pull_requests,
+            distribution_percentile=distribution_percentile,
+            distribution_thresholds=distribution_thresholds,
+        )
+        for author_login, author_pull_requests in grouped.items()
+    ]
+    return sorted(
+        rows,
+        key=lambda row: (-row["pull_requests"], -row["changed_lines"], row["author_login"]),
+    )
+
+
+def _author_row(
+    author_login: str,
+    pull_requests: list[dict[str, Any]],
+    *,
+    total_pull_requests: int,
+    distribution_percentile: int,
+    distribution_thresholds: dict[str, float | None],
+) -> dict[str, Any]:
+    changed_lines = _summary(
+        _trimmed_values(
+            pull_requests,
+            "changed_lines",
+            distribution_percentile=distribution_percentile,
+            distribution_thresholds=distribution_thresholds,
+        )
+    )
+    commits = _summary(
+        _trimmed_values(
+            pull_requests,
+            "commits",
+            distribution_percentile=distribution_percentile,
+            distribution_thresholds=distribution_thresholds,
+        )
+    )
+    first_review_values = _trimmed_values(
+        pull_requests,
+        "first_review_hours",
+        distribution_percentile=distribution_percentile,
+        distribution_thresholds=distribution_thresholds,
+    )
+    merge_values = _trimmed_values(
+        pull_requests,
+        "merge_hours",
+        distribution_percentile=distribution_percentile,
+        distribution_thresholds=distribution_thresholds,
+    )
+    return {
+        "author_login": author_login,
+        "pull_requests": len(pull_requests),
+        "merged_pull_requests": sum(
+            1 for pull_request in pull_requests if pull_request["merged_at"]
+        ),
+        "open_pull_requests": sum(
+            1 for pull_request in pull_requests if pull_request["state"] == "open"
+        ),
+        "changed_lines": int(changed_lines["total"]),
+        "commits": int(commits["total"]),
+        "review_submissions_received": sum(
+            int(pull_request["review_count"]) for pull_request in pull_requests
+        ),
+        "average_reviews_per_pr": _round(
+            (
+                sum(int(pull_request["review_count"]) for pull_request in pull_requests)
+                / len(pull_requests)
+            )
+            if pull_requests
+            else None
+        ),
+        "median_first_review_hours": _round(_median_or_none(first_review_values)),
+        "median_merge_hours": _round(_median_or_none(merge_values)),
+        "median_changed_lines": _round(changed_lines["median"]),
+        "share_of_prs_pct": _round(
+            (len(pull_requests) / total_pull_requests * 100)
+            if total_pull_requests
+            else None
+        ),
+    }
+
+
+def _build_repository_rows(
+    pull_requests: list[dict[str, Any]],
+    *,
+    distribution_percentile: int,
+    distribution_thresholds: dict[str, float | None],
+) -> list[dict[str, Any]]:
+    grouped: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for pull_request in pull_requests:
+        grouped[str(pull_request["repository_full_name"])].append(pull_request)
+    total_pull_requests = len(pull_requests)
+    rows = [
+        _repository_row(
+            repository_full_name,
+            repository_pull_requests,
+            total_pull_requests=total_pull_requests,
+            distribution_percentile=distribution_percentile,
+            distribution_thresholds=distribution_thresholds,
+        )
+        for repository_full_name, repository_pull_requests in grouped.items()
+    ]
+    return sorted(
+        rows,
+        key=lambda row: (
+            -row["pull_requests"],
+            -row["changed_lines"],
+            row["repository_full_name"],
+        ),
+    )
+
+
+def _repository_row(
+    repository_full_name: str,
+    pull_requests: list[dict[str, Any]],
+    *,
+    total_pull_requests: int,
+    distribution_percentile: int,
+    distribution_thresholds: dict[str, float | None],
+) -> dict[str, Any]:
+    changed_lines = _summary(
+        _trimmed_values(
+            pull_requests,
+            "changed_lines",
+            distribution_percentile=distribution_percentile,
+            distribution_thresholds=distribution_thresholds,
+        )
+    )
+    first_review_values = _trimmed_values(
+        pull_requests,
+        "first_review_hours",
+        distribution_percentile=distribution_percentile,
+        distribution_thresholds=distribution_thresholds,
+    )
+    merge_values = _trimmed_values(
+        pull_requests,
+        "merge_hours",
+        distribution_percentile=distribution_percentile,
+        distribution_thresholds=distribution_thresholds,
+    )
+    return {
+        "repository_full_name": repository_full_name,
+        "pull_requests": len(pull_requests),
+        "merged_pull_requests": sum(
+            1 for pull_request in pull_requests if pull_request["merged_at"]
+        ),
+        "open_pull_requests": sum(
+            1 for pull_request in pull_requests if pull_request["state"] == "open"
+        ),
+        "authors": len({pull_request["author_login"] for pull_request in pull_requests}),
+        "changed_lines": int(changed_lines["total"]),
+        "review_submissions": sum(
+            int(pull_request["review_count"]) for pull_request in pull_requests
+        ),
+        "average_reviews_per_pr": _round(
+            (
+                sum(int(pull_request["review_count"]) for pull_request in pull_requests)
+                / len(pull_requests)
+            )
+            if pull_requests
+            else None
+        ),
+        "median_first_review_hours": _round(_median_or_none(first_review_values)),
+        "median_merge_hours": _round(_median_or_none(merge_values)),
+        "share_of_prs_pct": _round(
+            (len(pull_requests) / total_pull_requests * 100)
+            if total_pull_requests
+            else None
+        ),
+    }
+
+
+def _build_size_bucket_rows(
+    pull_requests: list[dict[str, Any]],
+    *,
+    distribution_percentile: int,
+    distribution_thresholds: dict[str, float | None],
+) -> list[dict[str, Any]]:
+    grouped: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for pull_request in pull_requests:
+        grouped[str(pull_request["size_bucket"])].append(pull_request)
+    rows: list[dict[str, Any]] = []
+    for bucket in ("XS", "S", "M", "L", "XL"):
+        bucket_pull_requests = grouped.get(bucket, [])
+        changed_lines = _trimmed_values(
+            bucket_pull_requests,
+            "changed_lines",
+            distribution_percentile=distribution_percentile,
+            distribution_thresholds=distribution_thresholds,
+        )
+        first_review_values = _trimmed_values(
+            bucket_pull_requests,
+            "first_review_hours",
+            distribution_percentile=distribution_percentile,
+            distribution_thresholds=distribution_thresholds,
+        )
+        merge_values = _trimmed_values(
+            bucket_pull_requests,
+            "merge_hours",
+            distribution_percentile=distribution_percentile,
+            distribution_thresholds=distribution_thresholds,
+        )
+        rows.append(
+            {
+                "bucket": bucket,
+                "pull_requests": len(bucket_pull_requests),
+                "median_changed_lines": _round(_median_or_none(changed_lines)),
+                "median_first_review_hours": _round(
+                    _median_or_none(first_review_values)
+                ),
+                "median_merge_hours": _round(_median_or_none(merge_values)),
+                "average_reviews_per_pr": _round(
+                    (
+                        sum(
+                            int(pull_request["review_count"])
+                            for pull_request in bucket_pull_requests
+                        )
+                        / len(bucket_pull_requests)
+                    )
+                    if bucket_pull_requests
+                    else None
+                ),
+            }
+        )
+    return rows
+
+
 def _build_trend_rows(
     pull_requests: list[dict[str, Any]],
     *,
     grain: str,
+    distribution_percentile: int,
+    distribution_thresholds: dict[str, float | None],
 ) -> list[dict[str, Any]]:
     grouped: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for pull_request in pull_requests:
@@ -95,8 +505,13 @@ def _build_trend_rows(
     for period_key in sorted(grouped):
         period_rows = grouped[period_key]
         pull_request_count = len(period_rows)
-        changed_lines = sum(
-            int(pull_request["changed_lines"]) for pull_request in period_rows
+        changed_lines = _summary(
+            _trimmed_values(
+                period_rows,
+                "changed_lines",
+                distribution_percentile=distribution_percentile,
+                distribution_thresholds=distribution_thresholds,
+            )
         )
         review_submissions = sum(
             int(pull_request["review_count"]) for pull_request in period_rows
@@ -107,22 +522,24 @@ def _build_trend_rows(
         open_count = sum(
             1 for pull_request in period_rows if pull_request["state"] == "open"
         )
-        first_review_values = [
-            float(pull_request["first_review_hours"])
-            for pull_request in period_rows
-            if pull_request["first_review_hours"] is not None
-        ]
-        merge_values = [
-            float(pull_request["merge_hours"])
-            for pull_request in period_rows
-            if pull_request["merge_hours"] is not None
-        ]
+        first_review_values = _trimmed_values(
+            period_rows,
+            "first_review_hours",
+            distribution_percentile=distribution_percentile,
+            distribution_thresholds=distribution_thresholds,
+        )
+        merge_values = _trimmed_values(
+            period_rows,
+            "merge_hours",
+            distribution_percentile=distribution_percentile,
+            distribution_thresholds=distribution_thresholds,
+        )
         row = {
             "period_key": period_key,
             "pull_requests": pull_request_count,
             "merged_pull_requests": merged_count,
             "open_pull_requests": open_count,
-            "changed_lines": changed_lines,
+            "changed_lines": int(changed_lines["total"]),
             "review_submissions": review_submissions,
             "average_reviews_per_pr": _round(
                 review_submissions / pull_request_count if pull_request_count else None
@@ -139,54 +556,63 @@ def _build_trend_rows(
                 else None
             ),
             "changed_lines_delta": (
-                changed_lines - previous_changed_lines
+                int(changed_lines["total"]) - previous_changed_lines
                 if previous_changed_lines is not None
                 else None
             ),
         }
         rows.append(row)
         previous_pull_requests = pull_request_count
-        previous_changed_lines = changed_lines
+        previous_changed_lines = int(changed_lines["total"])
     return rows
 
 
 def _build_author_details(
     *,
     authors: list[dict[str, Any]],
+    reviewers: list[dict[str, Any]],
     pull_requests: list[dict[str, Any]],
+    distribution_percentile: int,
+    distribution_thresholds: dict[str, float | None],
 ) -> dict[str, Any]:
     grouped: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for pull_request in pull_requests:
         grouped[str(pull_request["author_login"])].append(pull_request)
+    reviewer_by_login = {
+        str(reviewer["reviewer_login"]): reviewer for reviewer in reviewers
+    }
     details: dict[str, Any] = {}
     for author in authors:
         author_login = author["author_login"]
         author_pull_requests = grouped.get(author_login, [])
+        reviewer = reviewer_by_login.get(author_login, {})
         repository_counter = Counter(
             str(pull_request["repository_full_name"]) for pull_request in author_pull_requests
         )
         size_counter = Counter(
             str(pull_request["size_bucket"]) for pull_request in author_pull_requests
         )
+        changed_lines = _summary(
+            _trimmed_values(
+                author_pull_requests,
+                "changed_lines",
+                distribution_percentile=distribution_percentile,
+                distribution_thresholds=distribution_thresholds,
+            )
+        )
+        commits = _summary(
+            _trimmed_values(
+                author_pull_requests,
+                "commits",
+                distribution_percentile=distribution_percentile,
+                distribution_thresholds=distribution_thresholds,
+            )
+        )
         details[author_login] = {
             "summary": {
                 **author,
-                "average_changed_lines_per_pr": _round(
-                    (
-                        sum(int(pull_request["changed_lines"]) for pull_request in author_pull_requests)
-                        / len(author_pull_requests)
-                    )
-                    if author_pull_requests
-                    else None
-                ),
-                "average_commits_per_pr": _round(
-                    (
-                        sum(int(pull_request["commits"]) for pull_request in author_pull_requests)
-                        / len(author_pull_requests)
-                    )
-                    if author_pull_requests
-                    else None
-                ),
+                "average_changed_lines_per_pr": _round(changed_lines["average"]),
+                "average_commits_per_pr": _round(commits["average"]),
                 "merge_rate_pct": _round(
                     (
                         sum(
@@ -200,15 +626,31 @@ def _build_author_details(
                     if author_pull_requests
                     else None
                 ),
+                "review_submissions_given": int(reviewer.get("review_submissions", 0)),
+                "pull_requests_reviewed": int(reviewer.get("pull_requests_reviewed", 0)),
+                "approvals_given": int(reviewer.get("approvals", 0)),
+                "changes_requested_given": int(reviewer.get("changes_requested", 0)),
+                "review_comments_given": int(reviewer.get("comments", 0)),
+                "authors_supported": int(reviewer.get("authors_supported", 0)),
             },
             "top_repositories": [
                 {
                     "repository_full_name": repository_full_name,
                     "pull_requests": count,
-                    "changed_lines": sum(
-                        int(pull_request["changed_lines"])
-                        for pull_request in author_pull_requests
-                        if pull_request["repository_full_name"] == repository_full_name
+                    "changed_lines": int(
+                        _summary(
+                            _trimmed_values(
+                                [
+                                    pull_request
+                                    for pull_request in author_pull_requests
+                                    if pull_request["repository_full_name"]
+                                    == repository_full_name
+                                ],
+                                "changed_lines",
+                                distribution_percentile=distribution_percentile,
+                                distribution_thresholds=distribution_thresholds,
+                            )
+                        )["total"]
                     ),
                 }
                 for repository_full_name, count in sorted(
@@ -216,17 +658,246 @@ def _build_author_details(
                     key=lambda item: (-item[1], item[0]),
                 )[:5]
             ],
-            "size_mix": [
-                {
-                    "bucket": bucket,
-                    "pull_requests": size_counter.get(bucket, 0),
-                }
-                for bucket in ("XS", "S", "M", "L", "XL")
-            ],
-            "weekly_trends": _build_trend_rows(author_pull_requests, grain="week"),
-            "monthly_trends": _build_trend_rows(author_pull_requests, grain="month"),
+            "size_mix": _build_author_size_mix_rows(
+                author_pull_requests,
+                size_counter=size_counter,
+                distribution_percentile=distribution_percentile,
+                distribution_thresholds=distribution_thresholds,
+            ),
+            "weekly_trends": _build_trend_rows(
+                author_pull_requests,
+                grain="week",
+                distribution_percentile=distribution_percentile,
+                distribution_thresholds=distribution_thresholds,
+            ),
+            "monthly_trends": _build_trend_rows(
+                author_pull_requests,
+                grain="month",
+                distribution_percentile=distribution_percentile,
+                distribution_thresholds=distribution_thresholds,
+            ),
         }
     return details
+
+
+def _build_author_size_mix_rows(
+    pull_requests: list[dict[str, Any]],
+    *,
+    size_counter: Counter[str],
+    distribution_percentile: int,
+    distribution_thresholds: dict[str, float | None],
+) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for bucket in ("XS", "S", "M", "L", "XL"):
+        bucket_pull_requests = [
+            pull_request
+            for pull_request in pull_requests
+            if pull_request["size_bucket"] == bucket
+        ]
+        changed_lines = _summary(
+            _trimmed_values(
+                bucket_pull_requests,
+                "changed_lines",
+                distribution_percentile=distribution_percentile,
+                distribution_thresholds=distribution_thresholds,
+            )
+        )
+        first_review_values = _trimmed_values(
+            bucket_pull_requests,
+            "first_review_hours",
+            distribution_percentile=distribution_percentile,
+            distribution_thresholds=distribution_thresholds,
+        )
+        merge_values = _trimmed_values(
+            bucket_pull_requests,
+            "merge_hours",
+            distribution_percentile=distribution_percentile,
+            distribution_thresholds=distribution_thresholds,
+        )
+        review_submissions = sum(
+            int(pull_request["review_count"]) for pull_request in bucket_pull_requests
+        )
+        pull_request_count = size_counter.get(bucket, 0)
+        rows.append(
+            {
+                "bucket": bucket,
+                "pull_requests": pull_request_count,
+                "changed_lines": int(changed_lines["total"]),
+                "median_first_review_hours": _round(_median_or_none(first_review_values)),
+                "median_merge_hours": _round(_median_or_none(merge_values)),
+                "average_reviews_per_pr": _round(
+                    review_submissions / pull_request_count
+                    if pull_request_count
+                    else None
+                ),
+            }
+        )
+    return rows
+
+
+def _build_insights(payload: dict[str, Any]) -> list[dict[str, str]]:
+    overview = payload["overview"]
+    authors = payload["authors"]
+    reviewers = payload["reviewers"]
+    repositories = payload["repositories"]
+    size_buckets = payload["size_buckets"]
+    insights: list[dict[str, str]] = [
+        {
+            "title": "Distribution cutoff",
+            "body": (
+                "Distribution-based metrics keep values at or below the "
+                f"{overview['distribution_percentile']}th percentile while "
+                "throughput counts stay unchanged."
+            ),
+        }
+    ]
+    if repositories:
+        top_repository = repositories[0]
+        insights.append(
+            {
+                "title": "Throughput concentration",
+                "body": (
+                    f"{top_repository['repository_full_name']} accounted for "
+                    f"{_format_integer(top_repository['pull_requests'])} PRs and "
+                    f"{top_repository['share_of_prs_pct']}% of total flow."
+                ),
+            }
+        )
+    fast_review_authors = [
+        row
+        for row in authors
+        if row["pull_requests"] >= 20 and row["median_first_review_hours"] is not None
+    ]
+    if fast_review_authors:
+        fastest_author = min(
+            fast_review_authors,
+            key=lambda row: row["median_first_review_hours"],
+        )
+        insights.append(
+            {
+                "title": "Fastest review entry",
+                "body": (
+                    f"{fastest_author['author_login']} had the fastest median first "
+                    "review among authors with 20+ PRs at "
+                    f"{_format_duration(fastest_author['median_first_review_hours'])}."
+                ),
+            }
+        )
+    if reviewers:
+        top_reviewer = reviewers[0]
+        insights.append(
+            {
+                "title": "Review load",
+                "body": (
+                    f"{top_reviewer['reviewer_login']} submitted "
+                    f"{_format_integer(top_reviewer['review_submissions'])} reviews "
+                    f"across {_format_integer(top_reviewer['pull_requests_reviewed'])} PRs."
+                ),
+            }
+        )
+    large_buckets = [
+        row
+        for row in size_buckets
+        if row["bucket"] in {"L", "XL"} and row["median_first_review_hours"] is not None
+    ]
+    if large_buckets:
+        slowest_bucket = max(
+            large_buckets,
+            key=lambda row: row["median_first_review_hours"],
+        )
+        insights.append(
+            {
+                "title": "Size penalty",
+                "body": (
+                    f"{slowest_bucket['bucket']} PRs waited "
+                    f"{_format_duration(slowest_bucket['median_first_review_hours'])} median "
+                    "for first review."
+                ),
+            }
+        )
+    insights.append(
+        {
+            "title": "Review coverage",
+            "body": (
+                f"{overview['review_coverage_pct']}% of PRs received at least one "
+                "review submission in the selected window."
+            ),
+        }
+    )
+    return insights[:5]
+
+
+def _trimmed_values(
+    pull_requests: list[dict[str, Any]],
+    key: str,
+    *,
+    distribution_percentile: int,
+    distribution_thresholds: dict[str, float | None],
+) -> list[float]:
+    threshold = distribution_thresholds.get(key)
+    values = []
+    for pull_request in pull_requests:
+        raw_value = pull_request[key]
+        if raw_value is None:
+            continue
+        numeric_value = float(raw_value)
+        if threshold is not None and numeric_value > threshold:
+            continue
+        values.append(numeric_value)
+    return list(values if distribution_percentile < 100 else trim_upper_tail(values, percentile=distribution_percentile))
+
+
+def _build_distribution_thresholds(
+    pull_requests: list[dict[str, Any]],
+    *,
+    distribution_percentile: int,
+) -> dict[str, float | None]:
+    metric_keys = (
+        "changed_lines",
+        "commits",
+        "first_review_hours",
+        "merge_hours",
+        "close_hours",
+    )
+    thresholds: dict[str, float | None] = {}
+    for metric_key in metric_keys:
+        values = [
+            float(pull_request[metric_key])
+            for pull_request in pull_requests
+            if pull_request[metric_key] is not None
+        ]
+        if distribution_percentile == 100:
+            thresholds[metric_key] = (
+                max(values) if values else None
+            )
+            continue
+        thresholds[metric_key] = upper_percentile_threshold(
+            values,
+            percentile=distribution_percentile,
+        )
+    return thresholds
+
+
+def _summary(values: list[float]) -> dict[str, float | int | None]:
+    if not values:
+        return {
+            "count": 0,
+            "total": 0,
+            "average": None,
+            "median": None,
+        }
+    return {
+        "count": len(values),
+        "total": sum(values),
+        "average": sum(values) / len(values),
+        "median": float(median(values)),
+    }
+
+
+def _median_or_none(values: list[float]) -> float | None:
+    if not values:
+        return None
+    return float(median(values))
 
 
 def _period_key(value: datetime, *, grain: str) -> str:
@@ -247,11 +918,54 @@ def _round(value: float | None) -> float | None:
 
 
 def _template_environment() -> Environment:
-    return Environment(
+    environment = Environment(
         loader=FileSystemLoader(
             str(Path(__file__).resolve().parents[1] / "src" / "orgpulse" / "templates")
         ),
         autoescape=select_autoescape(["html", "html.j2", "xml"]),
+    )
+    environment.filters["intfmt"] = _format_integer
+    environment.filters["numfmt"] = _format_number
+    environment.filters["duration"] = _format_duration
+    environment.filters["deltafmt"] = _format_delta
+    return environment
+
+
+def _format_integer(value: Any) -> str:
+    if value is None or value == "":
+        return "-"
+    return f"{int(float(value)):,}"
+
+
+def _format_number(value: Any) -> str:
+    if value is None or value == "":
+        return "-"
+    number = float(value)
+    if number.is_integer():
+        return f"{int(number):,}"
+    return f"{number:,.2f}".rstrip("0").rstrip(".")
+
+
+def _format_duration(value: Any) -> str:
+    if value is None or value == "":
+        return "-"
+    hours = float(value)
+    if hours < 1:
+        return f"{round(hours * 60):,} min"
+    if hours >= 24:
+        return f"{hours / 24:,.1f} d"
+    return f"{hours:,.1f} h"
+
+
+def _format_delta(value: Any) -> Markup:
+    if value is None or value == "":
+        return Markup('<span class="delta-badge neutral">-</span>')
+    number = float(value)
+    css_class = "positive" if number > 0 else "negative" if number < 0 else "neutral"
+    sign = "+" if number > 0 else ""
+    text = f"{sign}{_format_number(number)}"
+    return Markup(
+        f'<span class="delta-badge {css_class}">{escape(text)}</span>',
     )
 
 

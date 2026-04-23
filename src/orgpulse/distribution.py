@@ -2,8 +2,10 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from math import ceil, floor
+from typing import TypeVar
 
 SUPPORTED_DISTRIBUTION_PERCENTILES = frozenset({95, 99, 100})
+Number = TypeVar("Number", int, float)
 
 
 def validate_distribution_percentile(
@@ -22,10 +24,10 @@ def validate_distribution_percentile(
 
 
 def trim_upper_tail(
-    values: Sequence[int],
+    values: Sequence[Number],
     *,
     percentile: int,
-) -> tuple[int, ...]:
+) -> tuple[Number, ...]:
     """Return values at or below the configured upper-tail percentile threshold."""
     validate_distribution_percentile(percentile)
     if not values:
@@ -39,7 +41,7 @@ def trim_upper_tail(
 
 
 def upper_percentile_threshold(
-    values: Sequence[int],
+    values: Sequence[int | float],
     *,
     percentile: int,
 ) -> float | None:

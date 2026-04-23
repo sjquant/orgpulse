@@ -18,6 +18,8 @@
       --accent-2: #7ee0b3;
       --accent-3: #f0b35f;
       --danger: #ff8b8b;
+      --positive: #7ee0b3;
+      --negative: #ff8b8b;
       --shadow: 0 10px 30px rgba(0, 0, 0, 0.28);
     }
 
@@ -42,8 +44,8 @@
 
     .hero {
       display: grid;
-      grid-template-columns: minmax(0, 1.2fr) minmax(320px, 0.8fr);
       gap: 16px;
+      align-items: start;
       margin-bottom: 16px;
     }
 
@@ -52,6 +54,7 @@
       border: 1px solid var(--line);
       border-radius: 8px;
       box-shadow: var(--shadow);
+      min-width: 0;
     }
 
     .hero-panel,
@@ -123,14 +126,62 @@
     .meta-value {
       font-size: 0.95rem;
       font-weight: 700;
+      overflow-wrap: anywhere;
     }
 
-    .insight-panel h2 {
-      margin-bottom: 12px;
+    .primary-readout {
+      margin-top: 16px;
+      padding: 14px;
+      border: 1px solid rgba(117, 199, 255, 0.28);
+      border-left: 3px solid var(--accent);
+      border-radius: 6px;
+      background: rgba(117, 199, 255, 0.06);
+    }
+
+    .primary-readout h2 {
+      margin-bottom: 6px;
+      font-size: 0.95rem;
+    }
+
+    .section-nav {
+      position: sticky;
+      top: 0;
+      z-index: 5;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 16px;
+      padding: 10px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: rgba(7, 11, 18, 0.9);
+      backdrop-filter: blur(14px);
+    }
+
+    .section-nav a {
+      color: var(--muted);
+      text-decoration: none;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 7px 10px;
+      font-size: 0.82rem;
+      font-weight: 700;
+    }
+
+    .section-nav a:hover,
+    .section-nav a:focus-visible {
+      color: var(--text);
+      border-color: var(--accent);
+      outline: none;
+    }
+
+    .insight-panel {
+      margin-bottom: 16px;
     }
 
     .insight-list {
       display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
       gap: 10px;
     }
 
@@ -171,6 +222,18 @@
       gap: 16px;
     }
 
+    .section-grid > *,
+    .wide-stack,
+    .chart-panel {
+      min-width: 0;
+      max-width: 100%;
+    }
+
+    .section-grid > section,
+    .section-grid > .wide-stack > article {
+      scroll-margin-top: 82px;
+    }
+
     .chart-panel {
       display: grid;
       gap: 14px;
@@ -198,18 +261,29 @@
       border-color: var(--accent);
     }
 
+    .tab-button:focus-visible,
+    .ghost-button:focus-visible,
+    .author-button:focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: 2px;
+    }
+
     .chart-root {
-      min-height: 320px;
       border: 1px solid var(--line);
       border-radius: 6px;
       padding: 10px;
       background: rgba(255, 255, 255, 0.015);
+      aspect-ratio: 16 / 6;
+      min-height: 280px;
+      max-width: 100%;
+      overflow: hidden;
     }
 
     .chart-root svg {
       display: block;
       width: 100%;
-      height: 320px;
+      height: 100%;
+      min-height: 280px;
       overflow: visible;
     }
 
@@ -232,6 +306,33 @@
       display: flex;
       flex-wrap: wrap;
       gap: 8px;
+    }
+
+    .chart-readout {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .readout-card {
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 10px 12px;
+      background: rgba(255, 255, 255, 0.02);
+    }
+
+    .readout-card strong {
+      display: block;
+      margin-bottom: 6px;
+      color: var(--muted);
+      font-size: 0.68rem;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+    }
+
+    .readout-card span {
+      font-weight: 800;
+      font-family: "Space Grotesk", "IBM Plex Sans", sans-serif;
     }
 
     .legend-chip {
@@ -260,6 +361,7 @@
 
     .table-wrap {
       width: 100%;
+      max-width: 100%;
       overflow-x: auto;
       -webkit-overflow-scrolling: touch;
     }
@@ -267,6 +369,12 @@
     .two-col {
       display: grid;
       grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+      gap: 16px;
+    }
+
+    .wide-stack {
+      display: grid;
+      grid-template-columns: 1fr;
       gap: 16px;
     }
 
@@ -321,6 +429,31 @@
 
     .bar-cell {
       min-width: 200px;
+    }
+
+    .delta-badge {
+      display: inline-flex;
+      justify-content: flex-end;
+      min-width: 48px;
+      padding: 3px 7px;
+      border-radius: 999px;
+      font-weight: 700;
+      font-size: 0.82rem;
+    }
+
+    .delta-badge.positive {
+      color: var(--positive);
+      background: rgba(126, 224, 179, 0.1);
+    }
+
+    .delta-badge.negative {
+      color: var(--negative);
+      background: rgba(255, 139, 139, 0.1);
+    }
+
+    .delta-badge.neutral {
+      color: var(--muted);
+      background: rgba(255, 255, 255, 0.04);
     }
 
     .bar-track {
@@ -389,6 +522,110 @@
       gap: 14px;
     }
 
+    .people-grid {
+      display: grid;
+      grid-template-columns: minmax(280px, 0.36fr) minmax(0, 0.64fr);
+      gap: 16px;
+      align-items: start;
+    }
+
+    .people-grid > * {
+      min-width: 0;
+    }
+
+    .person-list {
+      display: grid;
+      gap: 10px;
+    }
+
+    .person-card {
+      width: 100%;
+      min-width: 0;
+      display: grid;
+      gap: 8px;
+      border: 1px solid var(--line);
+      border-left: 3px solid transparent;
+      border-radius: 6px;
+      padding: 12px;
+      background: rgba(255, 255, 255, 0.02);
+      color: var(--text);
+      font: inherit;
+      text-align: left;
+      cursor: pointer;
+    }
+
+    .person-card:hover,
+    .person-card.active {
+      border-color: var(--line-strong);
+      border-left-color: var(--accent);
+      background: rgba(117, 199, 255, 0.08);
+    }
+
+    .person-card-header,
+    .person-card-metrics,
+    .profile-summary {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: baseline;
+      min-width: 0;
+    }
+
+    .person-card-metrics,
+    .profile-summary {
+      flex-wrap: wrap;
+    }
+
+    .person-card strong {
+      font-size: 1rem;
+    }
+
+    .person-card small,
+    .profile-summary span {
+      color: var(--muted);
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
+    .person-card-metrics span {
+      color: var(--muted);
+      font-size: 0.82rem;
+    }
+
+    .person-profile {
+      display: grid;
+      gap: 14px;
+      min-width: 0;
+    }
+
+    .person-profile > *,
+    .detail-shell,
+    .detail-grid,
+    .profile-subgrid {
+      min-width: 0;
+      max-width: 100%;
+    }
+
+    .person-profile .detail-grid {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    .person-profile .chart-root {
+      aspect-ratio: 16 / 5;
+      min-height: 220px;
+    }
+
+    .person-profile .chart-root svg {
+      min-height: 220px;
+    }
+
+    .profile-subgrid {
+      display: grid;
+      grid-template-columns: minmax(0, 1.35fr) minmax(0, 0.9fr) minmax(0, 0.75fr);
+      gap: 14px;
+    }
+
     .detail-tabs {
       display: flex;
       flex-wrap: wrap;
@@ -451,16 +688,33 @@
       font-size: 0.82rem;
     }
 
-    @media (max-width: 1180px) {
-      .hero,
-      .two-col,
+    @media (max-width: 1320px) {
       .stats-grid,
       .detail-grid {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+    }
+
+    @media (max-width: 1180px) {
+      .hero {
+        grid-template-columns: 1fr;
+      }
+
+      .two-col,
+      .insight-list,
+      .chart-readout,
+      .profile-subgrid {
         grid-template-columns: 1fr;
       }
 
       .hero-meta {
         grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+    }
+
+    @media (max-width: 860px) {
+      .people-grid {
+        grid-template-columns: 1fr;
       }
     }
 
@@ -474,6 +728,12 @@
       }
 
       .hero-meta {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .stats-grid,
+      .detail-grid,
+      .person-profile .detail-grid {
         grid-template-columns: 1fr;
       }
 
@@ -544,8 +804,25 @@
         min-width: 0;
       }
 
+      .section-nav {
+        position: static;
+      }
+
+      .chart-root {
+        aspect-ratio: 4 / 3;
+        min-height: 240px;
+        max-width: 100%;
+        overflow: hidden;
+      }
+
       .chart-root svg {
-        height: 240px;
+        min-height: 240px;
+      }
+    }
+
+    @media (max-width: 360px) {
+      .hero-meta {
+        grid-template-columns: 1fr;
       }
     }
   </style>
@@ -557,9 +834,9 @@
         <p class="eyebrow">Engineering Productivity Leaderboard</p>
         <h1>{{ overview.org }} review and throughput board</h1>
         <p class="subtitle">
-          Static leaderboard view for the selected window. This version removes tabs,
-          click interactions, and PR list clutter so the focus stays on who shipped,
-          who reviewed, where flow concentrated, and how review latency moved with PR size.
+          Leaderboard view for the selected window. The page focuses on who shipped,
+          who reviewed, where flow concentrated, and how review latency moved with PR
+          size, with chart tabs for period and person-level inspection.
         </p>
         <div class="hero-meta">
           <div class="meta-box">
@@ -578,83 +855,92 @@
             <span class="meta-label">Top author</span>
             <span class="meta-value">{{ overview.top_author }}</span>
           </div>
-        </div>
-      </div>
-      <aside class="panel insight-panel">
-        <p class="section-kicker">Key findings</p>
-        <h2>Immediate readout</h2>
-        <div class="insight-list">
-          {% for insight in insights %}
-          <div class="insight-card">
-            <h3>{{ insight.title }}</h3>
-            <p>{{ insight.body }}</p>
+          {% if overview.distribution_percentile is defined %}
+          <div class="meta-box">
+            <span class="meta-label">Distribution cutoff</span>
+            <span class="meta-value">{{ overview.distribution_percentile }}th percentile</span>
           </div>
-          {% endfor %}
+          {% endif %}
         </div>
-      </aside>
+        {% if insights %}
+        <div class="primary-readout">
+          <p class="section-kicker">Primary readout</p>
+          <h2>{{ insights[0].title }}</h2>
+          <p class="subtitle">{{ insights[0].body }}</p>
+        </div>
+        {% endif %}
+      </div>
     </section>
 
     <section class="stats-grid">
       <article class="stat-card">
         <span class="stat-label">PR throughput</span>
-        <div class="stat-value">{{ overview.pull_requests }}</div>
-        <div class="stat-subvalue">{{ overview.merged_pull_requests }} merged / {{ overview.open_pull_requests }} open</div>
+        <div class="stat-value">{{ overview.pull_requests | intfmt }}</div>
+        <div class="stat-subvalue">{{ overview.merged_pull_requests | intfmt }} merged / {{ overview.open_pull_requests | intfmt }} open</div>
       </article>
       <article class="stat-card">
         <span class="stat-label">Review coverage</span>
         <div class="stat-value">{{ overview.review_coverage_pct }}%</div>
-        <div class="stat-subvalue">{{ overview.review_submissions }} total review submissions</div>
+        <div class="stat-subvalue">{{ overview.review_submissions | intfmt }} total review submissions</div>
       </article>
       <article class="stat-card">
         <span class="stat-label">Median first review</span>
-        <div class="stat-value">{{ overview.median_first_review_hours or "-" }}</div>
-        <div class="stat-subvalue">hours from ready/request to first review</div>
+        <div class="stat-value">{{ overview.median_first_review_hours | duration }}</div>
+        <div class="stat-subvalue">from ready/request to first review</div>
       </article>
       <article class="stat-card">
         <span class="stat-label">Median merge time</span>
-        <div class="stat-value">{{ overview.median_merge_hours or "-" }}</div>
-        <div class="stat-subvalue">hours from PR creation to merge</div>
+        <div class="stat-value">{{ overview.median_merge_hours | duration }}</div>
+        <div class="stat-subvalue">from PR creation to merge</div>
       </article>
       <article class="stat-card">
         <span class="stat-label">Changed lines</span>
-        <div class="stat-value">{{ overview.total_changed_lines }}</div>
-        <div class="stat-subvalue">{{ overview.average_changed_lines_per_pr }} lines per PR on average</div>
+        <div class="stat-value">{{ overview.total_changed_lines | intfmt }}</div>
+        <div class="stat-subvalue">{{ overview.average_changed_lines_per_pr | numfmt }} lines per PR on average</div>
       </article>
       <article class="stat-card">
         <span class="stat-label">Reviewers</span>
-        <div class="stat-value">{{ overview.unique_reviewers }}</div>
-        <div class="stat-subvalue">{{ overview.average_reviews_per_pr }} reviews per PR on average</div>
+        <div class="stat-value">{{ overview.unique_reviewers | intfmt }}</div>
+        <div class="stat-subvalue">{{ overview.average_reviews_per_pr | numfmt }} reviews per PR on average</div>
       </article>
     </section>
 
+    <nav class="section-nav" aria-label="Report sections">
+      <a href="#trends">Trends</a>
+      <a href="#people">People</a>
+      <a href="#reviewers">Reviewers</a>
+      <a href="#repositories">Repositories</a>
+      <a href="#size-review">PR Size</a>
+    </nav>
+
     <div class="section-grid">
-      <section class="panel section-panel chart-panel">
+      <section id="trends" class="panel section-panel chart-panel">
         <p class="section-kicker">Trend charts</p>
         <h2>Weekly and monthly movement, graphed</h2>
         <p class="section-copy">Switch the metric and time grain to compare throughput, code volume, and review speed without leaving the page.</p>
         <div class="two-col">
           <div class="tab-strip" id="trend-metric-tabs">
-            <button type="button" class="tab-button active" data-metric="pull_requests">PR throughput</button>
-            <button type="button" class="tab-button" data-metric="changed_lines">Changed lines</button>
-            <button type="button" class="tab-button" data-metric="median_first_review_hours">First review</button>
-            <button type="button" class="tab-button" data-metric="median_merge_hours">Merge time</button>
+            <button type="button" class="tab-button active" data-metric="pull_requests" aria-selected="true">PR throughput</button>
+            <button type="button" class="tab-button" data-metric="changed_lines" aria-selected="false">Changed lines</button>
+            <button type="button" class="tab-button" data-metric="median_first_review_hours" aria-selected="false">First review</button>
+            <button type="button" class="tab-button" data-metric="median_merge_hours" aria-selected="false">Merge time</button>
           </div>
           <div class="tab-strip" id="trend-grain-tabs">
-            <button type="button" class="tab-button active" data-grain="weekly">Weekly</button>
-            <button type="button" class="tab-button" data-grain="monthly">Monthly</button>
+            <button type="button" class="tab-button active" data-grain="weekly" aria-selected="true">Weekly</button>
+            <button type="button" class="tab-button" data-grain="monthly" aria-selected="false">Monthly</button>
           </div>
         </div>
         <div class="chart-title">
           <span id="trend-chart-title">PR throughput by week</span>
           <div class="chart-legend">
-            <span class="legend-chip"><span class="legend-dot" style="background: var(--accent)"></span>Primary metric</span>
-            <span class="legend-chip"><span class="legend-dot" style="background: var(--accent-3)"></span>Review/merge comparison</span>
+            <span class="legend-chip"><span class="legend-dot" style="background: var(--accent)"></span>Selected metric</span>
           </div>
         </div>
+        <div id="trend-chart-readout" class="chart-readout"></div>
         <div id="trend-chart-root" class="chart-root"></div>
       </section>
 
-      <section class="two-col">
+      <section class="wide-stack">
         <article class="panel section-panel">
           <p class="section-kicker">Weekly trend</p>
           <h2>Created-time weekly movement</h2>
@@ -671,7 +957,7 @@
                 <th class="num">Changed lines</th>
                 <th class="num">Line delta</th>
                 <th class="num">Reviews / PR</th>
-                <th class="num">Median first review (h)</th>
+                <th class="num">Median first review</th>
               </tr>
             </thead>
             <tbody>
@@ -681,14 +967,14 @@
                   <strong>{{ row.period_key }}</strong>
                   <span>created_at basis</span>
                 </td>
-                <td class="num" data-label="PRs">{{ row.pull_requests }}</td>
-                <td class="num" data-label="Delta">{{ row.pull_request_delta if row.pull_request_delta is not none else "-" }}</td>
-                <td class="num" data-label="Merged">{{ row.merged_pull_requests }}</td>
-                <td class="num" data-label="Open">{{ row.open_pull_requests }}</td>
-                <td class="num" data-label="Changed lines">{{ row.changed_lines }}</td>
-                <td class="num" data-label="Line delta">{{ row.changed_lines_delta if row.changed_lines_delta is not none else "-" }}</td>
-                <td class="num" data-label="Reviews / PR">{{ row.average_reviews_per_pr or "-" }}</td>
-                <td class="num" data-label="Median first review (h)">{{ row.median_first_review_hours or "-" }}</td>
+                <td class="num" data-label="PRs">{{ row.pull_requests | intfmt }}</td>
+                <td class="num" data-label="Delta">{{ row.pull_request_delta | deltafmt }}</td>
+                <td class="num" data-label="Merged">{{ row.merged_pull_requests | intfmt }}</td>
+                <td class="num" data-label="Open">{{ row.open_pull_requests | intfmt }}</td>
+                <td class="num" data-label="Changed lines">{{ row.changed_lines | intfmt }}</td>
+                <td class="num" data-label="Line delta">{{ row.changed_lines_delta | deltafmt }}</td>
+                <td class="num" data-label="Reviews / PR">{{ row.average_reviews_per_pr | numfmt }}</td>
+                <td class="num" data-label="Median first review">{{ row.median_first_review_hours | duration }}</td>
               </tr>
               {% endfor %}
             </tbody>
@@ -710,8 +996,8 @@
                 <th class="num">Open</th>
                 <th class="num">Changed lines</th>
                 <th class="num">Reviews / PR</th>
-                <th class="num">Median first review (h)</th>
-                <th class="num">Median merge (h)</th>
+                <th class="num">Median first review</th>
+                <th class="num">Median merge</th>
               </tr>
             </thead>
             <tbody>
@@ -721,13 +1007,13 @@
                   <strong>{{ row.period_key }}</strong>
                   <span>created_at basis</span>
                 </td>
-                <td class="num" data-label="PRs">{{ row.pull_requests }}</td>
-                <td class="num" data-label="Merged">{{ row.merged_pull_requests }}</td>
-                <td class="num" data-label="Open">{{ row.open_pull_requests }}</td>
-                <td class="num" data-label="Changed lines">{{ row.changed_lines }}</td>
-                <td class="num" data-label="Reviews / PR">{{ row.average_reviews_per_pr or "-" }}</td>
-                <td class="num" data-label="Median first review (h)">{{ row.median_first_review_hours or "-" }}</td>
-                <td class="num" data-label="Median merge (h)">{{ row.median_merge_hours or "-" }}</td>
+                <td class="num" data-label="PRs">{{ row.pull_requests | intfmt }}</td>
+                <td class="num" data-label="Merged">{{ row.merged_pull_requests | intfmt }}</td>
+                <td class="num" data-label="Open">{{ row.open_pull_requests | intfmt }}</td>
+                <td class="num" data-label="Changed lines">{{ row.changed_lines | intfmt }}</td>
+                <td class="num" data-label="Reviews / PR">{{ row.average_reviews_per_pr | numfmt }}</td>
+                <td class="num" data-label="Median first review">{{ row.median_first_review_hours | duration }}</td>
+                <td class="num" data-label="Median merge">{{ row.median_merge_hours | duration }}</td>
               </tr>
               {% endfor %}
             </tbody>
@@ -736,10 +1022,87 @@
         </article>
       </section>
 
-      <section class="panel section-panel">
-        <p class="section-kicker">Author leaderboard</p>
-        <h2>Who drove the most delivery</h2>
-        <p class="section-copy">PR count is the primary rank. Click an author to inspect that person's delivery profile and period changes.</p>
+      <section id="people" class="panel section-panel">
+        <p class="section-kicker">People command center</p>
+        <h2>One person, delivery and review context together</h2>
+        <p class="section-copy">Select a person to inspect authored PRs, review load, repo concentration, and period movement without losing the leaderboard context.</p>
+        <div class="people-grid">
+          <div>
+            <p class="section-kicker">Delivery roster</p>
+            <div class="person-list">
+              {% for row in authors %}
+              <button
+                type="button"
+                class="author-button person-card{% if default_author == row.author_login %} active{% endif %}"
+                data-author="{{ row.author_login }}"
+                aria-pressed="{% if default_author == row.author_login %}true{% else %}false{% endif %}"
+              >
+                <span class="person-card-header">
+                  <strong>{{ row.author_login }}</strong>
+                  <small>#{{ loop.index }}</small>
+                </span>
+                <span class="person-card-metrics">
+                  <span>{{ row.pull_requests | intfmt }} PRs</span>
+                  <span>{{ row.changed_lines | intfmt }} lines</span>
+                  <span>{{ row.median_first_review_hours | duration }} first review</span>
+                </span>
+              </button>
+              {% endfor %}
+            </div>
+          </div>
+          <div id="author-detail" class="person-profile" tabindex="-1">
+            <div class="profile-summary">
+              <div>
+                <p class="section-kicker">Selected profile</p>
+                <h2 id="author-detail-title">Person detail</h2>
+              </div>
+              <span>Author + reviewer signals</span>
+            </div>
+            <div class="two-col">
+              <div class="detail-tabs" id="author-detail-metric-tabs">
+                <button type="button" class="tab-button active" data-author-metric="pull_requests" aria-selected="true">Throughput</button>
+                <button type="button" class="tab-button" data-author-metric="changed_lines" aria-selected="false">Changed lines</button>
+                <button type="button" class="tab-button" data-author-metric="median_first_review_hours" aria-selected="false">Review speed</button>
+                <button type="button" class="tab-button" data-author-metric="median_merge_hours" aria-selected="false">Merge speed</button>
+              </div>
+              <div class="detail-tabs" id="author-detail-grain-tabs">
+                <button type="button" class="tab-button active" data-author-grain="weekly" aria-selected="true">Weekly</button>
+                <button type="button" class="tab-button" data-author-grain="monthly" aria-selected="false">Monthly</button>
+                <button type="button" class="tab-button" data-author-grain="mix" aria-selected="false">Size mix</button>
+              </div>
+            </div>
+            <div class="chart-title">
+              <span id="author-chart-title">Author chart</span>
+              <div class="chart-legend">
+                <span class="legend-chip"><span class="legend-dot" style="background: var(--accent-2)"></span>Selected person</span>
+              </div>
+            </div>
+            <div id="author-chart-readout" class="chart-readout"></div>
+            <div id="author-chart-root" class="chart-root"></div>
+            <div id="author-detail-root" class="detail-shell"></div>
+          </div>
+        </div>
+      </section>
+
+      {% if insights|length > 1 %}
+      <section class="panel section-panel insight-panel">
+        <p class="section-kicker">Signal board</p>
+        <h2>What to inspect first</h2>
+        <div class="insight-list">
+          {% for insight in insights[1:] %}
+          <div class="insight-card">
+            <h3>{{ insight.title }}</h3>
+            <p>{{ insight.body }}</p>
+          </div>
+          {% endfor %}
+        </div>
+      </section>
+      {% endif %}
+
+      <section id="authors-ledger" class="panel section-panel">
+        <p class="section-kicker">Author ledger</p>
+        <h2>Ranked delivery detail</h2>
+        <p class="section-copy">Dense reference table for comparing delivery volume, code size, review responsiveness, and merge time.</p>
         <div class="table-wrap">
         <table>
           <thead>
@@ -753,8 +1116,8 @@
               <th class="num">Changed lines</th>
               <th class="num">Commits</th>
               <th class="num">Reviews / PR</th>
-              <th class="num">Median first review (h)</th>
-              <th class="num">Median merge (h)</th>
+              <th class="num">Median first review</th>
+              <th class="num">Median merge</th>
             </tr>
           </thead>
           <tbody>
@@ -767,6 +1130,7 @@
                     type="button"
                     class="author-button{% if default_author == row.author_login %} active{% endif %}"
                     data-author="{{ row.author_login }}"
+                    aria-pressed="{% if default_author == row.author_login %}true{% else %}false{% endif %}"
                   >
                     {{ row.author_login }}
                   </button>
@@ -779,17 +1143,17 @@
                 </div>
                 <div class="bar-meta">
                   <span>{{ row.share_of_prs_pct }}%</span>
-                  <span>{{ row.median_changed_lines }} median lines</span>
+                  <span>{{ row.median_changed_lines | numfmt }} median lines</span>
                 </div>
               </td>
-              <td class="num" data-label="PRs">{{ row.pull_requests }}</td>
-              <td class="num" data-label="Merged">{{ row.merged_pull_requests }}</td>
-              <td class="num" data-label="Open">{{ row.open_pull_requests }}</td>
-              <td class="num" data-label="Changed lines">{{ row.changed_lines }}</td>
-              <td class="num" data-label="Commits">{{ row.commits }}</td>
-              <td class="num" data-label="Reviews / PR">{{ row.average_reviews_per_pr }}</td>
-              <td class="num" data-label="Median first review (h)">{{ row.median_first_review_hours or "-" }}</td>
-              <td class="num" data-label="Median merge (h)">{{ row.median_merge_hours or "-" }}</td>
+              <td class="num" data-label="PRs">{{ row.pull_requests | intfmt }}</td>
+              <td class="num" data-label="Merged">{{ row.merged_pull_requests | intfmt }}</td>
+              <td class="num" data-label="Open">{{ row.open_pull_requests | intfmt }}</td>
+              <td class="num" data-label="Changed lines">{{ row.changed_lines | intfmt }}</td>
+              <td class="num" data-label="Commits">{{ row.commits | intfmt }}</td>
+              <td class="num" data-label="Reviews / PR">{{ row.average_reviews_per_pr | numfmt }}</td>
+              <td class="num" data-label="Median first review">{{ row.median_first_review_hours | duration }}</td>
+              <td class="num" data-label="Median merge">{{ row.median_merge_hours | duration }}</td>
             </tr>
             {% endfor %}
           </tbody>
@@ -797,35 +1161,8 @@
         </div>
       </section>
 
-      <section class="panel section-panel">
-        <p class="section-kicker">Author spec</p>
-        <h2 id="author-detail-title">Person detail</h2>
-        <p class="section-copy">Focused view of one person at a time: core output, repo concentration, and week/month change.</p>
-        <div class="two-col">
-          <div class="detail-tabs" id="author-detail-metric-tabs">
-            <button type="button" class="tab-button active" data-author-metric="pull_requests">Throughput</button>
-            <button type="button" class="tab-button" data-author-metric="changed_lines">Changed lines</button>
-            <button type="button" class="tab-button" data-author-metric="median_first_review_hours">Review speed</button>
-            <button type="button" class="tab-button" data-author-metric="median_merge_hours">Merge speed</button>
-          </div>
-          <div class="detail-tabs" id="author-detail-grain-tabs">
-            <button type="button" class="tab-button active" data-author-grain="weekly">Weekly</button>
-            <button type="button" class="tab-button" data-author-grain="monthly">Monthly</button>
-            <button type="button" class="tab-button" data-author-grain="mix">Size mix</button>
-          </div>
-        </div>
-        <div class="chart-title">
-          <span id="author-chart-title">Author chart</span>
-          <div class="chart-legend">
-            <span class="legend-chip"><span class="legend-dot" style="background: var(--accent-2)"></span>Selected author</span>
-          </div>
-        </div>
-        <div id="author-chart-root" class="chart-root"></div>
-        <div id="author-detail-root" class="detail-shell"></div>
-      </section>
-
-      <section class="two-col">
-        <article class="panel section-panel">
+      <section class="wide-stack">
+        <article id="reviewers" class="panel section-panel">
           <p class="section-kicker">Reviewer leaderboard</p>
           <h2>Who carried review load</h2>
           <div class="table-wrap">
@@ -848,14 +1185,14 @@
                 <td class="rank" data-label="Rank">{{ loop.index }}</td>
                 <td class="leader" data-label="Reviewer">
                   <strong>{{ row.reviewer_login }}</strong>
-                  <span>{{ row.pull_requests_reviewed }} PRs touched</span>
+                  <span>{{ row.pull_requests_reviewed | intfmt }} PRs touched</span>
                 </td>
-                <td class="num" data-label="Submissions">{{ row.review_submissions }}</td>
-                <td class="num" data-label="PRs reviewed">{{ row.pull_requests_reviewed }}</td>
-                <td class="num" data-label="Approvals">{{ row.approvals }}</td>
-                <td class="num" data-label="Changes requested">{{ row.changes_requested }}</td>
-                <td class="num" data-label="Comments">{{ row.comments }}</td>
-                <td class="num" data-label="Authors supported">{{ row.authors_supported }}</td>
+                <td class="num" data-label="Submissions">{{ row.review_submissions | intfmt }}</td>
+                <td class="num" data-label="PRs reviewed">{{ row.pull_requests_reviewed | intfmt }}</td>
+                <td class="num" data-label="Approvals">{{ row.approvals | intfmt }}</td>
+                <td class="num" data-label="Changes requested">{{ row.changes_requested | intfmt }}</td>
+                <td class="num" data-label="Comments">{{ row.comments | intfmt }}</td>
+                <td class="num" data-label="Authors supported">{{ row.authors_supported | intfmt }}</td>
               </tr>
               {% endfor %}
             </tbody>
@@ -863,13 +1200,13 @@
           </div>
         </article>
 
-        <article class="panel section-panel">
+        <article id="repositories" class="panel section-panel">
           <p class="section-kicker">Repository leaderboard</p>
           <h2>Where throughput concentrated</h2>
           <p class="section-copy">Top 10 are shown first. Use the button to reveal the remaining repositories.</p>
           {% if repositories_rest %}
           <div class="section-actions">
-            <button type="button" id="repository-toggle" class="ghost-button">
+            <button type="button" id="repository-toggle" class="ghost-button" aria-expanded="false">
               Show {{ repositories_rest|length }} more repositories
             </button>
           </div>
@@ -886,7 +1223,7 @@
                 <th class="num">Open</th>
                 <th class="num">Authors</th>
                 <th class="num">Reviews / PR</th>
-                <th class="num">Median first review (h)</th>
+                <th class="num">Median first review</th>
               </tr>
             </thead>
             <tbody>
@@ -895,7 +1232,7 @@
                 <td class="rank" data-label="Rank">{{ loop.index }}</td>
                 <td class="leader" data-label="Repository">
                   <strong>{{ row.repository_full_name }}</strong>
-                  <span>{{ row.changed_lines }} changed lines</span>
+                  <span>{{ row.changed_lines | intfmt }} changed lines</span>
                 </td>
                 <td class="bar-cell" data-label="PR share">
                   <div class="bar-track">
@@ -903,15 +1240,15 @@
                   </div>
                   <div class="bar-meta">
                     <span>{{ row.share_of_prs_pct }}%</span>
-                    <span>{{ row.changed_lines }} lines</span>
+                    <span>{{ row.changed_lines | intfmt }} lines</span>
                   </div>
                 </td>
-                <td class="num" data-label="PRs">{{ row.pull_requests }}</td>
-                <td class="num" data-label="Merged">{{ row.merged_pull_requests }}</td>
-                <td class="num" data-label="Open">{{ row.open_pull_requests }}</td>
-                <td class="num" data-label="Authors">{{ row.authors }}</td>
-                <td class="num" data-label="Reviews / PR">{{ row.average_reviews_per_pr }}</td>
-                <td class="num" data-label="Median first review (h)">{{ row.median_first_review_hours or "-" }}</td>
+                <td class="num" data-label="PRs">{{ row.pull_requests | intfmt }}</td>
+                <td class="num" data-label="Merged">{{ row.merged_pull_requests | intfmt }}</td>
+                <td class="num" data-label="Open">{{ row.open_pull_requests | intfmt }}</td>
+                <td class="num" data-label="Authors">{{ row.authors | intfmt }}</td>
+                <td class="num" data-label="Reviews / PR">{{ row.average_reviews_per_pr | numfmt }}</td>
+                <td class="num" data-label="Median first review">{{ row.median_first_review_hours | duration }}</td>
               </tr>
               {% endfor %}
             </tbody>
@@ -922,7 +1259,7 @@
                 <td class="rank" data-label="Rank">{{ loop.index + 10 }}</td>
                 <td class="leader" data-label="Repository">
                   <strong>{{ row.repository_full_name }}</strong>
-                  <span>{{ row.changed_lines }} changed lines</span>
+                  <span>{{ row.changed_lines | intfmt }} changed lines</span>
                 </td>
                 <td class="bar-cell" data-label="PR share">
                   <div class="bar-track">
@@ -930,15 +1267,15 @@
                   </div>
                   <div class="bar-meta">
                     <span>{{ row.share_of_prs_pct }}%</span>
-                    <span>{{ row.changed_lines }} lines</span>
+                    <span>{{ row.changed_lines | intfmt }} lines</span>
                   </div>
                 </td>
-                <td class="num" data-label="PRs">{{ row.pull_requests }}</td>
-                <td class="num" data-label="Merged">{{ row.merged_pull_requests }}</td>
-                <td class="num" data-label="Open">{{ row.open_pull_requests }}</td>
-                <td class="num" data-label="Authors">{{ row.authors }}</td>
-                <td class="num" data-label="Reviews / PR">{{ row.average_reviews_per_pr }}</td>
-                <td class="num" data-label="Median first review (h)">{{ row.median_first_review_hours or "-" }}</td>
+                <td class="num" data-label="PRs">{{ row.pull_requests | intfmt }}</td>
+                <td class="num" data-label="Merged">{{ row.merged_pull_requests | intfmt }}</td>
+                <td class="num" data-label="Open">{{ row.open_pull_requests | intfmt }}</td>
+                <td class="num" data-label="Authors">{{ row.authors | intfmt }}</td>
+                <td class="num" data-label="Reviews / PR">{{ row.average_reviews_per_pr | numfmt }}</td>
+                <td class="num" data-label="Median first review">{{ row.median_first_review_hours | duration }}</td>
               </tr>
               {% endfor %}
             </tbody>
@@ -948,7 +1285,7 @@
         </article>
       </section>
 
-      <section class="two-col">
+      <section id="size-review" class="two-col">
         <article class="panel section-panel">
           <p class="section-kicker">Review latency by PR size</p>
           <h2>How bigger changes slowed flow</h2>
@@ -959,8 +1296,8 @@
                 <th>Size</th>
                 <th class="num">PRs</th>
                 <th class="num">Median lines</th>
-                <th class="num">Median first review (h)</th>
-                <th class="num">Median merge (h)</th>
+                <th class="num">Median first review</th>
+                <th class="num">Median merge</th>
                 <th class="num">Reviews / PR</th>
               </tr>
             </thead>
@@ -971,11 +1308,11 @@
                   <strong>{{ row.bucket }}</strong>
                   <span>Size bucket</span>
                 </td>
-                <td class="num" data-label="PRs">{{ row.pull_requests }}</td>
-                <td class="num" data-label="Median lines">{{ row.median_changed_lines or "-" }}</td>
-                <td class="num" data-label="Median first review (h)">{{ row.median_first_review_hours or "-" }}</td>
-                <td class="num" data-label="Median merge (h)">{{ row.median_merge_hours or "-" }}</td>
-                <td class="num" data-label="Reviews / PR">{{ row.average_reviews_per_pr or "-" }}</td>
+                <td class="num" data-label="PRs">{{ row.pull_requests | intfmt }}</td>
+                <td class="num" data-label="Median lines">{{ row.median_changed_lines | numfmt }}</td>
+                <td class="num" data-label="Median first review">{{ row.median_first_review_hours | duration }}</td>
+                <td class="num" data-label="Median merge">{{ row.median_merge_hours | duration }}</td>
+                <td class="num" data-label="Reviews / PR">{{ row.average_reviews_per_pr | numfmt }}</td>
               </tr>
               {% endfor %}
             </tbody>
@@ -998,12 +1335,12 @@
             <div class="state-row">
               <div class="leader">
                 <strong>{{ row.state }}</strong>
-                <span>{{ row.count }} submissions</span>
+                <span>{{ row.count | intfmt }} submissions</span>
               </div>
               <div class="state-track">
                 <div class="state-fill" style="width: {{ row.share_pct or 0 }}%"></div>
               </div>
-              <div class="num">{{ row.share_pct or "-" }}%</div>
+              <div class="num">{{ row.share_pct | numfmt }}%</div>
             </div>
             {% endfor %}
           </div>
@@ -1021,12 +1358,15 @@
     const authorDetails = JSON.parse(document.getElementById("author-details-data").textContent);
     const authorButtons = Array.from(document.querySelectorAll(".author-button"));
     const authorDetailRoot = document.getElementById("author-detail-root");
+    const authorDetailPanel = document.getElementById("author-detail");
     const authorDetailTitle = document.getElementById("author-detail-title");
     const authorChartRoot = document.getElementById("author-chart-root");
+    const authorChartReadout = document.getElementById("author-chart-readout");
     const authorChartTitle = document.getElementById("author-chart-title");
     const repositoryToggle = document.getElementById("repository-toggle");
     const repositoryExtra = document.getElementById("repository-extra");
     const trendChartRoot = document.getElementById("trend-chart-root");
+    const trendChartReadout = document.getElementById("trend-chart-readout");
     const trendChartTitle = document.getElementById("trend-chart-title");
     const trendMetricTabs = Array.from(document.querySelectorAll("#trend-metric-tabs .tab-button"));
     const trendGrainTabs = Array.from(document.querySelectorAll("#trend-grain-tabs .tab-button"));
@@ -1037,15 +1377,28 @@
       monthly: {{ monthly_trends | tojson }},
     };
     let activeTrendMetric = "pull_requests";
-    let activeTrendGrain = "weekly";
+    let activeTrendGrain = trendSeries.weekly.length > 12 ? "monthly" : "weekly";
     let activeAuthorMetric = "pull_requests";
     let activeAuthorGrain = "weekly";
     let activeAuthor = "{{ default_author }}";
+    if (authorDetails[activeAuthor]?.weekly_trends?.length > 12) {
+      activeAuthorGrain = "monthly";
+    }
+
+    syncTabs(
+      trendGrainTabs,
+      trendGrainTabs.find((button) => button.dataset.grain === activeTrendGrain),
+    );
+    syncTabs(
+      authorGrainTabs,
+      authorGrainTabs.find((button) => button.dataset.authorGrain === activeAuthorGrain),
+    );
 
     if (repositoryToggle && repositoryExtra) {
       repositoryToggle.addEventListener("click", () => {
         const isHidden = repositoryExtra.classList.contains("hidden");
         repositoryExtra.classList.toggle("hidden", !isHidden);
+        repositoryToggle.setAttribute("aria-expanded", String(isHidden));
         repositoryToggle.textContent = isHidden
           ? "Collapse repository list"
           : `Show ${repositoryExtra.querySelectorAll("tr").length} more repositories`;
@@ -1056,9 +1409,10 @@
       button.addEventListener("click", () => {
         for (const other of authorButtons) {
           other.classList.toggle("active", other === button);
+          other.setAttribute("aria-pressed", String(other === button));
         }
         activeAuthor = button.dataset.author;
-        renderAuthorDetail(activeAuthor);
+        renderAuthorDetail(activeAuthor, { focus: true });
       });
     }
 
@@ -1094,10 +1448,15 @@
       });
     }
 
+    window.addEventListener("resize", () => {
+      renderTrendChart();
+      renderAuthorDetail(activeAuthor);
+    });
+
     renderTrendChart();
     renderAuthorDetail(activeAuthor);
 
-    function renderAuthorDetail(authorLogin) {
+    function renderAuthorDetail(authorLogin, options = {}) {
       const detail = authorDetails[authorLogin];
       if (!detail) {
         authorDetailRoot.innerHTML = "";
@@ -1105,20 +1464,20 @@
         return;
       }
       const summary = detail.summary;
-      authorDetailTitle.textContent = `${authorLogin} spec`;
+      authorDetailTitle.textContent = `${authorLogin} profile`;
       renderAuthorChart(detail, authorLogin);
       authorDetailRoot.innerHTML = `
         <div class="detail-grid">
-          ${detailCard("PRs", summary.pull_requests)}
-          ${detailCard("Merged", summary.merged_pull_requests)}
-          ${detailCard("Open", summary.open_pull_requests)}
+          ${detailCard("Authored PRs", summary.pull_requests)}
+          ${detailCard("Reviewed PRs", summary.pull_requests_reviewed)}
+          ${detailCard("Reviews given", summary.review_submissions_given)}
           ${detailCard("Merge rate", formatMetric(summary.merge_rate_pct, "%"))}
           ${detailCard("Avg lines / PR", formatMetric(summary.average_changed_lines_per_pr))}
-          ${detailCard("Avg commits / PR", formatMetric(summary.average_commits_per_pr))}
+          ${detailCard("First review", formatDuration(summary.median_first_review_hours))}
         </div>
-        <div class="two-col">
+        <div class="profile-subgrid">
           <div>
-            <p class="section-kicker">Top repositories</p>
+            <p class="section-kicker">Delivery footprint</p>
             ${renderMiniTable(
               [
                 ["Repository", "repository_full_name"],
@@ -1126,6 +1485,21 @@
                 ["Changed lines", "changed_lines"],
               ],
               detail.top_repositories,
+            )}
+          </div>
+          <div>
+            <p class="section-kicker">Review footprint</p>
+            ${renderMiniTable(
+              [
+                ["Signal", "label"],
+                ["Count", "value"],
+              ],
+              [
+                { label: "Approvals", value: summary.approvals_given },
+                { label: "Changes requested", value: summary.changes_requested_given },
+                { label: "Comments", value: summary.review_comments_given },
+                { label: "Authors supported", value: summary.authors_supported },
+              ],
             )}
           </div>
           <div>
@@ -1139,62 +1513,56 @@
             )}
           </div>
         </div>
-        <div class="two-col">
-          <div>
-            <p class="section-kicker">Weekly change</p>
-            ${renderMiniTable(
-              [
-                ["Week", "period_key"],
-                ["PRs", "pull_requests"],
-                ["Merged", "merged_pull_requests"],
-                ["Lines", "changed_lines"],
-              ],
-              detail.weekly_trends,
-            )}
-          </div>
-          <div>
-            <p class="section-kicker">Monthly change</p>
-            ${renderMiniTable(
-              [
-                ["Month", "period_key"],
-                ["PRs", "pull_requests"],
-                ["Merged", "merged_pull_requests"],
-                ["Lines", "changed_lines"],
-              ],
-              detail.monthly_trends,
-            )}
-          </div>
-        </div>
       `;
+      if (options.focus) {
+        authorDetailPanel.scrollIntoView({ block: "start" });
+        authorDetailPanel.focus({ preventScroll: true });
+      }
     }
 
     function renderTrendChart() {
       const rows = trendSeries[activeTrendGrain];
       const label = activeTrendGrain === "weekly" ? "week" : "month";
       trendChartTitle.textContent = `${metricLabel(activeTrendMetric)} by ${label}`;
+      trendChartReadout.innerHTML = renderSeriesReadout({
+        rows,
+        metric: activeTrendMetric,
+        labelKey: "period_key",
+      });
       renderSeriesChart({
         element: trendChartRoot,
         rows,
         metric: activeTrendMetric,
         labelKey: "period_key",
-        secondaryMetric: activeTrendMetric === "pull_requests" ? "review_submissions" : null,
       });
     }
 
     function renderAuthorChart(detail, authorLogin) {
       if (activeAuthorGrain === "mix") {
-        authorChartTitle.textContent = `${authorLogin} size mix`;
+        authorChartTitle.textContent = `${authorLogin} ${metricLabel(activeAuthorMetric)} by PR size`;
+        authorChartReadout.innerHTML = renderBarReadout({
+          rows: detail.size_mix,
+          metric: activeAuthorMetric,
+          labelKey: "bucket",
+          valueKey: mixMetricKey(activeAuthorMetric),
+        });
         renderBarChart({
           element: authorChartRoot,
           rows: detail.size_mix,
           labelKey: "bucket",
-          valueKey: "pull_requests",
+          valueKey: mixMetricKey(activeAuthorMetric),
+          metric: activeAuthorMetric,
         });
         return;
       }
       const rows = detail[`${activeAuthorGrain}_trends`];
       const label = activeAuthorGrain === "weekly" ? "week" : "month";
       authorChartTitle.textContent = `${authorLogin} ${metricLabel(activeAuthorMetric)} by ${label}`;
+      authorChartReadout.innerHTML = renderSeriesReadout({
+        rows,
+        metric: activeAuthorMetric,
+        labelKey: "period_key",
+      });
       renderSeriesChart({
         element: authorChartRoot,
         rows,
@@ -1205,7 +1573,7 @@
 
     function renderSeriesChart({ element, rows, metric, labelKey, secondaryMetric = null }) {
       if (!rows || rows.length === 0) {
-        element.innerHTML = "";
+        element.innerHTML = `<div class="small-note">No data for this view.</div>`;
         return;
       }
       const width = 920;
@@ -1213,34 +1581,74 @@
       const padding = { top: 20, right: 18, bottom: 42, left: 56 };
       const plotWidth = width - padding.left - padding.right;
       const plotHeight = height - padding.top - padding.bottom;
-      const primaryValues = rows.map((row) => Number(row[metric] ?? 0));
+      const metricValues = rows.map((row) => toNumeric(row[metric]));
+      const primaryValues = metricValues.filter((value) => value !== null);
+      if (primaryValues.length === 0) {
+        element.innerHTML = `<div class="small-note">No data for this metric in the selected window.</div>`;
+        return;
+      }
       const secondaryValues = secondaryMetric
-        ? rows.map((row) => Number(row[secondaryMetric] ?? 0))
+        ? rows
+            .map((row) => toNumeric(row[secondaryMetric]))
+            .filter((value) => value !== null)
         : [];
       const maxValue = Math.max(1, ...primaryValues, ...secondaryValues);
       const stepX = rows.length > 1 ? plotWidth / (rows.length - 1) : plotWidth / 2;
       const yFor = (value) => padding.top + plotHeight - (value / maxValue) * plotHeight;
       const xFor = (index) => padding.left + index * stepX;
-      const linePath = rows.map((row, index) => `${index === 0 ? "M" : "L"} ${xFor(index)} ${yFor(Number(row[metric] ?? 0))}`).join(" ");
+      const linePoints = rows
+        .map((row, index) => ({ index, value: toNumeric(row[metric]) }))
+        .filter((point) => point.value !== null);
+      const linePath = linePoints
+        .map((point, pathIndex) => `${pathIndex === 0 ? "M" : "L"} ${xFor(point.index)} ${yFor(point.value)}`)
+        .join(" ");
+      const areaPath = linePoints.length
+        ? `${linePath} L ${xFor(linePoints.at(-1).index)} ${padding.top + plotHeight} L ${xFor(linePoints[0].index)} ${padding.top + plotHeight} Z`
+        : "";
       let secondaryPath = "";
       if (secondaryMetric) {
-        secondaryPath = rows.map((row, index) => `${index === 0 ? "M" : "L"} ${xFor(index)} ${yFor(Number(row[secondaryMetric] ?? 0))}`).join(" ");
+        const secondaryPoints = rows
+          .map((row, index) => ({ index, value: toNumeric(row[secondaryMetric]) }))
+          .filter((point) => point.value !== null);
+        secondaryPath = secondaryPoints
+          .map((point, pathIndex) => `${pathIndex === 0 ? "M" : "L"} ${xFor(point.index)} ${yFor(point.value)}`)
+          .join(" ");
       }
-      const points = rows.map((row, index) => `
-        <circle cx="${xFor(index)}" cy="${yFor(Number(row[metric] ?? 0))}" r="4" fill="${getCss("--accent")}"></circle>
-        <text x="${xFor(index)}" y="${height - 12}" text-anchor="middle" class="chart-axis">${formatCell(row[labelKey])}</text>
-      `).join("");
+      const averageValue = primaryValues.reduce((sum, value) => sum + value, 0) / primaryValues.length;
+      const averageLineY = yFor(averageValue);
+      const labelInterval = chartLabelInterval(rows.length);
+      const points = rows.map((row, index) => {
+        const value = toNumeric(row[metric]);
+        if (value === null) {
+          return "";
+        }
+        const showLabel = index === 0 || index === rows.length - 1 || index % labelInterval === 0;
+        return `
+          <circle cx="${xFor(index)}" cy="${yFor(value)}" r="4" fill="${getCss("--accent")}">
+            <title>${formatCell(row[labelKey])}: ${formatChartValue(value, metric)}</title>
+          </circle>
+          ${showLabel ? `<text x="${xFor(index)}" y="${height - 12}" text-anchor="middle" class="chart-axis">${shortLabel(row[labelKey])}</text>` : ""}
+        `;
+      }).join("");
       const ticks = [0, 0.25, 0.5, 0.75, 1].map((ratio) => {
-        const value = Math.round(maxValue * ratio);
+        const value = maxValue * ratio;
         const y = padding.top + plotHeight - plotHeight * ratio;
         return `
           <line x1="${padding.left}" x2="${width - padding.right}" y1="${y}" y2="${y}" stroke="rgba(255,255,255,0.06)"></line>
-          <text x="${padding.left - 10}" y="${y + 4}" text-anchor="end" class="chart-axis">${value}</text>
+          <text x="${padding.left - 10}" y="${y + 4}" text-anchor="end" class="chart-axis">${formatChartValue(value, metric)}</text>
         `;
       }).join("");
       element.innerHTML = `
-        <svg viewBox="0 0 ${width} ${height}" preserveAspectRatio="none">
+        <svg viewBox="0 0 ${width} ${height}" preserveAspectRatio="xMidYMid meet" role="img" aria-label="${metricLabel(metric)} chart">
+          <defs>
+            <linearGradient id="series-fill-${metric}" x1="0" x2="0" y1="0" y2="1">
+              <stop offset="0%" stop-color="${getCss("--accent")}" stop-opacity="0.22"></stop>
+              <stop offset="100%" stop-color="${getCss("--accent")}" stop-opacity="0"></stop>
+            </linearGradient>
+          </defs>
           ${ticks}
+          <line x1="${padding.left}" x2="${width - padding.right}" y1="${averageLineY}" y2="${averageLineY}" stroke="rgba(126,224,179,0.4)" stroke-dasharray="5 5"></line>
+          ${areaPath ? `<path d="${areaPath}" fill="url(#series-fill-${metric})"></path>` : ""}
           <path d="${linePath}" fill="none" stroke="${getCss("--accent")}" stroke-width="3" stroke-linecap="round"></path>
           ${secondaryPath ? `<path d="${secondaryPath}" fill="none" stroke="${getCss("--accent-3")}" stroke-width="2" stroke-dasharray="6 6"></path>` : ""}
           ${points}
@@ -1248,9 +1656,9 @@
       `;
     }
 
-    function renderBarChart({ element, rows, labelKey, valueKey }) {
+    function renderBarChart({ element, rows, labelKey, valueKey, metric }) {
       if (!rows || rows.length === 0) {
-        element.innerHTML = "";
+        element.innerHTML = `<div class="small-note">No data for this view.</div>`;
         return;
       }
       const width = 920;
@@ -1258,30 +1666,42 @@
       const padding = { top: 20, right: 18, bottom: 42, left: 56 };
       const plotWidth = width - padding.left - padding.right;
       const plotHeight = height - padding.top - padding.bottom;
-      const maxValue = Math.max(1, ...rows.map((row) => Number(row[valueKey] ?? 0)));
+      const barValues = rows
+        .map((row) => toNumeric(row[valueKey]))
+        .filter((value) => value !== null);
+      if (barValues.length === 0) {
+        element.innerHTML = `<div class="small-note">No data for this metric in the selected window.</div>`;
+        return;
+      }
+      const maxValue = Math.max(1, ...barValues);
       const groupWidth = plotWidth / rows.length;
       const barWidth = Math.min(56, groupWidth * 0.58);
+      const labelInterval = chartLabelInterval(rows.length);
       const bars = rows.map((row, index) => {
-        const value = Number(row[valueKey] ?? 0);
-        const barHeight = (value / maxValue) * plotHeight;
+        const value = toNumeric(row[valueKey]);
+        const barHeight = value === null ? 0 : (value / maxValue) * plotHeight;
         const x = padding.left + index * groupWidth + (groupWidth - barWidth) / 2;
         const y = padding.top + plotHeight - barHeight;
         const labelX = padding.left + index * groupWidth + groupWidth / 2;
+        const showLabel = index === 0 || index === rows.length - 1 || index % labelInterval === 0;
         return `
-          <rect x="${x}" y="${y}" width="${barWidth}" height="${barHeight}" rx="5" fill="${getCss("--accent-2")}"></rect>
-          <text x="${labelX}" y="${height - 12}" text-anchor="middle" class="chart-axis">${formatCell(row[labelKey])}</text>
+          <rect x="${x}" y="${y}" width="${barWidth}" height="${barHeight}" rx="5" fill="${getCss("--accent-2")}" fill-opacity="${value === null ? "0.16" : "1"}">
+            <title>${formatCell(row[labelKey])}: ${formatChartValue(value, metric)}</title>
+          </rect>
+          ${value === null ? "" : `<text x="${labelX}" y="${Math.max(y - 8, padding.top + 10)}" text-anchor="middle" class="chart-axis">${formatChartValue(value, metric)}</text>`}
+          ${showLabel ? `<text x="${labelX}" y="${height - 12}" text-anchor="middle" class="chart-axis">${shortLabel(row[labelKey])}</text>` : ""}
         `;
       }).join("");
       const ticks = [0, 0.25, 0.5, 0.75, 1].map((ratio) => {
-        const value = Math.round(maxValue * ratio);
+        const value = maxValue * ratio;
         const y = padding.top + plotHeight - plotHeight * ratio;
         return `
           <line x1="${padding.left}" x2="${width - padding.right}" y1="${y}" y2="${y}" stroke="rgba(255,255,255,0.06)"></line>
-          <text x="${padding.left - 10}" y="${y + 4}" text-anchor="end" class="chart-axis">${value}</text>
+          <text x="${padding.left - 10}" y="${y + 4}" text-anchor="end" class="chart-axis">${formatChartValue(value, metric)}</text>
         `;
       }).join("");
       element.innerHTML = `
-        <svg viewBox="0 0 ${width} ${height}" preserveAspectRatio="none">
+        <svg viewBox="0 0 ${width} ${height}" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Bar chart">
           ${ticks}
           ${bars}
         </svg>
@@ -1292,14 +1712,71 @@
       const head = columns.map(([label]) => `<th>${label}</th>`).join("");
       const body = rows.map((row) => `
         <tr>
-          ${columns.map(([, key]) => `<td>${formatCell(row[key])}</td>`).join("")}
+          ${columns.map(([label, key]) => {
+            const value = row[key];
+            const numericClass = typeof value === "number" ? ` class="num"` : "";
+            return `<td${numericClass} data-label="${formatCell(label)}">${formatCell(value)}</td>`;
+          }).join("")}
         </tr>
       `).join("");
       return `<div class="table-wrap"><table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>`;
     }
 
     function detailCard(label, value) {
-      return `<div class="detail-card"><strong>${label}</strong><span>${value}</span></div>`;
+      return `<div class="detail-card"><strong>${label}</strong><span>${formatCell(value)}</span></div>`;
+    }
+
+    function renderSeriesReadout({ rows, metric, labelKey }) {
+      if (!rows || rows.length === 0) {
+        return "";
+      }
+      const rowsWithValues = rows.filter((row) => toNumeric(row[metric]) !== null);
+      if (rowsWithValues.length === 0) {
+        return [
+          ["Latest period", "-"],
+          ["Latest value", "-"],
+          ["Period delta", "-"],
+          ["Window average", "-"],
+        ].map(([label, value]) => `<div class="readout-card"><strong>${label}</strong><span>${value}</span></div>`).join("");
+      }
+      const latest = rowsWithValues.at(-1);
+      const previous = rowsWithValues.length > 1 ? rowsWithValues.at(-2) : null;
+      const latestValue = toNumeric(latest[metric]);
+      const previousValue = previous ? toNumeric(previous[metric]) : null;
+      const delta = previousValue === null ? null : latestValue - previousValue;
+      const average = rowsWithValues.reduce((sum, row) => sum + toNumeric(row[metric]), 0) / rowsWithValues.length;
+      return [
+        ["Latest period", latest[labelKey]],
+        ["Latest value", formatChartValue(latestValue, metric)],
+        ["Period delta", formatDelta(delta)],
+        ["Window average", formatChartValue(average, metric)],
+      ].map(([label, value]) => `<div class="readout-card"><strong>${label}</strong><span>${value}</span></div>`).join("");
+    }
+
+    function renderBarReadout({ rows, metric, labelKey, valueKey }) {
+      if (!rows || rows.length === 0) {
+        return "";
+      }
+      const ranked = [...rows]
+        .filter((row) => toNumeric(row[valueKey]) !== null)
+        .sort((left, right) => toNumeric(right[valueKey]) - toNumeric(left[valueKey]));
+      if (ranked.length === 0) {
+        return [
+          ["Leading bucket", "-"],
+          ["Leading value", "-"],
+          ["Bucket average", "-"],
+          ["Metric", metricLabel(metric)],
+        ].map(([label, value]) => `<div class="readout-card"><strong>${label}</strong><span>${value}</span></div>`).join("");
+      }
+      const top = ranked[0];
+      const total = ranked.reduce((sum, row) => sum + toNumeric(row[valueKey]), 0);
+      const average = ranked.length ? total / ranked.length : 0;
+      return [
+        ["Leading bucket", formatCell(top[labelKey])],
+        ["Leading value", formatChartValue(Number(top[valueKey] ?? 0), metric)],
+        ["Bucket average", formatChartValue(average, metric)],
+        ["Metric", metricLabel(metric)],
+      ].map(([label, value]) => `<div class="readout-card"><strong>${label}</strong><span>${value}</span></div>`).join("");
     }
 
     function formatMetric(value, suffix = "") {
@@ -1319,10 +1796,78 @@
       return labels[metric] || metric;
     }
 
+    function mixMetricKey(metric) {
+      const keys = {
+        pull_requests: "pull_requests",
+        changed_lines: "changed_lines",
+        median_first_review_hours: "median_first_review_hours",
+        median_merge_hours: "median_merge_hours",
+      };
+      return keys[metric] || "pull_requests";
+    }
+
     function syncTabs(buttons, activeButton) {
       for (const button of buttons) {
         button.classList.toggle("active", button === activeButton);
+        button.setAttribute("aria-selected", String(button === activeButton));
       }
+    }
+
+    function chartLabelInterval(rowCount) {
+      const width = window.innerWidth || 1200;
+      if (width < 520) {
+        return Math.max(1, Math.ceil(rowCount / 4));
+      }
+      if (width < 900) {
+        return Math.max(1, Math.ceil(rowCount / 6));
+      }
+      return Math.max(1, Math.ceil(rowCount / 10));
+    }
+
+    function shortLabel(value) {
+      const text = String(value);
+      return text.includes("-W") ? text.replace(/^20/, "") : text;
+    }
+
+    function formatChartValue(value, metric) {
+      if (value === null || value === undefined || Number.isNaN(Number(value))) {
+        return "-";
+      }
+      if (metric.includes("_hours")) {
+        return formatDuration(value);
+      }
+      return formatCell(value);
+    }
+
+    function formatDelta(value) {
+      if (value === null || value === undefined || Number.isNaN(Number(value))) {
+        return "-";
+      }
+      const numericValue = Number(value);
+      const sign = numericValue > 0 ? "+" : "";
+      return `${sign}${formatCell(numericValue)}`;
+    }
+
+    function toNumeric(value) {
+      if (value === null || value === undefined || value === "") {
+        return null;
+      }
+      const numericValue = Number(value);
+      return Number.isNaN(numericValue) ? null : numericValue;
+    }
+
+    function formatDuration(hours) {
+      if (hours === null || hours === undefined || Number.isNaN(Number(hours))) {
+        return "-";
+      }
+      const numericHours = Number(hours);
+      if (numericHours < 1) {
+        return `${Math.round(numericHours * 60)} min`;
+      }
+      if (numericHours >= 24) {
+        return `${(numericHours / 24).toLocaleString(undefined, { maximumFractionDigits: 1 })} d`;
+      }
+      return `${numericHours.toLocaleString(undefined, { maximumFractionDigits: 1 })} h`;
     }
 
     function getCss(variableName) {

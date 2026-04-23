@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import csv
+import importlib.util
 import json
 from datetime import date, datetime
+from pathlib import Path
 
 from orgpulse.ingestion import (
     PULL_REQUEST_FIELDNAMES,
@@ -37,6 +39,20 @@ from orgpulse.output import (
     OrgSummaryWriter,
     RepositorySummaryCsvWriter,
     RunManifestWriter,
+)
+
+_RENDER_MANUAL_DASHBOARD_SPEC = importlib.util.spec_from_file_location(
+    "render_manual_org_dashboard",
+    Path(__file__).resolve().parents[1] / "scripts" / "render_manual_org_dashboard.py",
+)
+assert _RENDER_MANUAL_DASHBOARD_SPEC is not None
+assert _RENDER_MANUAL_DASHBOARD_SPEC.loader is not None
+_render_manual_dashboard = importlib.util.module_from_spec(
+    _RENDER_MANUAL_DASHBOARD_SPEC,
+)
+_RENDER_MANUAL_DASHBOARD_SPEC.loader.exec_module(_render_manual_dashboard)
+prepare_manual_dashboard_payload = (
+    _render_manual_dashboard.prepare_manual_dashboard_payload
 )
 
 
@@ -1487,3 +1503,179 @@ class TestRepositorySummaryCsvWriter:
         """Read repo summary CSV rows into dictionaries for assertions."""
         with path.open(newline="", encoding="utf-8") as handle:
             return list(csv.DictReader(handle))
+
+
+class TestManualDashboardPayload:
+    def test_uses_shared_percentile_cutoff_across_overview_and_breakdowns(
+        self,
+    ) -> None:
+        """Apply one percentile cutoff across overview, trends, repositories, and author breakdowns."""
+        # Given
+        payload = {
+            "overview": {
+                "org": "acme",
+                "generated_at": "2026-04-24T00:00:00+00:00",
+                "since": "2026-04-01",
+                "until": "2026-04-30",
+                "time_anchor": "created_at",
+                "top_repository": "acme/api",
+                "top_author": "alice",
+                "unique_reviewers": 2,
+            },
+            "reviewers": [
+                {
+                    "reviewer_login": "alice",
+                    "review_submissions": 4,
+                    "pull_requests_reviewed": 2,
+                    "approvals": 2,
+                    "changes_requested": 0,
+                    "comments": 2,
+                    "authors_supported": 2,
+                },
+                {
+                    "reviewer_login": "bob",
+                    "review_submissions": 1,
+                    "pull_requests_reviewed": 1,
+                    "approvals": 1,
+                    "changes_requested": 0,
+                    "comments": 0,
+                    "authors_supported": 1,
+                },
+            ],
+            "pull_requests": [
+                _manual_pull_request(
+                    repository_full_name="acme/api",
+                    pull_request_number=1,
+                    author_login="alice",
+                    created_at="2026-04-01T09:00:00+00:00",
+                    merged_at="2026-04-02T09:00:00+00:00",
+                    changed_lines=10,
+                    additions=8,
+                    deletions=2,
+                    first_review_hours=1.0,
+                    merge_hours=24.0,
+                    size_bucket="XS",
+                ),
+                _manual_pull_request(
+                    repository_full_name="acme/api",
+                    pull_request_number=2,
+                    author_login="bob",
+                    created_at="2026-04-03T09:00:00+00:00",
+                    merged_at="2026-04-04T09:00:00+00:00",
+                    changed_lines=20,
+                    additions=16,
+                    deletions=4,
+                    first_review_hours=2.0,
+                    merge_hours=24.0,
+                    size_bucket="S",
+                ),
+                _manual_pull_request(
+                    repository_full_name="acme/web",
+                    pull_request_number=3,
+                    author_login="carol",
+                    created_at="2026-04-05T09:00:00+00:00",
+                    merged_at="2026-04-06T09:00:00+00:00",
+                    changed_lines=1000,
+                    additions=1000,
+                    deletions=0,
+                    first_review_hours=3.0,
+                    merge_hours=24.0,
+                    size_bucket="XL",
+                ),
+            ],
+        }
+
+        # When
+        prepared = prepare_manual_dashboard_payload(
+            payload,
+            distribution_percentile=95,
+        )
+
+        # Then
+        assert prepared["overview"]["total_changed_lines"] == 30
+        assert sum(row["changed_lines"] for row in prepared["repositories"]) == 30
+        assert sum(row["changed_lines"] for row in prepared["monthly_trends"]) == 30
+        assert prepared["repositories"] == [
+            {
+                "repository_full_name": "acme/api",
+                "pull_requests": 2,
+                "merged_pull_requests": 2,
+                "open_pull_requests": 0,
+                "authors": 2,
+                "changed_lines": 30,
+                "review_submissions": 2,
+                "average_reviews_per_pr": 1.0,
+                "median_first_review_hours": 1.5,
+                "median_merge_hours": 24.0,
+                "share_of_prs_pct": 66.67,
+            },
+            {
+                "repository_full_name": "acme/web",
+                "pull_requests": 1,
+                "merged_pull_requests": 1,
+                "open_pull_requests": 0,
+                "authors": 1,
+                "changed_lines": 0,
+                "review_submissions": 1,
+                "average_reviews_per_pr": 1.0,
+                "median_first_review_hours": None,
+                "median_merge_hours": 24.0,
+                "share_of_prs_pct": 33.33,
+            },
+        ]
+        author_details = json.loads(prepared["author_details_json"])
+        assert author_details["carol"]["size_mix"][-1] == {
+            "bucket": "XL",
+            "pull_requests": 1,
+            "changed_lines": 0,
+            "median_first_review_hours": None,
+            "median_merge_hours": 24.0,
+            "average_reviews_per_pr": 1.0,
+        }
+
+
+def _manual_pull_request(
+    *,
+    repository_full_name: str,
+    pull_request_number: int,
+    author_login: str,
+    created_at: str,
+    merged_at: str | None,
+    changed_lines: int,
+    additions: int,
+    deletions: int,
+    first_review_hours: float | None,
+    merge_hours: float | None,
+    size_bucket: str,
+) -> dict[str, object]:
+    """Build a normalized manual dashboard pull request payload for tests."""
+    closed_at = merged_at
+    return {
+        "repository_full_name": repository_full_name,
+        "pull_request_number": pull_request_number,
+        "title": f"PR {pull_request_number}",
+        "author_login": author_login,
+        "state": "closed" if merged_at else "open",
+        "created_at": created_at,
+        "updated_at": merged_at or created_at,
+        "closed_at": closed_at,
+        "merged_at": merged_at,
+        "html_url": f"https://example.test/pr/{pull_request_number}",
+        "additions": additions,
+        "deletions": deletions,
+        "changed_files": 1,
+        "changed_lines": changed_lines,
+        "commits": 1,
+        "review_count": 1,
+        "approval_count": 1,
+        "changes_requested_count": 0,
+        "comment_review_count": 0,
+        "reviewer_count": 1,
+        "first_review_hours": first_review_hours,
+        "merge_hours": merge_hours,
+        "close_hours": merge_hours,
+        "review_rounds": 1,
+        "review_ready_at": created_at,
+        "review_requested_at": created_at,
+        "size_bucket": size_bucket,
+    }

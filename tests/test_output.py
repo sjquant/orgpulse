@@ -1906,6 +1906,72 @@ class TestManualDashboardPayload:
         assert html.index('id="weekly-trend-toggle"') > html.index('id="weekly-trend-extra"')
         assert html.index('id="monthly-trend-toggle"') > html.index('id="monthly-trend-extra"')
 
+    def test_reference_trend_tables_render_newest_periods_first(self) -> None:
+        """Render recent and older reference trend rows in newest-to-oldest order."""
+        # Given
+        payload = {
+            "overview": {
+                "org": "acme",
+                "generated_at": "2026-04-24T00:00:00+00:00",
+                "since": "2026-01-01",
+                "until": "2026-04-30",
+                "time_anchor": "created_at",
+                "top_repository": "acme/api",
+                "top_author": "alice",
+                "unique_reviewers": 1,
+            },
+            "reviewers": [
+                {
+                    "reviewer_login": "reviewer-1",
+                    "review_submissions": 8,
+                    "pull_requests_reviewed": 8,
+                    "approvals": 8,
+                    "changes_requested": 0,
+                    "comments": 0,
+                    "authors_supported": 1,
+                },
+            ],
+            "pull_requests": [
+                _manual_pull_request(
+                    repository_full_name="acme/api",
+                    pull_request_number=index,
+                    author_login="alice",
+                    created_at=(
+                        datetime.fromisoformat("2026-01-01T09:00:00+00:00")
+                        + timedelta(days=(index - 1) * 31)
+                    ).isoformat(),
+                    merged_at=(
+                        datetime.fromisoformat("2026-01-02T09:00:00+00:00")
+                        + timedelta(days=(index - 1) * 31)
+                    ).isoformat(),
+                    changed_lines=10 * index,
+                    additions=8 * index,
+                    deletions=2 * index,
+                    first_review_hours=float(index),
+                    merge_hours=24.0,
+                    size_bucket="S",
+                )
+                for index in range(1, 9)
+            ],
+        }
+
+        # When
+        prepared = prepare_manual_dashboard_payload(payload)
+
+        # Then
+        assert [row["period_key"] for row in prepared["monthly_trends_recent"]] == [
+            "2026-08",
+            "2026-07",
+            "2026-06",
+            "2026-05",
+            "2026-04",
+            "2026-03",
+        ]
+        assert [row["period_key"] for row in prepared["monthly_trends_older"]] == [
+            "2026-02",
+            "2026-01",
+        ]
+
     def test_renders_latency_quality_summary_and_chart_tooltip_wiring(self) -> None:
         """Render latency-quality summary cards and explicit chart tooltip wiring in the dashboard shell."""
         # Given

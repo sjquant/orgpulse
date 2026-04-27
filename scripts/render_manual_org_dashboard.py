@@ -1033,8 +1033,8 @@ def _split_recent_rows(
     recent_count: int,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     if len(rows) <= recent_count:
-        return rows, []
-    return rows[-recent_count:], rows[:-recent_count]
+        return list(reversed(rows)), []
+    return list(reversed(rows[-recent_count:])), list(reversed(rows[:-recent_count]))
 
 
 def _coverage_share(

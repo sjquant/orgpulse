@@ -1,0 +1,14 @@
+  <script>
+    (function () {
+      const storageKey = "orgpulse-manual-dashboard-theme";
+      const preferredTheme = window.matchMedia("(prefers-color-scheme: dark)").matches
+        ? "dark"
+        : "light";
+      try {
+        const storedTheme = window.localStorage.getItem(storageKey);
+        document.documentElement.dataset.theme = storedTheme || preferredTheme;
+      } catch (_error) {
+        document.documentElement.dataset.theme = preferredTheme;
+      }
+    }());
+  </script>

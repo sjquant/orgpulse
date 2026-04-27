@@ -1720,6 +1720,130 @@ class TestManualDashboardPayload:
             "average_reviews_per_pr": 1.0,
         }
 
+    def test_adds_team_normalized_author_metrics_to_overview_and_trends(self) -> None:
+        """Expose average active-author normalization in overview cards and trend rows."""
+        # Given
+        payload = {
+            "overview": {
+                "org": "acme",
+                "generated_at": "2026-04-24T00:00:00+00:00",
+                "since": "2026-01-01",
+                "until": "2026-02-28",
+                "time_anchor": "created_at",
+                "top_repository": "acme/api",
+                "top_author": "alice",
+                "unique_reviewers": 2,
+            },
+            "reviewers": [
+                {
+                    "reviewer_login": "reviewer-1",
+                    "review_submissions": 2,
+                    "pull_requests_reviewed": 2,
+                    "approvals": 2,
+                    "changes_requested": 0,
+                    "comments": 0,
+                    "authors_supported": 2,
+                },
+                {
+                    "reviewer_login": "reviewer-2",
+                    "review_submissions": 1,
+                    "pull_requests_reviewed": 1,
+                    "approvals": 1,
+                    "changes_requested": 0,
+                    "comments": 0,
+                    "authors_supported": 1,
+                },
+            ],
+            "pull_requests": [
+                _manual_pull_request(
+                    repository_full_name="acme/api",
+                    pull_request_number=1,
+                    author_login="alice",
+                    created_at="2026-01-03T09:00:00+00:00",
+                    merged_at="2026-01-04T09:00:00+00:00",
+                    changed_lines=10,
+                    additions=8,
+                    deletions=2,
+                    first_review_hours=1.0,
+                    merge_hours=24.0,
+                    size_bucket="XS",
+                ),
+                _manual_pull_request(
+                    repository_full_name="acme/web",
+                    pull_request_number=2,
+                    author_login="bob",
+                    created_at="2026-01-10T09:00:00+00:00",
+                    merged_at="2026-01-11T09:00:00+00:00",
+                    changed_lines=30,
+                    additions=24,
+                    deletions=6,
+                    first_review_hours=2.0,
+                    merge_hours=24.0,
+                    size_bucket="S",
+                ),
+                _manual_pull_request(
+                    repository_full_name="acme/api",
+                    pull_request_number=3,
+                    author_login="alice",
+                    created_at="2026-02-05T09:00:00+00:00",
+                    merged_at="2026-02-06T09:00:00+00:00",
+                    changed_lines=20,
+                    additions=14,
+                    deletions=6,
+                    first_review_hours=3.0,
+                    merge_hours=24.0,
+                    size_bucket="S",
+                ),
+            ],
+        }
+
+        # When
+        prepared = prepare_manual_dashboard_payload(payload)
+        html = render_manual_dashboard_html(prepared)
+
+        # Then
+        assert prepared["overview"]["average_active_authors_per_month"] == 1.5
+        assert prepared["overview"]["pull_requests_per_active_author"] == 2.0
+        assert prepared["overview"]["changed_lines_per_active_author"] == 40.0
+        assert prepared["overview"]["review_submissions_per_reviewer"] == 1.5
+        assert prepared["monthly_trends"] == [
+            {
+                "period_key": "2026-01",
+                "pull_requests": 2,
+                "merged_pull_requests": 2,
+                "open_pull_requests": 0,
+                "active_authors": 2,
+                "changed_lines": 40,
+                "review_submissions": 2,
+                "pull_requests_per_active_author": 1.0,
+                "changed_lines_per_active_author": 20.0,
+                "average_reviews_per_pr": 1.0,
+                "median_first_review_hours": 1.5,
+                "median_merge_hours": 24.0,
+                "pull_request_delta": None,
+                "changed_lines_delta": None,
+            },
+            {
+                "period_key": "2026-02",
+                "pull_requests": 1,
+                "merged_pull_requests": 1,
+                "open_pull_requests": 0,
+                "active_authors": 1,
+                "changed_lines": 20,
+                "review_submissions": 1,
+                "pull_requests_per_active_author": 1.0,
+                "changed_lines_per_active_author": 20.0,
+                "average_reviews_per_pr": 1.0,
+                "median_first_review_hours": 3.0,
+                "median_merge_hours": 24.0,
+                "pull_request_delta": -1,
+                "changed_lines_delta": -20,
+            },
+        ]
+        assert "PRs / active author" in html
+        assert "Lines / active author" in html
+        assert "avg active authors / month" in html
+
     def test_renders_expansion_controls_below_long_tables_and_lists(self) -> None:
         """Render overflow controls below long lists and tables so the dashboard scales vertically."""
         # Given

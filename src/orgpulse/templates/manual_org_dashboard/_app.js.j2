@@ -1,0 +1,970 @@
+  <script>
+    const themeStorageKey = "orgpulse-manual-dashboard-theme";
+    const themeButtons = Array.from(document.querySelectorAll(".theme-switch-button"));
+    const themeSwitch = document.querySelector(".theme-switch");
+    const authorDetails = JSON.parse(document.getElementById("author-details-data").textContent);
+    const authorButtons = Array.from(document.querySelectorAll(".author-button"));
+    const rosterButtons = Array.from(document.querySelectorAll('.author-button[data-author-surface="roster"]'));
+    const authorRosterSearch = document.getElementById("author-roster-search");
+    const authorRosterToggle = document.getElementById("author-roster-toggle");
+    const authorDetailRoot = document.getElementById("author-detail-root");
+    const authorDetailPanel = document.getElementById("author-detail");
+    const authorDetailTitle = document.getElementById("author-detail-title");
+    const authorChartRoot = document.getElementById("author-chart-root");
+    const authorChartReadout = document.getElementById("author-chart-readout");
+    const authorChartTitle = document.getElementById("author-chart-title");
+    const reviewerToggle = document.getElementById("reviewer-toggle");
+    const reviewerExtra = document.getElementById("reviewer-extra");
+    const repositoryToggle = document.getElementById("repository-toggle");
+    const repositoryExtra = document.getElementById("repository-extra");
+    const weeklyTrendToggle = document.getElementById("weekly-trend-toggle");
+    const weeklyTrendExtra = document.getElementById("weekly-trend-extra");
+    const monthlyTrendToggle = document.getElementById("monthly-trend-toggle");
+    const monthlyTrendExtra = document.getElementById("monthly-trend-extra");
+    const trendChartRoot = document.getElementById("trend-chart-root");
+    const trendChartReadout = document.getElementById("trend-chart-readout");
+    const trendChartTitle = document.getElementById("trend-chart-title");
+    const trendMetricTabs = Array.from(document.querySelectorAll("#trend-metric-tabs .tab-button"));
+    const trendGrainTabs = Array.from(document.querySelectorAll("#trend-grain-tabs .tab-button"));
+    const authorViewTabs = Array.from(document.querySelectorAll("#author-detail-view-tabs .tab-button"));
+    const authorMetricTabs = Array.from(document.querySelectorAll("#author-detail-metric-tabs .tab-button"));
+    const authorGrainTabs = Array.from(document.querySelectorAll("#author-detail-grain-tabs .tab-button"));
+    const authorGrainPanel = document.getElementById("author-detail-grain-tabs");
+    const sectionNavLinks = Array.from(document.querySelectorAll('.section-nav a[href^="#"]'));
+    const sectionTargets = sectionNavLinks
+      .map((link) => {
+        const sectionId = link.getAttribute("href")?.slice(1);
+        if (!sectionId) {
+          return null;
+        }
+        const section = document.getElementById(sectionId);
+        if (!section) {
+          return null;
+        }
+        return { link, section, sectionId };
+      })
+      .filter(Boolean);
+    const trendSeries = {
+      weekly: {{ weekly_trends | tojson }},
+      monthly: {{ monthly_trends | tojson }},
+    };
+    let activeTrendMetric = "pull_requests";
+    let activeTrendGrain = trendSeries.weekly.length > 12 ? "monthly" : "weekly";
+    let activeTrendPointIndex = null;
+    let activeAuthorMetric = "pull_requests";
+    let activeAuthorView = "timeline";
+    let activeAuthorGrain = "weekly";
+    let activeAuthorPointIndex = null;
+    let activeAuthor = "{{ default_author }}";
+    let rosterVisibleOverflowCount = 0;
+    if (authorDetails[activeAuthor]?.weekly_trends?.length > 12) {
+      activeAuthorGrain = "monthly";
+    }
+
+    syncTabs(
+      trendGrainTabs,
+      trendGrainTabs.find((button) => button.dataset.grain === activeTrendGrain),
+    );
+    syncTabs(
+      authorGrainTabs,
+      authorGrainTabs.find((button) => button.dataset.authorGrain === activeAuthorGrain),
+    );
+    syncThemeButtons(document.documentElement.dataset.theme || "dark");
+    updateAuthorRoster();
+
+    for (const button of themeButtons) {
+      button.addEventListener("click", () => {
+        applyTheme(button.dataset.themeOption);
+      });
+    }
+
+    if (authorRosterToggle) {
+      authorRosterToggle.addEventListener("click", () => {
+        const normalizedQuery = String(authorRosterSearch?.value || "").trim().toLowerCase();
+        if (normalizedQuery) {
+          authorRosterSearch.value = "";
+          rosterVisibleOverflowCount = 0;
+        } else if (rosterVisibleOverflowCount >= rosterButtons.filter((button) => button.dataset.overflow === "true").length) {
+          rosterVisibleOverflowCount = 0;
+        } else {
+          rosterVisibleOverflowCount += 12;
+        }
+        updateAuthorRoster(authorRosterSearch?.value || "");
+      });
+    }
+
+    if (authorRosterSearch) {
+      authorRosterSearch.addEventListener("input", () => {
+        updateAuthorRoster(authorRosterSearch.value);
+      });
+    }
+
+    for (const button of authorButtons) {
+      button.addEventListener("click", () => {
+        activeAuthor = button.dataset.author;
+        activeAuthorPointIndex = null;
+        syncActiveAuthorButtons();
+        renderAuthorDetail(activeAuthor, { focus: true });
+      });
+    }
+
+    setupProgressiveToggle({
+      button: reviewerToggle,
+      container: reviewerExtra,
+      items: reviewerExtra ? Array.from(reviewerExtra.querySelectorAll("tr")) : [],
+      chunkSize: 10,
+      label: "reviewers",
+    });
+    setupProgressiveToggle({
+      button: repositoryToggle,
+      container: repositoryExtra,
+      items: repositoryExtra ? Array.from(repositoryExtra.querySelectorAll("tr")) : [],
+      chunkSize: 10,
+      label: "repositories",
+    });
+    setupProgressiveToggle({
+      button: weeklyTrendToggle,
+      container: weeklyTrendExtra,
+      items: weeklyTrendExtra ? Array.from(weeklyTrendExtra.querySelectorAll("tr")) : [],
+      chunkSize: 12,
+      label: "older weekly rows",
+    });
+    setupProgressiveToggle({
+      button: monthlyTrendToggle,
+      container: monthlyTrendExtra,
+      items: monthlyTrendExtra ? Array.from(monthlyTrendExtra.querySelectorAll("tr")) : [],
+      chunkSize: 6,
+      label: "older monthly rows",
+    });
+
+    for (const button of trendMetricTabs) {
+      button.addEventListener("click", () => {
+        activeTrendMetric = button.dataset.metric;
+        activeTrendPointIndex = null;
+        syncTabs(trendMetricTabs, button);
+        renderTrendChart();
+      });
+    }
+
+    for (const button of trendGrainTabs) {
+      button.addEventListener("click", () => {
+        activeTrendGrain = button.dataset.grain;
+        activeTrendPointIndex = null;
+        syncTabs(trendGrainTabs, button);
+        renderTrendChart();
+      });
+    }
+
+    for (const button of authorViewTabs) {
+      button.addEventListener("click", () => {
+        activeAuthorView = button.dataset.authorView;
+        activeAuthorPointIndex = null;
+        syncTabs(authorViewTabs, button);
+        syncAuthorGrainVisibility();
+        renderAuthorDetail(activeAuthor);
+      });
+    }
+
+    for (const button of authorMetricTabs) {
+      button.addEventListener("click", () => {
+        activeAuthorMetric = button.dataset.authorMetric;
+        activeAuthorPointIndex = null;
+        syncTabs(authorMetricTabs, button);
+        renderAuthorDetail(activeAuthor);
+      });
+    }
+
+    for (const button of authorGrainTabs) {
+      button.addEventListener("click", () => {
+        activeAuthorGrain = button.dataset.authorGrain;
+        activeAuthorPointIndex = null;
+        syncTabs(authorGrainTabs, button);
+        renderAuthorDetail(activeAuthor);
+      });
+    }
+
+    window.addEventListener("resize", () => {
+      renderTrendChart();
+      renderAuthorDetail(activeAuthor);
+    });
+
+    syncActiveAuthorButtons();
+    syncAuthorGrainVisibility();
+    renderTrendChart();
+    renderAuthorDetail(activeAuthor);
+    syncActiveSectionNav();
+    setupSectionSpy();
+
+    function applyTheme(theme) {
+      document.documentElement.dataset.theme = theme;
+      try {
+        window.localStorage.setItem(themeStorageKey, theme);
+      } catch (_error) {
+        // Ignore storage failures and keep the in-memory theme.
+      }
+      syncThemeButtons(theme);
+      renderTrendChart();
+      renderAuthorDetail(activeAuthor);
+    }
+
+    function updateAuthorRoster(query = "") {
+      const normalizedQuery = String(query).trim().toLowerCase();
+      const overflowButtons = rosterButtons.filter((button) => button.dataset.overflow === "true");
+      for (const button of rosterButtons) {
+        const isOverflow = button.dataset.overflow === "true";
+        const matches = !normalizedQuery || button.dataset.author.toLowerCase().includes(normalizedQuery);
+        const overflowIndex = isOverflow ? overflowButtons.indexOf(button) : -1;
+        const hiddenByOverflow = (
+          isOverflow
+          && !normalizedQuery
+          && overflowIndex >= rosterVisibleOverflowCount
+        );
+        button.classList.toggle("hidden", hiddenByOverflow || !matches);
+      }
+      if (!authorRosterToggle) {
+        return;
+      }
+      if (normalizedQuery) {
+        authorRosterToggle.textContent = "Clear search to restore Top 12 view";
+        authorRosterToggle.setAttribute("aria-expanded", "true");
+      } else {
+        const remaining = Math.max(0, overflowButtons.length - rosterVisibleOverflowCount);
+        if (remaining === 0) {
+          authorRosterToggle.textContent = "Collapse roster";
+          authorRosterToggle.setAttribute("aria-expanded", "true");
+        } else {
+          authorRosterToggle.textContent = `Show ${Math.min(12, remaining)} more people`;
+          authorRosterToggle.setAttribute(
+            "aria-expanded",
+            String(rosterVisibleOverflowCount > 0),
+          );
+        }
+      }
+    }
+
+    function syncActiveAuthorButtons() {
+      for (const other of authorButtons) {
+        const isActive = other.dataset.author === activeAuthor;
+        other.classList.toggle("active", isActive);
+        other.setAttribute("aria-pressed", String(isActive));
+      }
+    }
+
+    function syncAuthorGrainVisibility() {
+      if (!authorGrainPanel) {
+        return;
+      }
+      authorGrainPanel.classList.toggle("hidden", activeAuthorView !== "timeline");
+    }
+
+    function setupProgressiveToggle({ button, container, items, chunkSize, label }) {
+      if (!button || !container || !items.length) {
+        return;
+      }
+      let visibleCount = 0;
+      sync();
+      button.addEventListener("click", () => {
+        if (visibleCount >= items.length) {
+          visibleCount = 0;
+        } else {
+          visibleCount = Math.min(items.length, visibleCount + chunkSize);
+        }
+        sync();
+      });
+
+      function sync() {
+        container.classList.toggle("hidden", visibleCount === 0);
+        items.forEach((item, index) => {
+          item.classList.toggle("hidden", index >= visibleCount);
+        });
+        const remaining = Math.max(0, items.length - visibleCount);
+        if (remaining === 0) {
+          button.textContent = `Collapse ${label}`;
+          button.setAttribute("aria-expanded", "true");
+          return;
+        }
+        button.textContent = `Show ${Math.min(chunkSize, remaining)} more ${label}`;
+        button.setAttribute("aria-expanded", String(visibleCount > 0));
+      }
+    }
+
+    function syncActiveSectionNav(activeSectionId = null) {
+      const fallbackSectionId = activeSectionId || currentSectionId();
+      for (const target of sectionTargets) {
+        target.link.setAttribute(
+          "aria-current",
+          String(target.sectionId === fallbackSectionId),
+        );
+      }
+    }
+
+    function currentSectionId() {
+      let selected = sectionTargets[0]?.sectionId ?? null;
+      let bestDistance = Number.POSITIVE_INFINITY;
+      for (const target of sectionTargets) {
+        const rect = target.section.getBoundingClientRect();
+        const distance = Math.abs(rect.top - 116);
+        if (rect.top <= window.innerHeight * 0.55 && distance < bestDistance) {
+          selected = target.sectionId;
+          bestDistance = distance;
+        }
+      }
+      return selected;
+    }
+
+    function setupSectionSpy() {
+      if (!("IntersectionObserver" in window) || !sectionTargets.length) {
+        window.addEventListener("scroll", () => syncActiveSectionNav(), { passive: true });
+        return;
+      }
+      let visibleSections = new Map();
+      const observer = new IntersectionObserver(
+        (entries) => {
+          for (const entry of entries) {
+            const sectionId = entry.target.getAttribute("id");
+            if (!sectionId) {
+              continue;
+            }
+            if (entry.isIntersecting) {
+              visibleSections.set(sectionId, entry.intersectionRatio);
+            } else {
+              visibleSections.delete(sectionId);
+            }
+          }
+          if (!visibleSections.size) {
+            syncActiveSectionNav();
+            return;
+          }
+          const [activeSectionId] = [...visibleSections.entries()].sort((left, right) => {
+            if (right[1] !== left[1]) {
+              return right[1] - left[1];
+            }
+            return (
+              sectionTargets.findIndex((target) => target.sectionId === left[0])
+              - sectionTargets.findIndex((target) => target.sectionId === right[0])
+            );
+          })[0];
+          syncActiveSectionNav(activeSectionId);
+        },
+        {
+          root: null,
+          rootMargin: "-18% 0px -58% 0px",
+          threshold: [0.15, 0.3, 0.45, 0.6],
+        },
+      );
+      for (const target of sectionTargets) {
+        observer.observe(target.section);
+      }
+      window.addEventListener("scroll", () => syncActiveSectionNav(), { passive: true });
+    }
+
+    function renderAuthorDetail(authorLogin, options = {}) {
+      const detail = authorDetails[authorLogin];
+      if (!detail) {
+        authorDetailRoot.innerHTML = "";
+        authorDetailTitle.textContent = "Person detail";
+        return;
+      }
+      const summary = detail.summary;
+      authorDetailTitle.textContent = `${authorLogin} profile`;
+      renderAuthorChart(detail, authorLogin);
+      authorDetailRoot.innerHTML = `
+        <div class="detail-grid">
+          ${detailCard("Authored PRs", summary.pull_requests)}
+          ${detailCard("Reviewed PRs", summary.pull_requests_reviewed)}
+          ${detailCard("Reviews given", summary.review_submissions_given)}
+          ${detailCard("Merge rate", formatMetric(summary.merge_rate_pct, "%"))}
+          ${detailCard("Avg lines / PR", formatMetric(summary.average_changed_lines_per_pr))}
+          ${detailCard("First review", formatDuration(summary.median_first_review_hours))}
+        </div>
+        <div class="profile-subgrid">
+          <div>
+            <p class="section-kicker">Delivery footprint</p>
+            ${renderMiniTable(
+              [
+                ["Repository", "repository_full_name"],
+                ["PRs", "pull_requests", true],
+                ["Changed lines", "changed_lines", true],
+              ],
+              detail.top_repositories,
+            )}
+          </div>
+          <div>
+            <p class="section-kicker">Review footprint</p>
+            ${renderMiniTable(
+              [
+                ["Signal", "label"],
+                ["Count", "value", true],
+              ],
+              [
+                { label: "Approvals", value: summary.approvals_given },
+                { label: "Changes requested", value: summary.changes_requested_given },
+                { label: "Comments", value: summary.review_comments_given },
+                { label: "Authors supported", value: summary.authors_supported },
+              ],
+            )}
+          </div>
+          <div>
+            <p class="section-kicker">Composition</p>
+            ${renderMiniTable(
+              [
+                ["Metric", "label"],
+                ["Value", "value", true],
+              ],
+              [
+                { label: "Share of org PRs", value: formatMetric(summary.share_of_prs_pct, "%") },
+                { label: "Avg commits / PR", value: formatMetric(summary.average_commits_per_pr) },
+                { label: "Approvals given", value: summary.approvals_given },
+                { label: "Authors supported", value: summary.authors_supported },
+              ],
+            )}
+          </div>
+        </div>
+      `;
+      if (options.focus) {
+        authorDetailPanel.scrollIntoView({ behavior: "smooth", block: "start" });
+        authorDetailPanel.focus({ preventScroll: true });
+      }
+    }
+
+    function renderTrendChart() {
+      const rows = trendSeries[activeTrendGrain];
+      const label = activeTrendGrain === "weekly" ? "week" : "month";
+      activeTrendPointIndex = clampSelectedIndex(rows, activeTrendPointIndex, activeTrendMetric);
+      trendChartTitle.textContent = `${metricLabel(activeTrendMetric)} by ${label}`;
+      trendChartReadout.innerHTML = renderSeriesReadout({
+        rows,
+        metric: activeTrendMetric,
+        labelKey: "period_key",
+        selectedIndex: activeTrendPointIndex,
+      });
+      renderSeriesChart({
+        element: trendChartRoot,
+        rows,
+        metric: activeTrendMetric,
+        labelKey: "period_key",
+        selectedIndex: activeTrendPointIndex,
+        onSelect: (index) => {
+          activeTrendPointIndex = index;
+          renderTrendChart();
+        },
+      });
+    }
+
+    function renderAuthorChart(detail, authorLogin) {
+      if (activeAuthorView === "mix") {
+        const rows = detail.size_mix;
+        activeAuthorPointIndex = clampSelectedIndex(
+          rows,
+          activeAuthorPointIndex,
+          mixMetricKey(activeAuthorMetric),
+        );
+        authorChartTitle.textContent = `${authorLogin} ${metricLabel(activeAuthorMetric)} by PR size`;
+        authorChartReadout.innerHTML = renderBarReadout({
+          rows,
+          metric: activeAuthorMetric,
+          labelKey: "bucket",
+          valueKey: mixMetricKey(activeAuthorMetric),
+          selectedIndex: activeAuthorPointIndex,
+        });
+        renderBarChart({
+          element: authorChartRoot,
+          rows,
+          labelKey: "bucket",
+          valueKey: mixMetricKey(activeAuthorMetric),
+          metric: activeAuthorMetric,
+          selectedIndex: activeAuthorPointIndex,
+          onSelect: (index) => {
+            activeAuthorPointIndex = index;
+            renderAuthorDetail(activeAuthor);
+          },
+        });
+        return;
+      }
+      const rows = detail[`${activeAuthorGrain}_trends`];
+      const label = activeAuthorGrain === "weekly" ? "week" : "month";
+      activeAuthorPointIndex = clampSelectedIndex(rows, activeAuthorPointIndex, activeAuthorMetric);
+      authorChartTitle.textContent = `${authorLogin} ${metricLabel(activeAuthorMetric)} by ${label}`;
+      authorChartReadout.innerHTML = renderSeriesReadout({
+        rows,
+        metric: activeAuthorMetric,
+        labelKey: "period_key",
+        selectedIndex: activeAuthorPointIndex,
+      });
+      renderSeriesChart({
+        element: authorChartRoot,
+        rows,
+        metric: activeAuthorMetric,
+        labelKey: "period_key",
+        selectedIndex: activeAuthorPointIndex,
+        onSelect: (index) => {
+          activeAuthorPointIndex = index;
+          renderAuthorDetail(activeAuthor);
+        },
+      });
+    }
+
+    function renderSeriesChart({
+      element,
+      rows,
+      metric,
+      labelKey,
+      secondaryMetric = null,
+      selectedIndex,
+      onSelect,
+    }) {
+      if (!rows || rows.length === 0) {
+        element.innerHTML = `<div class="small-note">No data for this view.</div>`;
+        return;
+      }
+      const width = 920;
+      const height = 320;
+      const padding = { top: 20, right: 18, bottom: 42, left: 56 };
+      const plotWidth = width - padding.left - padding.right;
+      const plotHeight = height - padding.top - padding.bottom;
+      const metricValues = rows.map((row) => toNumeric(row[metric]));
+      const primaryValues = metricValues.filter((value) => value !== null);
+      if (primaryValues.length === 0) {
+        element.innerHTML = `<div class="small-note">No data for this metric in the selected window.</div>`;
+        return;
+      }
+      const secondaryValues = secondaryMetric
+        ? rows
+            .map((row) => toNumeric(row[secondaryMetric]))
+            .filter((value) => value !== null)
+        : [];
+      const maxValue = Math.max(1, ...primaryValues, ...secondaryValues);
+      const stepX = rows.length > 1 ? plotWidth / (rows.length - 1) : plotWidth / 2;
+      const yFor = (value) => padding.top + plotHeight - (value / maxValue) * plotHeight;
+      const xFor = (index) => padding.left + index * stepX;
+      const linePoints = rows
+        .map((row, index) => ({ index, value: toNumeric(row[metric]) }))
+        .filter((point) => point.value !== null);
+      const linePath = linePoints
+        .map((point, pathIndex) => `${pathIndex === 0 ? "M" : "L"} ${xFor(point.index)} ${yFor(point.value)}`)
+        .join(" ");
+      const areaPath = linePoints.length
+        ? `${linePath} L ${xFor(linePoints.at(-1).index)} ${padding.top + plotHeight} L ${xFor(linePoints[0].index)} ${padding.top + plotHeight} Z`
+        : "";
+      let secondaryPath = "";
+      if (secondaryMetric) {
+        const secondaryPoints = rows
+          .map((row, index) => ({ index, value: toNumeric(row[secondaryMetric]) }))
+          .filter((point) => point.value !== null);
+        secondaryPath = secondaryPoints
+          .map((point, pathIndex) => `${pathIndex === 0 ? "M" : "L"} ${xFor(point.index)} ${yFor(point.value)}`)
+          .join(" ");
+      }
+      const averageValue = primaryValues.reduce((sum, value) => sum + value, 0) / primaryValues.length;
+      const averageLineY = yFor(averageValue);
+      const labelInterval = chartLabelInterval(rows.length);
+      const points = rows.map((row, index) => {
+        const value = toNumeric(row[metric]);
+        if (value === null) {
+          return "";
+        }
+        const isSelected = index === selectedIndex;
+        const showLabel = index === 0 || index === rows.length - 1 || index % labelInterval === 0;
+        return `
+          <g class="chart-node" data-point-index="${index}" data-point-label="${formatAttribute(row[labelKey])}" data-point-value="${formatAttribute(formatChartValue(value, metric))}" tabindex="0" role="button" aria-label="${formatAttribute(row[labelKey])} ${formatAttribute(formatChartValue(value, metric))}">
+            <circle cx="${xFor(index)}" cy="${yFor(value)}" r="${isSelected ? 6 : 4}" fill="${getCss("--accent")}" stroke="${isSelected ? getCss("--text") : "transparent"}" stroke-width="${isSelected ? 2 : 0}">
+              <title>${formatCell(row[labelKey])}: ${formatChartValue(value, metric)}</title>
+            </circle>
+          </g>
+          ${showLabel ? `<text x="${xFor(index)}" y="${height - 12}" text-anchor="middle" class="chart-axis">${shortLabel(row[labelKey])}</text>` : ""}
+        `;
+      }).join("");
+      const ticks = [0, 0.25, 0.5, 0.75, 1].map((ratio) => {
+        const value = maxValue * ratio;
+        const y = padding.top + plotHeight - plotHeight * ratio;
+        return `
+          <line x1="${padding.left}" x2="${width - padding.right}" y1="${y}" y2="${y}" stroke="${getCss("--grid-stroke")}"></line>
+          <text x="${padding.left - 10}" y="${y + 4}" text-anchor="end" class="chart-axis">${formatChartValue(value, metric)}</text>
+        `;
+      }).join("");
+      element.innerHTML = `
+        <svg viewBox="0 0 ${width} ${height}" preserveAspectRatio="xMidYMid meet" role="img" aria-label="${metricLabel(metric)} chart">
+          <defs>
+            <linearGradient id="series-fill-${metric}" x1="0" x2="0" y1="0" y2="1">
+              <stop offset="0%" stop-color="${getCss("--accent")}" stop-opacity="0.22"></stop>
+              <stop offset="100%" stop-color="${getCss("--accent")}" stop-opacity="0"></stop>
+            </linearGradient>
+          </defs>
+          ${ticks}
+          <line x1="${padding.left}" x2="${width - padding.right}" y1="${averageLineY}" y2="${averageLineY}" stroke="${getCss("--avg-stroke")}" stroke-dasharray="5 5"></line>
+          ${areaPath ? `<path d="${areaPath}" fill="url(#series-fill-${metric})"></path>` : ""}
+          <path d="${linePath}" fill="none" stroke="${getCss("--accent")}" stroke-width="3" stroke-linecap="round"></path>
+          ${secondaryPath ? `<path d="${secondaryPath}" fill="none" stroke="${getCss("--accent-3")}" stroke-width="2" stroke-dasharray="6 6"></path>` : ""}
+          ${points}
+        </svg>
+      `;
+      bindChartSelection(
+        element,
+        {
+          metricLabel: metricLabel(metric),
+          subtitle: secondaryMetric ? "Compare primary and secondary movement" : "Select a point to pin the readout",
+        },
+        onSelect,
+      );
+    }
+
+    function renderBarChart({ element, rows, labelKey, valueKey, metric, selectedIndex, onSelect }) {
+      if (!rows || rows.length === 0) {
+        element.innerHTML = `<div class="small-note">No data for this view.</div>`;
+        return;
+      }
+      const width = 920;
+      const height = 320;
+      const padding = { top: 20, right: 18, bottom: 42, left: 56 };
+      const plotWidth = width - padding.left - padding.right;
+      const plotHeight = height - padding.top - padding.bottom;
+      const barValues = rows
+        .map((row) => toNumeric(row[valueKey]))
+        .filter((value) => value !== null);
+      if (barValues.length === 0) {
+        element.innerHTML = `<div class="small-note">No data for this metric in the selected window.</div>`;
+        return;
+      }
+      const maxValue = Math.max(1, ...barValues);
+      const groupWidth = plotWidth / rows.length;
+      const barWidth = Math.min(56, groupWidth * 0.58);
+      const labelInterval = chartLabelInterval(rows.length);
+      const bars = rows.map((row, index) => {
+        const value = toNumeric(row[valueKey]);
+        const isSelected = index === selectedIndex;
+        const barHeight = value === null ? 0 : (value / maxValue) * plotHeight;
+        const x = padding.left + index * groupWidth + (groupWidth - barWidth) / 2;
+        const y = padding.top + plotHeight - barHeight;
+        const labelX = padding.left + index * groupWidth + groupWidth / 2;
+        const showLabel = index === 0 || index === rows.length - 1 || index % labelInterval === 0;
+        return `
+          <g class="chart-node" data-point-index="${index}" data-point-label="${formatAttribute(row[labelKey])}" data-point-value="${formatAttribute(formatChartValue(value, metric))}" tabindex="0" role="button" aria-label="${formatAttribute(row[labelKey])} ${formatAttribute(formatChartValue(value, metric))}">
+            <rect x="${x}" y="${y}" width="${barWidth}" height="${barHeight}" rx="5" fill="${isSelected ? getCss("--accent") : getCss("--accent-2")}" fill-opacity="${value === null ? "0.16" : "1"}" stroke="${isSelected ? getCss("--text") : "transparent"}" stroke-width="${isSelected ? 2 : 0}">
+              <title>${formatCell(row[labelKey])}: ${formatChartValue(value, metric)}</title>
+            </rect>
+          </g>
+          ${value === null ? "" : `<text x="${labelX}" y="${Math.max(y - 8, padding.top + 10)}" text-anchor="middle" class="chart-axis">${formatChartValue(value, metric)}</text>`}
+          ${showLabel ? `<text x="${labelX}" y="${height - 12}" text-anchor="middle" class="chart-axis">${shortLabel(row[labelKey])}</text>` : ""}
+        `;
+      }).join("");
+      const ticks = [0, 0.25, 0.5, 0.75, 1].map((ratio) => {
+        const value = maxValue * ratio;
+        const y = padding.top + plotHeight - plotHeight * ratio;
+        return `
+          <line x1="${padding.left}" x2="${width - padding.right}" y1="${y}" y2="${y}" stroke="${getCss("--grid-stroke")}"></line>
+          <text x="${padding.left - 10}" y="${y + 4}" text-anchor="end" class="chart-axis">${formatChartValue(value, metric)}</text>
+        `;
+      }).join("");
+      element.innerHTML = `
+        <svg viewBox="0 0 ${width} ${height}" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Bar chart">
+          ${ticks}
+          ${bars}
+        </svg>
+      `;
+      bindChartSelection(
+        element,
+        {
+          metricLabel: metricLabel(metric),
+          subtitle: "Select a bucket to pin the readout",
+        },
+        onSelect,
+      );
+    }
+
+    function bindChartSelection(element, tooltipMeta, onSelect) {
+      if (!element || !onSelect) {
+        return;
+      }
+      const tooltip = ensureChartTooltip(element);
+      for (const node of element.querySelectorAll("[data-point-index]")) {
+        const show = (event) => showChartTooltip(tooltip, element, node, tooltipMeta, event);
+        const hide = () => hideChartTooltip(tooltip);
+        const select = (event) => {
+          const pointIndex = Number(node.dataset.pointIndex);
+          onSelect(pointIndex);
+          requestAnimationFrame(() => {
+            const nextTooltip = ensureChartTooltip(element);
+            const nextNode = element.querySelector(`[data-point-index="${pointIndex}"]`);
+            if (nextNode) {
+              showChartTooltip(nextTooltip, element, nextNode, tooltipMeta, event);
+            }
+          });
+        };
+        node.addEventListener("click", select);
+        node.addEventListener("focus", select);
+        node.addEventListener("mouseenter", show);
+        node.addEventListener("mousemove", show);
+        node.addEventListener("mouseleave", hide);
+        node.addEventListener("blur", hide);
+      }
+      element.addEventListener("mouseleave", () => hideChartTooltip(tooltip));
+    }
+
+    function ensureChartTooltip(element) {
+      let tooltip = element.querySelector(".chart-tooltip");
+      if (tooltip) {
+        return tooltip;
+      }
+      tooltip = document.createElement("div");
+      tooltip.className = "chart-tooltip hidden";
+      tooltip.setAttribute("aria-hidden", "true");
+      element.appendChild(tooltip);
+      return tooltip;
+    }
+
+    function showChartTooltip(tooltip, chartElement, node, tooltipMeta, event) {
+      if (!tooltip || !chartElement || !node) {
+        return;
+      }
+      const label = node.dataset.pointLabel || node.getAttribute("aria-label") || "-";
+      const value = node.dataset.pointValue || "-";
+      tooltip.innerHTML = `
+        <strong>${label}</strong>
+        <span>${tooltipMeta.metricLabel}: ${value}</span>
+        <span>${tooltipMeta.subtitle}</span>
+      `;
+      tooltip.classList.remove("hidden");
+      tooltip.setAttribute("aria-hidden", "false");
+      positionChartTooltip(tooltip, chartElement, node, event);
+    }
+
+    function hideChartTooltip(tooltip) {
+      if (!tooltip) {
+        return;
+      }
+      tooltip.classList.add("hidden");
+      tooltip.setAttribute("aria-hidden", "true");
+    }
+
+    function positionChartTooltip(tooltip, chartElement, node, event) {
+      const chartRect = chartElement.getBoundingClientRect();
+      const nodeRect = node.getBoundingClientRect();
+      const preferredLeft = event?.clientX
+        ? event.clientX - chartRect.left + 12
+        : nodeRect.left - chartRect.left + nodeRect.width / 2 + 12;
+      const preferredTop = event?.clientY
+        ? event.clientY - chartRect.top - 18
+        : nodeRect.top - chartRect.top - 18;
+      const tooltipWidth = tooltip.offsetWidth || 180;
+      const tooltipHeight = tooltip.offsetHeight || 72;
+      const maxLeft = Math.max(10, chartRect.width - tooltipWidth - 10);
+      const left = Math.min(Math.max(10, preferredLeft), maxLeft);
+      const top = preferredTop - tooltipHeight < 8
+        ? Math.min(chartRect.height - tooltipHeight - 8, preferredTop + 22)
+        : preferredTop - tooltipHeight;
+      tooltip.style.left = `${left}px`;
+      tooltip.style.top = `${Math.max(8, top)}px`;
+    }
+
+    function renderMiniTable(columns, rows) {
+      const head = columns
+        .map(([label, _key, isNumeric = false]) => `<th${isNumeric ? ' class="num"' : ""}>${label}</th>`)
+        .join("");
+      const body = rows.map((row) => `
+        <tr>
+          ${columns.map(([label, key, isNumeric = false]) => {
+            const value = row[key];
+            const numericClass = isNumeric || typeof value === "number" ? ` class="num"` : "";
+            return `<td${numericClass} data-label="${formatCell(label)}">${formatCell(value)}</td>`;
+          }).join("")}
+        </tr>
+      `).join("");
+      return `<div class="table-wrap"><table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>`;
+    }
+
+    function detailCard(label, value) {
+      return `<div class="detail-card"><strong>${label}</strong><span>${formatCell(value)}</span></div>`;
+    }
+
+    function renderSeriesReadout({ rows, metric, labelKey, selectedIndex }) {
+      if (!rows || rows.length === 0) {
+        return "";
+      }
+      const rowsWithValues = rows.filter((row) => toNumeric(row[metric]) !== null);
+      if (rowsWithValues.length === 0) {
+        return [
+          ["Selected period", "-"],
+          ["Selected value", "-"],
+          ["Window average", "-"],
+          ["Peak period", "-"],
+        ].map(([label, value]) => `<div class="readout-card"><strong>${label}</strong><span>${value}</span></div>`).join("");
+      }
+      const selectedRow = rows[selectedIndex] ?? rowsWithValues.at(-1);
+      const selectedValue = toNumeric(selectedRow[metric]);
+      const average = rowsWithValues.reduce((sum, row) => sum + toNumeric(row[metric]), 0) / rowsWithValues.length;
+      const peakRow = rowsWithValues.reduce((best, row) => {
+        return toNumeric(row[metric]) > toNumeric(best[metric]) ? row : best;
+      }, rowsWithValues[0]);
+      return [
+        ["Selected period", selectedRow[labelKey]],
+        ["Selected value", formatChartValue(selectedValue, metric)],
+        ["Window average", formatChartValue(average, metric)],
+        ["Peak period", peakRow[labelKey]],
+      ].map(([label, value]) => `<div class="readout-card"><strong>${label}</strong><span>${value}</span></div>`).join("");
+    }
+
+    function renderBarReadout({ rows, metric, labelKey, valueKey, selectedIndex }) {
+      if (!rows || rows.length === 0) {
+        return "";
+      }
+      const ranked = [...rows]
+        .filter((row) => toNumeric(row[valueKey]) !== null)
+        .sort((left, right) => toNumeric(right[valueKey]) - toNumeric(left[valueKey]));
+      if (ranked.length === 0) {
+        return [
+          ["Selected bucket", "-"],
+          ["Selected value", "-"],
+          ["Bucket average", "-"],
+          ["Leading bucket", "-"],
+        ].map(([label, value]) => `<div class="readout-card"><strong>${label}</strong><span>${value}</span></div>`).join("");
+      }
+      const top = ranked[0];
+      const selectedRow = rows[selectedIndex] ?? top;
+      const total = ranked.reduce((sum, row) => sum + toNumeric(row[valueKey]), 0);
+      const average = ranked.length ? total / ranked.length : 0;
+      return [
+        ["Selected bucket", formatCell(selectedRow[labelKey])],
+        ["Selected value", formatChartValue(Number(selectedRow[valueKey] ?? 0), metric)],
+        ["Bucket average", formatChartValue(average, metric)],
+        ["Leading bucket", formatCell(top[labelKey])],
+      ].map(([label, value]) => `<div class="readout-card"><strong>${label}</strong><span>${value}</span></div>`).join("");
+    }
+
+    function clampSelectedIndex(rows, currentIndex, metricKey) {
+      if (!rows || rows.length === 0) {
+        return null;
+      }
+      if (
+        currentIndex !== null
+        && rows[currentIndex]
+        && toNumeric(rows[currentIndex][metricKey]) !== null
+      ) {
+        return currentIndex;
+      }
+      for (let index = rows.length - 1; index >= 0; index -= 1) {
+        if (toNumeric(rows[index][metricKey]) !== null) {
+          return index;
+        }
+      }
+      return null;
+    }
+
+    function formatMetric(value, suffix = "") {
+      if (value === null || value === undefined || value === "") {
+        return "-";
+      }
+      return `${formatCell(value)}${suffix}`;
+    }
+
+    function metricLabel(metric) {
+      const labels = {
+        pull_requests: "PR throughput",
+        pull_requests_per_active_author: "PRs per active author",
+        changed_lines: "Changed lines",
+        changed_lines_per_active_author: "Lines per active author",
+        median_first_review_hours: "Median first review",
+        median_merge_hours: "Median merge",
+      };
+      return labels[metric] || metric;
+    }
+
+    function mixMetricKey(metric) {
+      const keys = {
+        pull_requests: "pull_requests",
+        changed_lines: "changed_lines",
+        median_first_review_hours: "median_first_review_hours",
+        median_merge_hours: "median_merge_hours",
+      };
+      return keys[metric] || "pull_requests";
+    }
+
+    function syncTabs(buttons, activeButton) {
+      for (const button of buttons) {
+        button.classList.toggle("active", button === activeButton);
+        button.setAttribute("aria-selected", String(button === activeButton));
+      }
+    }
+
+    function syncThemeButtons(activeTheme) {
+      if (themeSwitch) {
+        themeSwitch.dataset.activeTheme = activeTheme;
+      }
+      for (const button of themeButtons) {
+        button.setAttribute(
+          "aria-pressed",
+          String(button.dataset.themeOption === activeTheme),
+        );
+      }
+    }
+
+    function chartLabelInterval(rowCount) {
+      const width = window.innerWidth || 1200;
+      if (width < 520) {
+        return Math.max(1, Math.ceil(rowCount / 4));
+      }
+      if (width < 900) {
+        return Math.max(1, Math.ceil(rowCount / 6));
+      }
+      return Math.max(1, Math.ceil(rowCount / 10));
+    }
+
+    function shortLabel(value) {
+      const text = String(value);
+      return text.includes("-W") ? text.replace(/^20/, "") : text;
+    }
+
+    function formatChartValue(value, metric) {
+      if (value === null || value === undefined || Number.isNaN(Number(value))) {
+        return "-";
+      }
+      if (metric.includes("_hours")) {
+        return formatDuration(value);
+      }
+      return formatCell(value);
+    }
+
+    function toNumeric(value) {
+      if (value === null || value === undefined || value === "") {
+        return null;
+      }
+      const numericValue = Number(value);
+      return Number.isNaN(numericValue) ? null : numericValue;
+    }
+
+    function formatDuration(hours) {
+      if (hours === null || hours === undefined || Number.isNaN(Number(hours))) {
+        return "-";
+      }
+      const numericHours = Number(hours);
+      if (numericHours < 1) {
+        return `${Math.round(numericHours * 60)} min`;
+      }
+      if (numericHours >= 24) {
+        return `${(numericHours / 24).toLocaleString(undefined, { maximumFractionDigits: 1 })} d`;
+      }
+      return `${numericHours.toLocaleString(undefined, { maximumFractionDigits: 1 })} h`;
+    }
+
+    function getCss(variableName) {
+      return getComputedStyle(document.documentElement).getPropertyValue(variableName).trim();
+    }
+
+    function formatCell(value) {
+      if (value === null || value === undefined || value === "") {
+        return "-";
+      }
+      if (typeof value === "number") {
+        return value.toLocaleString(undefined, { maximumFractionDigits: 2 });
+      }
+      return String(value)
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;");
+    }
+
+    function formatAttribute(value) {
+      return formatCell(value)
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#39;");
+    }
+  </script>

@@ -149,6 +149,10 @@ def prepare_manual_dashboard_payload(
         distribution_percentile=distribution_percentile,
         distribution_thresholds=distribution_thresholds,
     )
+    payload["overview"] = _build_team_normalized_overview(
+        payload["overview"],
+        monthly_trends=payload["monthly_trends"],
+    )
     payload["weekly_trends_recent"], payload["weekly_trends_older"] = _split_recent_rows(
         payload["weekly_trends"],
         recent_count=12,
@@ -570,6 +574,13 @@ def _build_trend_rows(
         review_submissions = sum(
             int(pull_request["review_count"]) for pull_request in period_rows
         )
+        active_authors = len(
+            {
+                str(pull_request["author_login"])
+                for pull_request in period_rows
+                if pull_request["author_login"]
+            }
+        )
         merged_count = sum(
             1 for pull_request in period_rows if pull_request["merged_at"] is not None
         )
@@ -593,8 +604,15 @@ def _build_trend_rows(
             "pull_requests": pull_request_count,
             "merged_pull_requests": merged_count,
             "open_pull_requests": open_count,
+            "active_authors": active_authors,
             "changed_lines": int(changed_lines["total"]),
             "review_submissions": review_submissions,
+            "pull_requests_per_active_author": _round(
+                pull_request_count / active_authors if active_authors else None
+            ),
+            "changed_lines_per_active_author": _round(
+                int(changed_lines["total"]) / active_authors if active_authors else None
+            ),
             "average_reviews_per_pr": _round(
                 review_submissions / pull_request_count if pull_request_count else None
             ),
@@ -619,6 +637,47 @@ def _build_trend_rows(
         previous_pull_requests = pull_request_count
         previous_changed_lines = int(changed_lines["total"])
     return rows
+
+
+def _build_team_normalized_overview(
+    overview: dict[str, Any],
+    *,
+    monthly_trends: list[dict[str, Any]],
+) -> dict[str, Any]:
+    active_author_values = [
+        int(row["active_authors"])
+        for row in monthly_trends
+        if row.get("active_authors")
+    ]
+    average_active_authors_per_month = _round(
+        sum(active_author_values) / len(active_author_values)
+        if active_author_values
+        else None
+    )
+    return {
+        **overview,
+        "average_active_authors_per_month": average_active_authors_per_month,
+        "latest_active_authors": (
+            int(monthly_trends[-1]["active_authors"])
+            if monthly_trends and monthly_trends[-1].get("active_authors") is not None
+            else None
+        ),
+        "pull_requests_per_active_author": _round(
+            float(overview["pull_requests"]) / average_active_authors_per_month
+            if average_active_authors_per_month
+            else None
+        ),
+        "changed_lines_per_active_author": _round(
+            float(overview["total_changed_lines"]) / average_active_authors_per_month
+            if average_active_authors_per_month
+            else None
+        ),
+        "review_submissions_per_reviewer": _round(
+            float(overview["review_submissions"]) / float(overview["unique_reviewers"])
+            if overview.get("unique_reviewers")
+            else None
+        ),
+    }
 
 
 def _build_author_details(

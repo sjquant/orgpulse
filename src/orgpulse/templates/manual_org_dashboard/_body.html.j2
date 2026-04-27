@@ -1,0 +1,699 @@
+<body>
+  <div class="shell">
+    <section class="hero">
+      <div class="panel hero-panel">
+        <div class="hero-head">
+          <div class="hero-copy">
+            <p class="eyebrow">Engineering Productivity Leaderboard</p>
+            <h1>{{ overview.org }} review and throughput board</h1>
+            <p class="subtitle">
+              Leaderboard view for the selected window. The page focuses on who shipped,
+              who reviewed, where flow concentrated, and how review latency moved with PR
+              size, with chart tabs for period and person-level inspection.
+            </p>
+          </div>
+          <div class="theme-switch" role="group" aria-label="Color theme">
+            <span class="theme-switch-indicator" aria-hidden="true"></span>
+            <button type="button" class="theme-switch-button" data-theme-option="dark" aria-label="Dark theme" aria-pressed="false" title="Dark theme">
+              <svg class="theme-switch-icon" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 1 0 9.8 9.8Z"></path>
+              </svg>
+            </button>
+            <button type="button" class="theme-switch-button" data-theme-option="light" aria-label="Light theme" aria-pressed="false" title="Light theme">
+              <svg class="theme-switch-icon" viewBox="0 0 24 24" aria-hidden="true">
+                <circle cx="12" cy="12" r="4.1"></circle>
+                <path d="M12 2.75v2.35"></path>
+                <path d="M12 18.9v2.35"></path>
+                <path d="M21.25 12h-2.35"></path>
+                <path d="M5.1 12H2.75"></path>
+                <path d="m18.55 5.45-1.66 1.66"></path>
+                <path d="m7.11 16.89-1.66 1.66"></path>
+                <path d="m18.55 18.55-1.66-1.66"></path>
+                <path d="m7.11 7.11-1.66-1.66"></path>
+              </svg>
+            </button>
+          </div>
+        </div>
+        <div class="hero-meta">
+          <div class="meta-box">
+            <span class="meta-label">Window</span>
+            <span class="meta-value">{{ overview.since }} to {{ overview.until }}</span>
+          </div>
+          <div class="meta-box">
+            <span class="meta-label">Open backlog risk</span>
+            <span class="meta-value">{{ overview.stale_open_pull_requests | intfmt }} stale open PRs</span>
+          </div>
+          <div class="meta-box">
+            <span class="meta-label">Review SLA</span>
+            <span class="meta-value">{{ overview.review_sla_24h_pct | numfmt }}% within 24h</span>
+          </div>
+          <div class="meta-box">
+            <span class="meta-label">Concentration risk</span>
+            <span class="meta-value">Top 3 authors: {{ reference_summary.top3_author_share_pct | numfmt }}%</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="stats-grid">
+      <article class="stat-card">
+        <span class="stat-label">PR throughput</span>
+        <div class="stat-value">{{ overview.pull_requests | intfmt }}</div>
+        <div class="stat-subvalue">{{ overview.merged_pull_requests | intfmt }} merged / {{ overview.open_pull_requests | intfmt }} open</div>
+      </article>
+      <article class="stat-card">
+        <span class="stat-label">Review coverage</span>
+        <div class="stat-value">{{ overview.review_coverage_pct }}%</div>
+        <div class="stat-subvalue">{{ overview.review_submissions | intfmt }} total review submissions</div>
+      </article>
+      <article class="stat-card">
+        <span class="stat-label">Median first review</span>
+        <div class="stat-value">{{ overview.median_first_review_hours | duration }}</div>
+        <div class="stat-subvalue">from ready/request to first review</div>
+      </article>
+      <article class="stat-card">
+        <span class="stat-label">Median merge time</span>
+        <div class="stat-value">{{ overview.median_merge_hours | duration }}</div>
+        <div class="stat-subvalue">from PR creation to merge</div>
+      </article>
+    </section>
+
+    <section class="summary-strip">
+      <article class="summary-card panel">
+        <span class="summary-label">Changed lines</span>
+        <strong>{{ overview.total_changed_lines | intfmt }}</strong>
+        <span>{{ overview.average_changed_lines_per_pr | numfmt }} lines per PR</span>
+      </article>
+      <article class="summary-card panel">
+        <span class="summary-label">Review capacity</span>
+        <strong>{{ overview.unique_reviewers | intfmt }} reviewers</strong>
+        <span>{{ overview.average_reviews_per_pr | numfmt }} reviews per PR</span>
+      </article>
+      <article class="summary-card panel">
+        <span class="summary-label">Per Active Author</span>
+        <strong>{{ overview.pull_requests_per_active_author | numfmt }} PRs</strong>
+        <span>{{ overview.average_active_authors_per_month | numfmt }} avg active authors / month, {{ overview.changed_lines_per_active_author | numfmt }} lines / author</span>
+      </article>
+      <article class="summary-card panel">
+        <span class="summary-label">Per Reviewer</span>
+        <strong>{{ overview.review_submissions_per_reviewer | numfmt }} reviews</strong>
+        <span>{{ overview.unique_reviewers | intfmt }} reviewers in window</span>
+      </article>
+      <article class="summary-card panel">
+        <span class="summary-label">Repo concentration</span>
+        <strong>{{ reference_summary.top3_repository_share_pct | numfmt }}%</strong>
+        <span>of PRs came from the top 3 repositories</span>
+      </article>
+    </section>
+
+    <nav class="section-nav" aria-label="Report sections">
+      <a href="#trends">Trends</a>
+      <a href="#people">People</a>
+      <a href="#leaderboards">Leaderboards</a>
+      <a href="#diagnostics">Diagnostics</a>
+      <a href="#reference">Reference</a>
+    </nav>
+
+    <div class="section-grid">
+      <section id="trends" class="panel section-panel chart-panel">
+        <p class="section-kicker">Trend charts</p>
+        <h2>Weekly and monthly movement, graphed</h2>
+        <p class="section-copy">Primary trend surface for throughput, code volume, and review speed. Dense weekly/monthly tables live in the reference section below.</p>
+        <div class="two-col">
+          <div class="tab-strip" id="trend-metric-tabs">
+            <button type="button" class="tab-button active" data-metric="pull_requests" aria-selected="true">PR throughput</button>
+            <button type="button" class="tab-button" data-metric="pull_requests_per_active_author" aria-selected="false">PRs / active author</button>
+            <button type="button" class="tab-button" data-metric="changed_lines" aria-selected="false">Changed lines</button>
+            <button type="button" class="tab-button" data-metric="changed_lines_per_active_author" aria-selected="false">Lines / active author</button>
+            <button type="button" class="tab-button" data-metric="median_first_review_hours" aria-selected="false">First review</button>
+            <button type="button" class="tab-button" data-metric="median_merge_hours" aria-selected="false">Merge time</button>
+          </div>
+          <div class="tab-strip" id="trend-grain-tabs">
+            <button type="button" class="tab-button active" data-grain="weekly" aria-selected="true">Weekly</button>
+            <button type="button" class="tab-button" data-grain="monthly" aria-selected="false">Monthly</button>
+          </div>
+        </div>
+        <div class="chart-title">
+          <span id="trend-chart-title">PR throughput by week</span>
+          <div class="chart-legend">
+            <span class="legend-chip"><span class="legend-dot" style="background: var(--accent)"></span>Selected metric</span>
+          </div>
+        </div>
+        <div id="trend-chart-readout" class="chart-readout"></div>
+        <div id="trend-chart-root" class="chart-root"></div>
+        <div class="support-grid">
+          <article class="support-card">
+            <strong>Interpretation</strong>
+            <span>Use the chart for movement. Full weekly and monthly tables are intentionally collapsed into reference to keep the main flow shorter.</span>
+          </article>
+          <article class="support-card">
+            <strong>Normalized lens</strong>
+            <span>The team averaged {{ overview.average_active_authors_per_month | numfmt }} active authors per month, which normalizes to {{ overview.pull_requests_per_active_author | numfmt }} PRs per active author.</span>
+          </article>
+          <article class="support-card">
+            <strong>Backlog</strong>
+            <span>{{ overview.stale_open_pull_requests | intfmt }} open PRs are older than 72 hours at window end.</span>
+          </article>
+        </div>
+      </section>
+
+      <section id="people" class="panel section-panel">
+        <p class="section-kicker">People command center</p>
+        <h2>One person, delivery and review context together</h2>
+        <p class="section-copy">Use the roster for the top 12 by default. Search jumps directly to any author without forcing the main page to render a massive always-open ledger.</p>
+        <div class="control-row">
+          <span class="control-note">Top 12 cover {{ reference_summary.author_roster_coverage_pct | numfmt }}% of authored PR flow.</span>
+          <div class="control-actions">
+            <input id="author-roster-search" class="search-input" type="search" placeholder="Find a person" aria-label="Find a person">
+          </div>
+        </div>
+        <div class="people-grid">
+          <div>
+            <p class="section-kicker">Delivery roster</p>
+            <div class="person-list">
+              {% for row in authors_roster_top %}
+              <button
+                type="button"
+                class="author-button person-card{% if default_author == row.author_login %} active{% endif %}"
+                data-author="{{ row.author_login }}"
+                data-author-surface="roster"
+                data-overflow="false"
+                aria-pressed="{% if default_author == row.author_login %}true{% else %}false{% endif %}"
+              >
+                <span class="person-card-header">
+                  <strong>{{ row.author_login }}</strong>
+                  <small>#{{ loop.index }}</small>
+                </span>
+                <span class="person-card-metrics">
+                  <span>{{ row.pull_requests | intfmt }} PRs</span>
+                  <span>{{ row.changed_lines | intfmt }} lines</span>
+                  <span>{{ row.median_first_review_hours | duration }} first review</span>
+                </span>
+              </button>
+              {% endfor %}
+              {% for row in authors_roster_rest %}
+              <button
+                type="button"
+                class="author-button person-card hidden roster-overflow{% if default_author == row.author_login %} active{% endif %}"
+                data-author="{{ row.author_login }}"
+                data-author-surface="roster"
+                data-overflow="true"
+                aria-pressed="{% if default_author == row.author_login %}true{% else %}false{% endif %}"
+              >
+                <span class="person-card-header">
+                  <strong>{{ row.author_login }}</strong>
+                  <small>#{{ loop.index + authors_roster_top|length }}</small>
+                </span>
+                <span class="person-card-metrics">
+                  <span>{{ row.pull_requests | intfmt }} PRs</span>
+                  <span>{{ row.changed_lines | intfmt }} lines</span>
+                  <span>{{ row.median_first_review_hours | duration }} first review</span>
+                </span>
+              </button>
+              {% endfor %}
+            </div>
+            {% if authors_roster_rest %}
+            <div class="table-footer">
+              <button type="button" id="author-roster-toggle" class="ghost-button" aria-expanded="false">
+                Show {{ authors_roster_rest|length }} more people
+              </button>
+            </div>
+            {% endif %}
+          </div>
+          <div id="author-detail" class="person-profile" tabindex="-1">
+            <div class="profile-summary">
+              <div>
+                <p class="section-kicker">Selected profile</p>
+                <h2 id="author-detail-title">Person detail</h2>
+              </div>
+              <span>Author + reviewer signals</span>
+            </div>
+            <div class="detail-tabs" id="author-detail-view-tabs">
+              <button type="button" class="tab-button active" data-author-view="timeline" aria-selected="true">Timeline</button>
+              <button type="button" class="tab-button" data-author-view="mix" aria-selected="false">Size mix</button>
+            </div>
+            <div class="two-col">
+              <div class="detail-tabs" id="author-detail-metric-tabs">
+                <button type="button" class="tab-button active" data-author-metric="pull_requests" aria-selected="true">Throughput</button>
+                <button type="button" class="tab-button" data-author-metric="changed_lines" aria-selected="false">Changed lines</button>
+                <button type="button" class="tab-button" data-author-metric="median_first_review_hours" aria-selected="false">Review speed</button>
+                <button type="button" class="tab-button" data-author-metric="median_merge_hours" aria-selected="false">Merge speed</button>
+              </div>
+              <div class="detail-tabs" id="author-detail-grain-tabs">
+                <button type="button" class="tab-button active" data-author-grain="weekly" aria-selected="true">Weekly</button>
+                <button type="button" class="tab-button" data-author-grain="monthly" aria-selected="false">Monthly</button>
+              </div>
+            </div>
+            <div class="chart-title">
+              <span id="author-chart-title">Author chart</span>
+              <div class="chart-legend">
+                <span class="legend-chip"><span class="legend-dot" style="background: var(--accent-2)"></span>Selected person</span>
+              </div>
+            </div>
+            <div id="author-chart-readout" class="chart-readout"></div>
+            <div id="author-chart-root" class="chart-root"></div>
+            <div id="author-detail-root" class="detail-shell"></div>
+          </div>
+        </div>
+      </section>
+
+      <section id="leaderboards" class="panel section-panel">
+        <p class="section-kicker">Team leaderboards</p>
+        <h2>Compare reviewers and repositories without opening the full reference layer</h2>
+        <p class="section-copy">Top 10 lists stay visible by default. Long tails are hidden behind explicit expansion so the main dashboard remains scannable as the org grows.</p>
+        <div class="wide-stack">
+        <article id="reviewers">
+          <p class="section-kicker">Reviewer leaderboard</p>
+          <h2>Who carried review load</h2>
+          <p class="section-copy">Top 10 reviewers cover {{ reference_summary.reviewers_top_coverage_pct | numfmt }}% of reviewed PR touches.</p>
+          <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th class="rank">#</th>
+                <th>Reviewer</th>
+                <th class="num">PRs reviewed</th>
+                <th class="num">Submissions</th>
+                <th class="num">Approvals</th>
+                <th class="num tablet-hide">Changes requested</th>
+                <th class="num tablet-hide">Comments</th>
+                <th class="num tablet-hide">Authors supported</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in reviewers_top %}
+              <tr>
+                <td class="rank" data-label="Rank">{{ loop.index }}</td>
+                <td class="leader" data-label="Reviewer">
+                  <strong>{{ row.reviewer_login }}</strong>
+                  <span>{{ row.pull_requests_reviewed | intfmt }} PRs touched</span>
+                </td>
+                <td class="num" data-label="PRs reviewed">{{ row.pull_requests_reviewed | intfmt }}</td>
+                <td class="num" data-label="Submissions">{{ row.review_submissions | intfmt }}</td>
+                <td class="num" data-label="Approvals">{{ row.approvals | intfmt }}</td>
+                <td class="num tablet-hide" data-label="Changes requested">{{ row.changes_requested | intfmt }}</td>
+                <td class="num tablet-hide" data-label="Comments">{{ row.comments | intfmt }}</td>
+                <td class="num tablet-hide" data-label="Authors supported">{{ row.authors_supported | intfmt }}</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+            {% if reviewers_rest %}
+            <tbody id="reviewer-extra" class="hidden">
+              {% for row in reviewers_rest %}
+              <tr>
+                <td class="rank" data-label="Rank">{{ loop.index + 10 }}</td>
+                <td class="leader" data-label="Reviewer">
+                  <strong>{{ row.reviewer_login }}</strong>
+                  <span>{{ row.pull_requests_reviewed | intfmt }} PRs touched</span>
+                </td>
+                <td class="num" data-label="PRs reviewed">{{ row.pull_requests_reviewed | intfmt }}</td>
+                <td class="num" data-label="Submissions">{{ row.review_submissions | intfmt }}</td>
+                <td class="num" data-label="Approvals">{{ row.approvals | intfmt }}</td>
+                <td class="num tablet-hide" data-label="Changes requested">{{ row.changes_requested | intfmt }}</td>
+                <td class="num tablet-hide" data-label="Comments">{{ row.comments | intfmt }}</td>
+                <td class="num tablet-hide" data-label="Authors supported">{{ row.authors_supported | intfmt }}</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+            {% endif %}
+          </table>
+          </div>
+          {% if reviewers_rest %}
+          <div class="table-footer">
+            <button type="button" id="reviewer-toggle" class="ghost-button" aria-expanded="false">
+              Show {{ reviewers_rest|length }} more reviewers
+            </button>
+          </div>
+          {% endif %}
+        </article>
+
+        <article id="repositories">
+          <p class="section-kicker">Repository leaderboard</p>
+          <h2>Where throughput concentrated</h2>
+          <p class="section-copy">Top 10 repositories cover {{ reference_summary.repositories_top_coverage_pct | numfmt }}% of org PR throughput.</p>
+          <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th class="rank">#</th>
+                <th>Repository</th>
+                <th>PR share</th>
+                <th class="num">PRs</th>
+                <th class="num">Merged</th>
+                <th class="num tablet-hide">Open</th>
+                <th class="num tablet-hide">Authors</th>
+                <th class="num tablet-hide">Reviews / PR</th>
+                <th class="num">Median first review</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in repositories_top %}
+              <tr>
+                <td class="rank" data-label="Rank">{{ loop.index }}</td>
+                <td class="leader" data-label="Repository">
+                  <strong>{{ row.repository_full_name }}</strong>
+                  <span>{{ row.changed_lines | intfmt }} changed lines</span>
+                </td>
+                <td class="bar-cell" data-label="PR share">
+                  <div class="bar-track">
+                    <div class="bar-fill" style="width: {{ row.share_of_prs_pct or 0 }}%"></div>
+                  </div>
+                  <div class="bar-meta">
+                    <span>{{ row.share_of_prs_pct }}%</span>
+                    <span>{{ row.changed_lines | intfmt }} lines</span>
+                  </div>
+                </td>
+                <td class="num" data-label="PRs">{{ row.pull_requests | intfmt }}</td>
+                <td class="num" data-label="Merged">{{ row.merged_pull_requests | intfmt }}</td>
+                <td class="num tablet-hide" data-label="Open">{{ row.open_pull_requests | intfmt }}</td>
+                <td class="num tablet-hide" data-label="Authors">{{ row.authors | intfmt }}</td>
+                <td class="num tablet-hide" data-label="Reviews / PR">{{ row.average_reviews_per_pr | numfmt }}</td>
+                <td class="num" data-label="Median first review">{{ row.median_first_review_hours | duration }}</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+            {% if repositories_rest %}
+            <tbody id="repository-extra" class="hidden">
+              {% for row in repositories_rest %}
+              <tr>
+                <td class="rank" data-label="Rank">{{ loop.index + 10 }}</td>
+                <td class="leader" data-label="Repository">
+                  <strong>{{ row.repository_full_name }}</strong>
+                  <span>{{ row.changed_lines | intfmt }} changed lines</span>
+                </td>
+                <td class="bar-cell" data-label="PR share">
+                  <div class="bar-track">
+                    <div class="bar-fill" style="width: {{ row.share_of_prs_pct or 0 }}%"></div>
+                  </div>
+                  <div class="bar-meta">
+                    <span>{{ row.share_of_prs_pct }}%</span>
+                    <span>{{ row.changed_lines | intfmt }} lines</span>
+                  </div>
+                </td>
+                <td class="num" data-label="PRs">{{ row.pull_requests | intfmt }}</td>
+                <td class="num" data-label="Merged">{{ row.merged_pull_requests | intfmt }}</td>
+                <td class="num tablet-hide" data-label="Open">{{ row.open_pull_requests | intfmt }}</td>
+                <td class="num tablet-hide" data-label="Authors">{{ row.authors | intfmt }}</td>
+                <td class="num tablet-hide" data-label="Reviews / PR">{{ row.average_reviews_per_pr | numfmt }}</td>
+                <td class="num" data-label="Median first review">{{ row.median_first_review_hours | duration }}</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+            {% endif %}
+          </table>
+          </div>
+          {% if repositories_rest %}
+          <div class="table-footer">
+            <button type="button" id="repository-toggle" class="ghost-button" aria-expanded="false">
+              Show {{ repositories_rest|length }} more repositories
+            </button>
+          </div>
+          {% endif %}
+        </article>
+        </div>
+      </section>
+
+      <section id="diagnostics" class="panel section-panel">
+        <p class="section-kicker">Review latency by PR size</p>
+        <h2>How bigger changes slowed flow</h2>
+        <p class="section-copy">{{ size_diagnostic.headline }} {{ size_diagnostic.supporting }}</p>
+        <div class="summary-strip">
+          <article class="summary-card panel">
+            <span class="summary-label">Latency and quality</span>
+            <strong>{{ overview.review_sla_24h_pct | numfmt }}% within 24h</strong>
+            <span>PRs that received a first review within one day of becoming reviewable.</span>
+          </article>
+          <article class="summary-card panel">
+            <span class="summary-label">Review depth</span>
+            <strong>{{ overview.average_reviews_per_pr | numfmt }} reviews / PR</strong>
+            <span>{{ overview.review_coverage_pct | numfmt }}% of PRs received at least one review.</span>
+          </article>
+          <article class="summary-card panel">
+            <span class="summary-label">Backlog risk</span>
+            <strong>{{ overview.stale_open_pull_requests | intfmt }} stale open PRs</strong>
+            <span>Open pull requests older than 72 hours at the end of the reporting window.</span>
+          </article>
+          <article class="summary-card panel">
+            <span class="summary-label">Median response</span>
+            <strong>{{ overview.median_first_review_hours | duration }}</strong>
+            <span>{{ overview.median_merge_hours | duration }} median merge time across the window.</span>
+          </article>
+        </div>
+        <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Size</th>
+              <th class="num">PRs</th>
+              <th class="num">Median lines</th>
+              <th class="num">Median first review</th>
+              <th class="num">Median merge</th>
+              <th class="num tablet-hide">Reviews / PR</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in size_buckets %}
+            <tr>
+              <td class="leader" data-label="Size">
+                <strong>{{ row.bucket }}</strong>
+                <span>Size bucket</span>
+              </td>
+              <td class="num" data-label="PRs">{{ row.pull_requests | intfmt }}</td>
+              <td class="num" data-label="Median lines">{{ row.median_changed_lines | numfmt }}</td>
+              <td class="num" data-label="Median first review">{{ row.median_first_review_hours | duration }}</td>
+              <td class="num" data-label="Median merge">{{ row.median_merge_hours | duration }}</td>
+              <td class="num tablet-hide" data-label="Reviews / PR">{{ row.average_reviews_per_pr | numfmt }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        </div>
+        <div class="tag-row">
+          <span class="tag">XS: up to 100 changed lines</span>
+          <span class="tag">S: 101-400</span>
+          <span class="tag">M: 401-1000</span>
+          <span class="tag">L: 1001-3000</span>
+          <span class="tag">XL: 3001+</span>
+        </div>
+      </section>
+
+      <section id="reference" class="panel section-panel reference-panel">
+        <p class="section-kicker">Reference</p>
+        <h2>Dense tables and methodology, on demand</h2>
+        <p class="section-copy">These sections stay collapsed by default so large org windows do not force the main dashboard into a long scroll-only document.</p>
+        <div class="reference-grid">
+          <details class="disclosure" open>
+            <summary>Trend tables</summary>
+            <div class="reference-stack">
+              <article>
+                <div class="control-row">
+                  <span class="control-note">Recent 12 weeks shown first. {{ reference_summary.weekly_hidden_count | intfmt }} older weekly rows are hidden until expanded.</span>
+                </div>
+                <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Week</th>
+                      <th class="num">PRs</th>
+                      <th class="num">Merged</th>
+                      <th class="num tablet-hide">Open</th>
+                      <th class="num">Changed lines</th>
+                      <th class="num tablet-hide">Reviews / PR</th>
+                      <th class="num">Median first review</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {% for row in weekly_trends_recent %}
+                    <tr>
+                      <td class="leader" data-label="Week">
+                        <strong>{{ row.period_key }}</strong>
+                        <span>created_at basis</span>
+                      </td>
+                      <td class="num" data-label="PRs">{{ row.pull_requests | intfmt }}</td>
+                      <td class="num" data-label="Merged">{{ row.merged_pull_requests | intfmt }}</td>
+                      <td class="num tablet-hide" data-label="Open">{{ row.open_pull_requests | intfmt }}</td>
+                      <td class="num" data-label="Changed lines">{{ row.changed_lines | intfmt }}</td>
+                      <td class="num tablet-hide" data-label="Reviews / PR">{{ row.average_reviews_per_pr | numfmt }}</td>
+                      <td class="num" data-label="Median first review">{{ row.median_first_review_hours | duration }}</td>
+                    </tr>
+                    {% endfor %}
+                  </tbody>
+                  {% if weekly_trends_older %}
+                  <tbody id="weekly-trend-extra" class="hidden">
+                    {% for row in weekly_trends_older %}
+                    <tr>
+                      <td class="leader" data-label="Week">
+                        <strong>{{ row.period_key }}</strong>
+                        <span>created_at basis</span>
+                      </td>
+                      <td class="num" data-label="PRs">{{ row.pull_requests | intfmt }}</td>
+                      <td class="num" data-label="Merged">{{ row.merged_pull_requests | intfmt }}</td>
+                      <td class="num tablet-hide" data-label="Open">{{ row.open_pull_requests | intfmt }}</td>
+                      <td class="num" data-label="Changed lines">{{ row.changed_lines | intfmt }}</td>
+                      <td class="num tablet-hide" data-label="Reviews / PR">{{ row.average_reviews_per_pr | numfmt }}</td>
+                      <td class="num" data-label="Median first review">{{ row.median_first_review_hours | duration }}</td>
+                    </tr>
+                    {% endfor %}
+                  </tbody>
+                  {% endif %}
+                </table>
+                </div>
+                {% if weekly_trends_older %}
+                <div class="table-footer">
+                  <button type="button" id="weekly-trend-toggle" class="ghost-button" aria-expanded="false">
+                    Show older weekly rows
+                  </button>
+                </div>
+                {% endif %}
+              </article>
+
+              <article>
+                <div class="control-row">
+                  <span class="control-note">Recent 6 months shown first. {{ reference_summary.monthly_hidden_count | intfmt }} older monthly rows are hidden until expanded.</span>
+                </div>
+                <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Month</th>
+                      <th class="num">PRs</th>
+                      <th class="num">Merged</th>
+                      <th class="num tablet-hide">Open</th>
+                      <th class="num">Changed lines</th>
+                      <th class="num">Median first review</th>
+                      <th class="num tablet-hide">Median merge</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {% for row in monthly_trends_recent %}
+                    <tr>
+                      <td class="leader" data-label="Month">
+                        <strong>{{ row.period_key }}</strong>
+                        <span>created_at basis</span>
+                      </td>
+                      <td class="num" data-label="PRs">{{ row.pull_requests | intfmt }}</td>
+                      <td class="num" data-label="Merged">{{ row.merged_pull_requests | intfmt }}</td>
+                      <td class="num tablet-hide" data-label="Open">{{ row.open_pull_requests | intfmt }}</td>
+                      <td class="num" data-label="Changed lines">{{ row.changed_lines | intfmt }}</td>
+                      <td class="num" data-label="Median first review">{{ row.median_first_review_hours | duration }}</td>
+                      <td class="num tablet-hide" data-label="Median merge">{{ row.median_merge_hours | duration }}</td>
+                    </tr>
+                    {% endfor %}
+                  </tbody>
+                  {% if monthly_trends_older %}
+                  <tbody id="monthly-trend-extra" class="hidden">
+                    {% for row in monthly_trends_older %}
+                    <tr>
+                      <td class="leader" data-label="Month">
+                        <strong>{{ row.period_key }}</strong>
+                        <span>created_at basis</span>
+                      </td>
+                      <td class="num" data-label="PRs">{{ row.pull_requests | intfmt }}</td>
+                      <td class="num" data-label="Merged">{{ row.merged_pull_requests | intfmt }}</td>
+                      <td class="num tablet-hide" data-label="Open">{{ row.open_pull_requests | intfmt }}</td>
+                      <td class="num" data-label="Changed lines">{{ row.changed_lines | intfmt }}</td>
+                      <td class="num" data-label="Median first review">{{ row.median_first_review_hours | duration }}</td>
+                      <td class="num tablet-hide" data-label="Median merge">{{ row.median_merge_hours | duration }}</td>
+                    </tr>
+                    {% endfor %}
+                  </tbody>
+                  {% endif %}
+                </table>
+                </div>
+                {% if monthly_trends_older %}
+                <div class="table-footer">
+                  <button type="button" id="monthly-trend-toggle" class="ghost-button" aria-expanded="false">
+                    Show older monthly rows
+                  </button>
+                </div>
+                {% endif %}
+              </article>
+            </div>
+          </details>
+
+          <details class="disclosure">
+            <summary>Author ledger</summary>
+            <div class="control-row">
+              <span class="control-note">Dense comparison table. Top 12 already cover {{ reference_summary.author_roster_coverage_pct | numfmt }}% of authored PR flow in the main explorer.</span>
+            </div>
+            <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th class="rank">#</th>
+                  <th>Author</th>
+                  <th>PR share</th>
+                  <th class="num">PRs</th>
+                  <th class="num">Merged</th>
+                  <th class="num tablet-hide">Open</th>
+                  <th class="num">Changed lines</th>
+                  <th class="num tablet-hide">Commits</th>
+                  <th class="num tablet-hide">Reviews / PR</th>
+                  <th class="num">Median first review</th>
+                  <th class="num tablet-hide">Median merge</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for row in authors %}
+                <tr>
+                  <td class="rank" data-label="Rank">{{ loop.index }}</td>
+                  <td class="leader" data-label="Author">
+                    <strong>
+                      <button
+                        type="button"
+                        class="author-button{% if default_author == row.author_login %} active{% endif %}"
+                        data-author="{{ row.author_login }}"
+                        data-author-surface="ledger"
+                        aria-pressed="{% if default_author == row.author_login %}true{% else %}false{% endif %}"
+                      >
+                        {{ row.author_login }}
+                      </button>
+                    </strong>
+                    <span>{{ row.share_of_prs_pct }}% of org PR flow</span>
+                  </td>
+                  <td class="bar-cell" data-label="PR share">
+                    <div class="bar-track">
+                      <div class="bar-fill" style="width: {{ row.share_of_prs_pct or 0 }}%"></div>
+                    </div>
+                    <div class="bar-meta">
+                      <span>{{ row.share_of_prs_pct }}%</span>
+                      <span>{{ row.median_changed_lines | numfmt }} median lines</span>
+                    </div>
+                  </td>
+                  <td class="num" data-label="PRs">{{ row.pull_requests | intfmt }}</td>
+                  <td class="num" data-label="Merged">{{ row.merged_pull_requests | intfmt }}</td>
+                  <td class="num tablet-hide" data-label="Open">{{ row.open_pull_requests | intfmt }}</td>
+                  <td class="num" data-label="Changed lines">{{ row.changed_lines | intfmt }}</td>
+                  <td class="num tablet-hide" data-label="Commits">{{ row.commits | intfmt }}</td>
+                  <td class="num tablet-hide" data-label="Reviews / PR">{{ row.average_reviews_per_pr | numfmt }}</td>
+                  <td class="num" data-label="Median first review">{{ row.median_first_review_hours | duration }}</td>
+                  <td class="num tablet-hide" data-label="Median merge">{{ row.median_merge_hours | duration }}</td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+            </div>
+          </details>
+
+          <details class="disclosure">
+            <summary>Methodology</summary>
+            <div class="methodology-grid">
+              <div class="meta-box">
+                <span class="meta-label">Anchor</span>
+                <span class="meta-value">{{ methodology.anchor }}</span>
+              </div>
+              <div class="meta-box">
+                <span class="meta-label">Distribution cutoff</span>
+                <span class="meta-value">{{ methodology.distribution_percentile }}th percentile</span>
+              </div>
+              <div class="meta-box">
+                <span class="meta-label">Generated</span>
+                <span class="meta-value">{{ methodology.generated_at }}</span>
+              </div>
+            </div>
+          </details>
+        </div>
+      </section>
+    </div>
+  </div>
+  <script id="author-details-data" type="application/json">{{ author_details_json | safe }}</script>

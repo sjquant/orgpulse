@@ -2,39 +2,33 @@ from __future__ import annotations
 
 import argparse
 import csv
-import http.client
 import json
-import time
 from collections import Counter, defaultdict
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from statistics import median
 from typing import Any
-from urllib.error import HTTPError, URLError
-from urllib.parse import urlencode, urlparse
-from urllib.request import Request, urlopen
 
+from github import Auth, Github
+from pydantic import ValidationError
 from render_manual_org_dashboard import (
     prepare_manual_dashboard_payload,
     render_manual_dashboard_html,
 )
 
-MAX_SEARCH_PAGE_SIZE = 100
-MAX_WORKERS = 12
-
-
-@dataclass(frozen=True)
-class PullRequestSeed:
-    repository_full_name: str
-    number: int
-    title: str
-    author_login: str
-    state: str
-    created_at: datetime
-    closed_at: datetime | None
-    html_url: str
+from orgpulse.cli import (
+    _build_metric_outputs,
+    _write_org_summary,
+    build_run_config,
+)
+from orgpulse.cli import (
+    _write_outputs as _write_run_outputs,
+)
+from orgpulse.errors import AuthResolutionError, GitHubApiError, OrgTargetingError
+from orgpulse.github_auth import GitHubAuthService, resolve_auth_token
+from orgpulse.ingestion import GitHubIngestionService
+from orgpulse.models import RawSnapshotPeriod, ReportingPeriod, RunManifest, RunMode
 
 
 @dataclass(frozen=True)
@@ -86,104 +80,326 @@ class PullRequestSnapshot:
 
 def main() -> None:
     args = _parse_args()
-    token = _resolve_token()
-    seeds = _collect_pull_request_seeds(
-        token=token,
+    since = date.fromisoformat(args.since)
+    until = date.fromisoformat(args.until)
+    source_manifest = _try_load_source_manifest(
         org=args.org,
-        since=date.fromisoformat(args.since),
-        until=date.fromisoformat(args.until),
+        source_output_dir=args.source_output_dir,
     )
-    snapshots = _hydrate_pull_request_snapshots(token=token, seeds=seeds)
-    payload = _build_dashboard_payload(
+    try:
+        if args.refresh:
+            _refresh_local_source_outputs(
+                org=args.org,
+                as_of=date.today(),
+                source_output_dir=args.source_output_dir,
+                source_manifest=source_manifest,
+            )
+    except (AuthResolutionError, GitHubApiError, OrgTargetingError) as exc:
+        raise RuntimeError(f"failed to refresh local source outputs: {exc}") from exc
+    payload = build_manual_dashboard_payload_from_local_outputs(
         org=args.org,
-        since=date.fromisoformat(args.since),
-        until=date.fromisoformat(args.until),
-        snapshots=snapshots,
+        since=since,
+        until=until,
+        source_output_dir=args.source_output_dir,
     )
     _write_outputs(
         output_dir=args.output_dir,
         base_name=args.base_name,
         payload=payload,
+        distribution_percentile=args.distribution_percentile,
     )
 
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Generate a dark-mode GitHub organization productivity dashboard.",
+        description=(
+            "Generate a manual org dashboard from local orgpulse raw snapshots. "
+            "By default this refreshes the current open period incrementally first."
+        ),
     )
     parser.add_argument("--org", required=True)
     parser.add_argument("--since", required=True, help="Inclusive YYYY-MM-DD")
     parser.add_argument("--until", required=True, help="Inclusive YYYY-MM-DD")
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--base-name", required=True)
+    parser.add_argument(
+        "--source-output-dir",
+        type=Path,
+        default=Path("output"),
+        help="Root orgpulse output directory used for manifest and raw snapshots.",
+    )
+    parser.add_argument(
+        "--refresh",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Refresh local orgpulse outputs incrementally before rendering.",
+    )
+    parser.add_argument(
+        "--distribution-percentile",
+        type=int,
+        default=100,
+        choices=(95, 99, 100),
+        help="Upper-tail percentile retained for distribution-based metrics in HTML output.",
+    )
     return parser.parse_args()
 
 
-def _resolve_token() -> str:
-    command = ["gh", "auth", "token"]
-    token = __import__("subprocess").run(
-        command,
-        check=True,
-        capture_output=True,
-        text=True,
-    ).stdout.strip()
-    if not token:
-        raise RuntimeError("unable to resolve GitHub auth token from gh")
-    return token
-
-
-def _collect_pull_request_seeds(
+def _refresh_local_source_outputs(
     *,
-    token: str,
+    org: str,
+    as_of: date,
+    source_output_dir: Path,
+    source_manifest: RunManifest | None,
+) -> None:
+    try:
+        config = build_run_config(
+            org=org,
+            as_of=as_of,
+            mode=RunMode.INCREMENTAL,
+            include_repos=(
+                list(source_manifest.include_repos)
+                if source_manifest is not None
+                else None
+            ),
+            exclude_repos=(
+                list(source_manifest.exclude_repos)
+                if source_manifest is not None
+                else None
+            ),
+            output_dir=source_output_dir,
+        )
+    except ValidationError as exc:
+        raise RuntimeError(f"invalid run configuration: {exc}") from exc
+
+    resolved_token = resolve_auth_token(config)
+    github_client = Github(auth=Auth.Token(resolved_token.token))
+    GitHubAuthService(github_client, resolved_token.source).validate_access(config)
+    ingestion_service = GitHubIngestionService(github_client)
+    inventory = ingestion_service.load_repository_inventory(config)
+    collection = ingestion_service.fetch_pull_requests(config, inventory)
+    (
+        raw_snapshot,
+        raw_snapshot_skipped_reason,
+        manifest,
+        _manifest_skipped_reason,
+    ) = _write_run_outputs(
+        config,
+        len(inventory.repositories),
+        collection,
+    )
+    (
+        _repo_summary,
+        _repo_summary_skipped_reason,
+        org_metrics,
+        org_metrics_skipped_reason,
+        _metric_validation,
+        _metric_validation_skipped_reason,
+    ) = _build_metric_outputs(
+        config,
+        manifest=manifest,
+        raw_snapshot=raw_snapshot,
+        raw_snapshot_skipped_reason=raw_snapshot_skipped_reason,
+    )
+    _write_org_summary(
+        config,
+        org_metrics=org_metrics,
+        org_metrics_skipped_reason=org_metrics_skipped_reason,
+        refreshed_period_keys=()
+        if raw_snapshot is None
+        else tuple(period.key for period in raw_snapshot.periods),
+    )
+    if not collection.failures:
+        ingestion_service.clear_checkpoint(config)
+
+
+def build_manual_dashboard_payload_from_local_outputs(
+    *,
     org: str,
     since: date,
     until: date,
-) -> list[PullRequestSeed]:
-    seeds: list[PullRequestSeed] = []
-    for window_start, window_end in _month_windows(since, until):
-        query = f"org:{org} is:pr created:{window_start.isoformat()}..{window_end.isoformat()}"
-        page = 1
-        while True:
-            payload = _github_get_json(
-                token=token,
-                url="https://api.github.com/search/issues",
-                query_params={
-                    "q": query,
-                    "sort": "created",
-                    "order": "desc",
-                    "per_page": str(MAX_SEARCH_PAGE_SIZE),
-                    "page": str(page),
-                },
-            )
-            items = payload["items"]
-            if not items:
-                break
-            seeds.extend(_build_seed(item) for item in items)
-            if len(items) < MAX_SEARCH_PAGE_SIZE:
-                break
-            page += 1
-    unique: dict[tuple[str, int], PullRequestSeed] = {}
-    for seed in seeds:
-        unique[(seed.repository_full_name, seed.number)] = seed
-    return sorted(
-        unique.values(),
-        key=lambda seed: (seed.created_at, seed.repository_full_name, seed.number),
+    source_output_dir: Path,
+) -> dict[str, Any]:
+    manifest = _load_source_manifest(
+        org=org,
+        source_output_dir=source_output_dir,
+    )
+    period_index = _snapshot_period_index(manifest)
+    _validate_local_source_coverage(
+        manifest=manifest,
+        period_index=period_index,
+        since=since,
+        until=until,
+    )
+    snapshots = _load_local_snapshots(
+        period_index=period_index,
+        since=since,
+        until=until,
+    )
+    return _build_dashboard_payload(
+        org=org,
+        since=since,
+        until=until,
+        snapshots=snapshots,
     )
 
 
-def _hydrate_pull_request_snapshots(
+def _load_source_manifest(
     *,
-    token: str,
-    seeds: list[PullRequestSeed],
+    org: str,
+    source_output_dir: Path,
+) -> RunManifest:
+    manifest_path = (
+        source_output_dir
+        / "manifest"
+        / "month"
+        / "created_at"
+        / "manifest.json"
+    )
+    if not manifest_path.exists():
+        raise RuntimeError(
+            "local manual dashboard source is missing: "
+            f"{manifest_path}. Run `orgpulse run --org {org}` first."
+        )
+    try:
+        payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise RuntimeError(f"local manifest is unreadable: {manifest_path}") from exc
+    manifest = RunManifest.model_validate(payload)
+    if manifest.target_org.lower() != org.lower():
+        raise RuntimeError(
+            "local manifest org does not match the requested org: "
+            f"expected {org}, found {manifest.target_org}"
+        )
+    return manifest
+
+
+def _try_load_source_manifest(
+    *,
+    org: str,
+    source_output_dir: Path,
+) -> RunManifest | None:
+    manifest_path = (
+        source_output_dir
+        / "manifest"
+        / "month"
+        / "created_at"
+        / "manifest.json"
+    )
+    if not manifest_path.exists():
+        return None
+    return _load_source_manifest(
+        org=org,
+        source_output_dir=source_output_dir,
+    )
+
+
+def _snapshot_period_index(
+    manifest: RunManifest,
+) -> dict[str, RawSnapshotPeriod]:
+    return {
+        period.key: _build_snapshot_period(
+            manifest.raw_snapshot_root_dir,
+            period,
+        )
+        for period in (*manifest.locked_periods, *manifest.refreshed_periods)
+    }
+
+
+def _build_snapshot_period(
+    root_dir: Path,
+    period: ReportingPeriod | RawSnapshotPeriod,
+) -> RawSnapshotPeriod:
+    if isinstance(period, RawSnapshotPeriod):
+        return period
+    period_dir = root_dir / period.key
+    return RawSnapshotPeriod(
+        key=period.key,
+        start_date=period.start_date,
+        end_date=period.end_date,
+        closed=period.closed,
+        directory=period_dir,
+        pull_requests_path=period_dir / "pull_requests.csv",
+        pull_request_count=0,
+        reviews_path=period_dir / "pull_request_reviews.csv",
+        review_count=0,
+        timeline_events_path=period_dir / "pull_request_timeline_events.csv",
+        timeline_event_count=0,
+    )
+
+
+def _validate_local_source_coverage(
+    *,
+    manifest: RunManifest,
+    period_index: dict[str, RawSnapshotPeriod],
+    since: date,
+    until: date,
+) -> None:
+    if until > manifest.last_successful_run.as_of:
+        raise RuntimeError(
+            "local source outputs are stale for the requested window: "
+            f"latest local as-of is {manifest.last_successful_run.as_of.isoformat()}, "
+            f"but --until is {until.isoformat()}."
+        )
+    expected_keys = _period_keys_for_window(since=since, until=until)
+    missing_keys = [key for key in expected_keys if key not in period_index]
+    if missing_keys:
+        raise RuntimeError(
+            "local source outputs do not cover the requested historical window. "
+            f"Missing periods: {', '.join(missing_keys)}. "
+            "Run a full rebuild or period backfill before rendering this dashboard."
+        )
+
+
+def _period_keys_for_window(
+    *,
+    since: date,
+    until: date,
+) -> list[str]:
+    keys: list[str] = []
+    cursor = since.replace(day=1)
+    until_month_start = until.replace(day=1)
+    while cursor <= until_month_start:
+        keys.append(cursor.strftime("%Y-%m"))
+        cursor = _next_month_start(cursor)
+    return keys
+
+
+def _next_month_start(current: date) -> date:
+    next_month = (current.replace(day=28) + timedelta(days=4)).replace(day=1)
+    return next_month
+
+
+def _load_local_snapshots(
+    *,
+    period_index: dict[str, RawSnapshotPeriod],
+    since: date,
+    until: date,
 ) -> list[PullRequestSnapshot]:
     snapshots: list[PullRequestSnapshot] = []
-    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
-        futures = {
-            executor.submit(_hydrate_pull_request_snapshot, token, seed): seed
-            for seed in seeds
-        }
-        for future in as_completed(futures):
-            snapshots.append(future.result())
+    for period_key in _period_keys_for_window(since=since, until=until):
+        period = period_index[period_key]
+        pull_request_rows = _read_csv_rows(period.pull_requests_path)
+        review_rows = _read_csv_rows(period.reviews_path)
+        timeline_rows = _read_csv_rows(period.timeline_events_path)
+        reviews_by_pull_request = _reviews_by_pull_request(review_rows)
+        timeline_events_by_pull_request = _timeline_events_by_pull_request(timeline_rows)
+        for pull_request_row in pull_request_rows:
+            created_at = _parse_datetime(pull_request_row["created_at"])
+            if created_at.date() < since or created_at.date() > until:
+                continue
+            pull_request_key = _pull_request_key(
+                repository_full_name=pull_request_row["repository_full_name"],
+                pull_request_number=pull_request_row["pull_request_number"],
+            )
+            reviews = reviews_by_pull_request.get(pull_request_key, [])
+            timeline_events = timeline_events_by_pull_request.get(pull_request_key, [])
+            snapshots.append(
+                _snapshot_from_local_rows(
+                    pull_request_row,
+                    reviews=reviews,
+                    timeline_events=timeline_events,
+                )
+            )
     return sorted(
         snapshots,
         key=lambda snapshot: (
@@ -194,47 +410,114 @@ def _hydrate_pull_request_snapshots(
     )
 
 
-def _hydrate_pull_request_snapshot(
-    token: str,
-    seed: PullRequestSeed,
+def _read_csv_rows(path: Path) -> list[dict[str, str]]:
+    if not path.exists():
+        raise RuntimeError(f"local source snapshot file is missing: {path}")
+    with path.open("r", encoding="utf-8", newline="") as handle:
+        return list(csv.DictReader(handle))
+
+
+def _reviews_by_pull_request(
+    review_rows: list[dict[str, str]],
+) -> dict[tuple[str, int], list[PullRequestReview]]:
+    grouped: dict[tuple[str, int], list[PullRequestReview]] = defaultdict(list)
+    for review_row in review_rows:
+        submitted_at = _parse_optional_datetime(review_row["submitted_at"])
+        if submitted_at is None:
+            continue
+        grouped[
+            _pull_request_key(
+                repository_full_name=review_row["repository_full_name"],
+                pull_request_number=review_row["pull_request_number"],
+            )
+        ].append(
+            PullRequestReview(
+                author_login=review_row["author_login"] or "ghost",
+                state=review_row["state"],
+                submitted_at=submitted_at,
+            )
+        )
+    for reviews in grouped.values():
+        reviews.sort(key=lambda review: review.submitted_at)
+    return grouped
+
+
+def _timeline_events_by_pull_request(
+    timeline_rows: list[dict[str, str]],
+) -> dict[tuple[str, int], list[PullRequestTimelineEvent]]:
+    grouped: dict[tuple[str, int], list[PullRequestTimelineEvent]] = defaultdict(list)
+    for timeline_row in timeline_rows:
+        grouped[
+            _pull_request_key(
+                repository_full_name=timeline_row["repository_full_name"],
+                pull_request_number=timeline_row["pull_request_number"],
+            )
+        ].append(
+            PullRequestTimelineEvent(
+                event=timeline_row["event"],
+                created_at=_parse_optional_datetime(timeline_row["created_at"]),
+                requested_reviewer_login=(
+                    timeline_row["requested_reviewer_login"] or None
+                ),
+            )
+        )
+    for timeline_events in grouped.values():
+        timeline_events.sort(
+            key=lambda event: (
+                event.created_at.isoformat() if event.created_at is not None else "",
+                event.event,
+            )
+        )
+    return grouped
+
+
+def _pull_request_key(
+    *,
+    repository_full_name: str,
+    pull_request_number: str,
+) -> tuple[str, int]:
+    return repository_full_name, int(pull_request_number)
+
+
+def _parse_optional_datetime(value: str | None) -> datetime | None:
+    if value in {None, "", "0001-01-01T00:00:00Z", "0001-01-01T00:00:00+00:00"}:
+        return None
+    return datetime.fromisoformat(value.replace("Z", "+00:00"))
+
+
+def _snapshot_from_local_rows(
+    pull_request_row: dict[str, str],
+    *,
+    reviews: list[PullRequestReview],
+    timeline_events: list[PullRequestTimelineEvent],
 ) -> PullRequestSnapshot:
-    detail = _github_get_json(
-        token=token,
-        url=f"https://api.github.com/repos/{seed.repository_full_name}/pulls/{seed.number}",
-    )
-    reviews = _load_reviews(
-        token=token,
-        repository_full_name=seed.repository_full_name,
-        number=seed.number,
-    )
-    timeline_events = _load_timeline_events(
-        token=token,
-        repository_full_name=seed.repository_full_name,
-        number=seed.number,
-    )
+    created_at = _parse_datetime(pull_request_row["created_at"])
+    updated_at = _parse_datetime(pull_request_row["updated_at"])
+    closed_at = _parse_optional_datetime(pull_request_row["closed_at"])
+    merged_at = _parse_optional_datetime(pull_request_row["merged_at"])
+    additions = int(pull_request_row["additions"])
+    deletions = int(pull_request_row["deletions"])
     review_ready_at, review_requested_at, first_review_at = _review_cycle_markers(
-        created_at=seed.created_at,
+        created_at=created_at,
         timeline_events=timeline_events,
         reviews=reviews,
     )
-    merged_at = _parse_datetime(detail.get("merged_at"))
-    closed_at = _parse_datetime(detail.get("closed_at"))
     return PullRequestSnapshot(
-        repository_full_name=seed.repository_full_name,
-        number=seed.number,
-        title=seed.title,
-        author_login=seed.author_login,
-        state=str(detail["state"]),
-        created_at=_parse_datetime(detail["created_at"]),
-        updated_at=_parse_datetime(detail["updated_at"]),
+        repository_full_name=pull_request_row["repository_full_name"],
+        number=int(pull_request_row["pull_request_number"]),
+        title=pull_request_row["title"],
+        author_login=pull_request_row["author_login"] or "ghost",
+        state=pull_request_row["state"],
+        created_at=created_at,
+        updated_at=updated_at,
         closed_at=closed_at,
         merged_at=merged_at,
-        html_url=str(detail["html_url"]),
-        additions=int(detail["additions"]),
-        deletions=int(detail["deletions"]),
-        changed_files=int(detail["changed_files"]),
-        changed_lines=int(detail["additions"]) + int(detail["deletions"]),
-        commits=int(detail["commits"]),
+        html_url=pull_request_row["html_url"],
+        additions=additions,
+        deletions=deletions,
+        changed_files=int(pull_request_row["changed_files"]),
+        changed_lines=additions + deletions,
+        commits=int(pull_request_row["commits"]),
         review_count=len(reviews),
         approval_count=sum(1 for review in reviews if review.state == "APPROVED"),
         changes_requested_count=sum(
@@ -247,8 +530,8 @@ def _hydrate_pull_request_snapshot(
             review_requested_at or review_ready_at,
             first_review_at,
         ),
-        merge_hours=_hours_between(seed.created_at, merged_at),
-        close_hours=_hours_between(seed.created_at, closed_at),
+        merge_hours=_hours_between(created_at, merged_at),
+        close_hours=_hours_between(created_at, closed_at),
         review_rounds=max(
             1,
             len(
@@ -263,7 +546,7 @@ def _hydrate_pull_request_snapshot(
         else 0,
         review_requested_at=review_requested_at,
         review_ready_at=review_ready_at,
-        size_bucket=_size_bucket(int(detail["additions"]) + int(detail["deletions"])),
+        size_bucket=_size_bucket(additions + deletions),
         reviews=tuple(reviews),
     )
 
@@ -364,6 +647,7 @@ def _write_outputs(
     output_dir: Path,
     base_name: str,
     payload: dict[str, Any],
+    distribution_percentile: int,
 ) -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
     json_path = output_dir / f"{base_name}.json"
@@ -379,7 +663,12 @@ def _write_outputs(
         writer.writeheader()
         writer.writerows(rows)
     html_path.write_text(
-        render_manual_dashboard_html(prepare_manual_dashboard_payload(payload)),
+        render_manual_dashboard_html(
+            prepare_manual_dashboard_payload(
+                payload,
+                distribution_percentile=distribution_percentile,
+            )
+        ),
         encoding="utf-8",
     )
     print(
@@ -389,83 +678,10 @@ def _write_outputs(
                 "csv_path": str(csv_path),
                 "html_path": str(html_path),
                 "pull_requests": payload["overview"]["pull_requests"],
+                "distribution_percentile": distribution_percentile,
             },
             ensure_ascii=False,
         )
-    )
-
-
-def _build_seed(item: dict[str, Any]) -> PullRequestSeed:
-    return PullRequestSeed(
-        repository_full_name=_repository_full_name(item["repository_url"]),
-        number=int(item["number"]),
-        title=str(item["title"]),
-        author_login=str(item.get("user", {}).get("login") or "ghost"),
-        state=str(item["state"]),
-        created_at=_parse_datetime(item["created_at"]),
-        closed_at=_parse_datetime(item.get("closed_at")),
-        html_url=str(item["html_url"]),
-    )
-
-
-def _month_windows(start_date: date, end_date: date) -> list[tuple[date, date]]:
-    windows: list[tuple[date, date]] = []
-    cursor = start_date.replace(day=1)
-    while cursor <= end_date:
-        next_month = (cursor.replace(day=28) + timedelta(days=4)).replace(day=1)
-        month_end = next_month - timedelta(days=1)
-        windows.append((max(cursor, start_date), min(month_end, end_date)))
-        cursor = next_month
-    return windows
-
-
-def _load_reviews(
-    *,
-    token: str,
-    repository_full_name: str,
-    number: int,
-) -> list[PullRequestReview]:
-    rows = _github_get_paginated_json(
-        token=token,
-        url=f"https://api.github.com/repos/{repository_full_name}/pulls/{number}/reviews",
-    )
-    reviews = [
-        PullRequestReview(
-            author_login=str(row.get("user", {}).get("login") or "ghost"),
-            state=str(row["state"]),
-            submitted_at=_parse_datetime(row["submitted_at"]),
-        )
-        for row in rows
-        if row.get("submitted_at")
-    ]
-    return sorted(reviews, key=lambda review: review.submitted_at)
-
-
-def _load_timeline_events(
-    *,
-    token: str,
-    repository_full_name: str,
-    number: int,
-) -> list[PullRequestTimelineEvent]:
-    rows = _github_get_paginated_json(
-        token=token,
-        url=f"https://api.github.com/repos/{repository_full_name}/issues/{number}/timeline",
-        accept="application/vnd.github+json",
-    )
-    events = [
-        PullRequestTimelineEvent(
-            event=str(row["event"]),
-            created_at=_parse_datetime(row.get("created_at")),
-            requested_reviewer_login=_requested_reviewer_login(row),
-        )
-        for row in rows
-    ]
-    return sorted(
-        events,
-        key=lambda event: (
-            event.created_at.isoformat() if event.created_at is not None else "",
-            event.event,
-        ),
     )
 
 
@@ -657,8 +873,8 @@ def _reviewer_rows(snapshots: list[PullRequestSnapshot]) -> list[dict[str, Any]]
     return sorted(
         rows,
         key=lambda row: (
-            -row["review_submissions"],
             -row["pull_requests_reviewed"],
+            -row["review_submissions"],
             row["reviewer_login"],
         ),
     )
@@ -948,106 +1164,11 @@ def _snapshot_row(snapshot: PullRequestSnapshot) -> dict[str, Any]:
     }
 
 
-def _github_get_paginated_json(
-    *,
-    token: str,
-    url: str,
-    accept: str = "application/vnd.github+json",
-) -> list[dict[str, Any]]:
-    items: list[dict[str, Any]] = []
-    next_url: str | None = f"{url}?per_page=100"
-    while next_url is not None:
-        payload, headers = _github_get_json_with_headers(
-            token=token,
-            url=next_url,
-            accept=accept,
-        )
-        items.extend(payload)
-        next_url = _next_link(headers.get("Link"))
-    return items
-
-
-def _github_get_json(
-    *,
-    token: str,
-    url: str,
-    query_params: dict[str, str] | None = None,
-) -> dict[str, Any]:
-    payload, _headers = _github_get_json_with_headers(
-        token=token,
-        url=url,
-        query_params=query_params,
-    )
-    return payload
-
-
-def _github_get_json_with_headers(
-    *,
-    token: str,
-    url: str,
-    query_params: dict[str, str] | None = None,
-    accept: str = "application/vnd.github+json",
-) -> tuple[Any, dict[str, str]]:
-    final_url = url
-    if query_params:
-        final_url = f"{url}?{urlencode(query_params)}"
-    for attempt in range(5):
-        request = Request(
-            final_url,
-            headers={
-                "Authorization": f"Bearer {token}",
-                "Accept": accept,
-                "User-Agent": "orgpulse-manual-dashboard",
-                "X-GitHub-Api-Version": "2022-11-28",
-            },
-        )
-        try:
-            with urlopen(request) as response:  # noqa: S310
-                return (
-                    json.loads(response.read().decode("utf-8")),
-                    dict(response.headers.items()),
-                )
-        except (http.client.RemoteDisconnected, URLError):
-            if attempt == 4:
-                raise
-            time.sleep(1.5 * (attempt + 1))
-        except HTTPError:
-            raise
-    raise RuntimeError(f"unreachable retry loop for {final_url}")
-
-
-def _next_link(link_header: str | None) -> str | None:
-    if not link_header:
-        return None
-    for part in link_header.split(","):
-        section = part.strip().split(";")
-        if len(section) < 2:
-            continue
-        if section[1].strip() == 'rel="next"':
-            return section[0].strip()[1:-1]
-    return None
-
-
-def _repository_full_name(repository_url: str) -> str:
-    path = urlparse(repository_url).path.strip("/")
-    owner, repo = path.split("/")[-2:]
-    return f"{owner}/{repo}"
-
-
-def _requested_reviewer_login(row: dict[str, Any]) -> str | None:
-    reviewer = row.get("requested_reviewer")
-    if not isinstance(reviewer, dict):
-        return None
-    login = reviewer.get("login")
-    if isinstance(login, str):
-        return login
-    return None
-
-
-def _parse_datetime(value: str | None) -> datetime | None:
-    if value in {None, "", "0001-01-01T00:00:00Z", "0001-01-01T00:00:00+00:00"}:
-        return None
-    return datetime.fromisoformat(value.replace("Z", "+00:00"))
+def _parse_datetime(value: str) -> datetime:
+    parsed = _parse_optional_datetime(value)
+    if parsed is None:
+        raise ValueError(f"expected an ISO datetime, received {value!r}")
+    return parsed
 
 
 def _hours_between(start_at: datetime | None, end_at: datetime | None) -> float | None:

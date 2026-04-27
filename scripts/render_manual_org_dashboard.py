@@ -69,15 +69,24 @@ def render_manual_dashboard_html(payload: dict[str, Any]) -> str:
     template = _template_environment().get_template("manual_org_dashboard.html.j2")
     return template.render(
         overview=payload["overview"],
-        insights=payload["insights"],
         authors=payload["authors"],
+        authors_roster_top=payload["authors_roster_top"],
+        authors_roster_rest=payload["authors_roster_rest"],
         reviewers=payload["reviewers"],
+        reviewers_top=payload["reviewers_top"],
+        reviewers_rest=payload["reviewers_rest"],
         repositories_top=payload["repositories_top"],
         repositories_rest=payload["repositories_rest"],
         size_buckets=payload["size_buckets"],
-        review_state_rows=payload["review_state_rows"],
         weekly_trends=payload["weekly_trends"],
         monthly_trends=payload["monthly_trends"],
+        weekly_trends_recent=payload["weekly_trends_recent"],
+        weekly_trends_older=payload["weekly_trends_older"],
+        monthly_trends_recent=payload["monthly_trends_recent"],
+        monthly_trends_older=payload["monthly_trends_older"],
+        methodology=payload["methodology"],
+        reference_summary=payload["reference_summary"],
+        size_diagnostic=payload["size_diagnostic"],
         default_author=payload["default_author"],
         author_details_json=Markup(payload["author_details_json"]),
     )
@@ -110,6 +119,7 @@ def prepare_manual_dashboard_payload(
         distribution_percentile=distribution_percentile,
         distribution_thresholds=distribution_thresholds,
     )
+    payload["reviewers"] = _sort_reviewers(payload["reviewers"])
     payload["repositories"] = _build_repository_rows(
         pull_requests,
         distribution_percentile=distribution_percentile,
@@ -120,7 +130,11 @@ def prepare_manual_dashboard_payload(
         distribution_percentile=distribution_percentile,
         distribution_thresholds=distribution_thresholds,
     )
-    payload["insights"] = _build_insights(payload)
+    payload["methodology"] = _build_methodology(payload)
+    payload["authors_roster_top"] = payload["authors"][:12]
+    payload["authors_roster_rest"] = payload["authors"][12:]
+    payload["reviewers_top"] = payload["reviewers"][:10]
+    payload["reviewers_rest"] = payload["reviewers"][10:]
     payload["repositories_top"] = payload["repositories"][:10]
     payload["repositories_rest"] = payload["repositories"][10:]
     payload["weekly_trends"] = _build_trend_rows(
@@ -135,6 +149,16 @@ def prepare_manual_dashboard_payload(
         distribution_percentile=distribution_percentile,
         distribution_thresholds=distribution_thresholds,
     )
+    payload["weekly_trends_recent"], payload["weekly_trends_older"] = _split_recent_rows(
+        payload["weekly_trends"],
+        recent_count=12,
+    )
+    payload["monthly_trends_recent"], payload["monthly_trends_older"] = _split_recent_rows(
+        payload["monthly_trends"],
+        recent_count=6,
+    )
+    payload["reference_summary"] = _build_reference_summary(payload)
+    payload["size_diagnostic"] = _build_size_diagnostic(payload["size_buckets"])
     payload["default_author"] = (
         payload["authors"][0]["author_login"] if payload["authors"] else None
     )
@@ -150,6 +174,17 @@ def prepare_manual_dashboard_payload(
         ensure_ascii=False,
     ).replace("</script>", "<\\/script>")
     return payload
+
+
+def _sort_reviewers(reviewers: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return sorted(
+        reviewers,
+        key=lambda reviewer: (
+            -int(reviewer.get("pull_requests_reviewed", 0)),
+            -int(reviewer.get("review_submissions", 0)),
+            str(reviewer.get("reviewer_login", "")),
+        ),
+    )
 
 
 def _build_overview(
@@ -233,6 +268,25 @@ def _build_overview(
             )
             if pull_requests
             else None
+        ),
+        "review_sla_24h_pct": _round(
+            (
+                sum(
+                    1
+                    for pull_request in pull_requests
+                    if pull_request["first_review_hours"] is not None
+                    and float(pull_request["first_review_hours"]) <= 24
+                )
+                / len(pull_requests)
+                * 100
+            )
+            if pull_requests
+            else None
+        ),
+        "stale_open_pull_requests": _stale_open_pull_requests(
+            pull_requests,
+            as_of=source_overview["until"],
+            threshold_hours=72,
         ),
         "merge_rate_pct": _round(
             (
@@ -825,6 +879,135 @@ def _build_insights(payload: dict[str, Any]) -> list[dict[str, str]]:
         }
     )
     return insights[:5]
+
+
+def _build_methodology(payload: dict[str, Any]) -> dict[str, Any]:
+    overview = payload["overview"]
+    return {
+        "window": f"{overview['since']} to {overview['until']}",
+        "anchor": overview["time_anchor"],
+        "distribution_percentile": overview["distribution_percentile"],
+        "generated_at": overview["generated_at"],
+    }
+
+
+def _build_reference_summary(payload: dict[str, Any]) -> dict[str, Any]:
+    overview = payload["overview"]
+    authors = payload["authors"]
+    reviewers = payload["reviewers"]
+    repositories = payload["repositories"]
+    return {
+        "author_roster_coverage_pct": _coverage_share(
+            authors,
+            value_key="pull_requests",
+            total=float(overview["pull_requests"]),
+            top_n=12,
+        ),
+        "reviewers_top_coverage_pct": _coverage_share(
+            reviewers,
+            value_key="pull_requests_reviewed",
+            total=float(sum(int(row["pull_requests_reviewed"]) for row in reviewers)),
+            top_n=10,
+        ),
+        "repositories_top_coverage_pct": _coverage_share(
+            repositories,
+            value_key="pull_requests",
+            total=float(overview["pull_requests"]),
+            top_n=10,
+        ),
+        "top3_author_share_pct": _coverage_share(
+            authors,
+            value_key="pull_requests",
+            total=float(overview["pull_requests"]),
+            top_n=3,
+        ),
+        "top3_repository_share_pct": _coverage_share(
+            repositories,
+            value_key="pull_requests",
+            total=float(overview["pull_requests"]),
+            top_n=3,
+        ),
+        "weekly_hidden_count": len(payload["weekly_trends_older"]),
+        "monthly_hidden_count": len(payload["monthly_trends_older"]),
+        "author_reference_count": len(payload["authors"]),
+    }
+
+
+def _build_size_diagnostic(size_buckets: list[dict[str, Any]]) -> dict[str, Any]:
+    rows_with_latency = [
+        row
+        for row in size_buckets
+        if row["pull_requests"] and row["median_first_review_hours"] is not None
+    ]
+    if not rows_with_latency:
+        return {
+            "headline": "No review-latency size signal available in this window.",
+            "supporting": "This window does not contain enough reviewed PR size data to compare latency by bucket.",
+        }
+    slowest_row = max(rows_with_latency, key=lambda row: row["median_first_review_hours"])
+    fastest_row = min(rows_with_latency, key=lambda row: row["median_first_review_hours"])
+    gap = None
+    if (
+        slowest_row["median_first_review_hours"] is not None
+        and fastest_row["median_first_review_hours"] is not None
+    ):
+        gap = _round(
+            float(slowest_row["median_first_review_hours"])
+            - float(fastest_row["median_first_review_hours"])
+        )
+    return {
+        "headline": (
+            f"{slowest_row['bucket']} PRs waited the longest for first review at "
+            f"{_format_duration(slowest_row['median_first_review_hours'])} median."
+        ),
+        "supporting": (
+            "Compared with "
+            f"{fastest_row['bucket']} at {_format_duration(fastest_row['median_first_review_hours'])}, "
+            f"the gap is {_format_duration(gap) if gap is not None else '-'}."
+        ),
+    }
+
+
+def _split_recent_rows(
+    rows: list[dict[str, Any]],
+    *,
+    recent_count: int,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    if len(rows) <= recent_count:
+        return rows, []
+    return rows[-recent_count:], rows[:-recent_count]
+
+
+def _coverage_share(
+    rows: list[dict[str, Any]],
+    *,
+    value_key: str,
+    total: float,
+    top_n: int,
+) -> float | None:
+    if not rows or total <= 0:
+        return None
+    covered = sum(float(row.get(value_key, 0) or 0) for row in rows[:top_n])
+    return _round(covered / total * 100)
+
+
+def _stale_open_pull_requests(
+    pull_requests: list[dict[str, Any]],
+    *,
+    as_of: str,
+    threshold_hours: int,
+) -> int:
+    as_of_datetime = datetime.fromisoformat(f"{as_of}T23:59:59+00:00")
+    return sum(
+        1
+        for pull_request in pull_requests
+        if pull_request["state"] == "open"
+        and (
+            as_of_datetime - _parse_datetime(str(pull_request["created_at"]))
+        ).total_seconds()
+        / 3600
+        >= threshold_hours
+    )
 
 
 def _trimmed_values(

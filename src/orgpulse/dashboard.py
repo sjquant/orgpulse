@@ -37,6 +37,9 @@ from orgpulse.models import (
     TimeAnchor,
 )
 
+DASHBOARD_SOURCE_GRAIN = PeriodGrain.MONTH
+DASHBOARD_SOURCE_TIME_ANCHOR = TimeAnchor.CREATED_AT
+
 
 @dataclass(frozen=True)
 class PullRequestReview:
@@ -308,17 +311,9 @@ def _load_source_manifest(
     org: str,
     source_output_dir: Path,
 ) -> RunManifest:
-    manifest_path = (
-        source_output_dir
-        / "manifest"
-        / "month"
-        / "created_at"
-        / "manifest.json"
-    )
+    manifest_path = _dashboard_manifest_path(source_output_dir)
     if not manifest_path.exists():
-        available_manifest_paths = sorted(
-            source_output_dir.glob("manifest/*/*/manifest.json")
-        )
+        available_manifest_paths = _available_manifest_paths(source_output_dir)
         if available_manifest_paths:
             raise RuntimeError(
                 "dashboard currently supports only month/created_at local outputs. "
@@ -338,15 +333,29 @@ def _load_source_manifest(
             "local manifest org does not match the requested org: "
             f"expected {org}, found {manifest.target_org}"
         )
-    if manifest.period_grain is not PeriodGrain.MONTH:
+    if manifest.period_grain is not DASHBOARD_SOURCE_GRAIN:
         raise RuntimeError(
             "dashboard currently supports only month-grain local outputs."
         )
-    if manifest.time_anchor is not TimeAnchor.CREATED_AT:
+    if manifest.time_anchor is not DASHBOARD_SOURCE_TIME_ANCHOR:
         raise RuntimeError(
             "dashboard currently supports only created_at local outputs."
         )
     return manifest
+
+
+def _dashboard_manifest_path(source_output_dir: Path) -> Path:
+    return (
+        source_output_dir
+        / "manifest"
+        / DASHBOARD_SOURCE_GRAIN.value
+        / DASHBOARD_SOURCE_TIME_ANCHOR.value
+        / "manifest.json"
+    )
+
+
+def _available_manifest_paths(source_output_dir: Path) -> list[Path]:
+    return sorted(source_output_dir.glob("manifest/*/*/manifest.json"))
 
 
 def _try_load_source_manifest(
@@ -354,13 +363,7 @@ def _try_load_source_manifest(
     org: str,
     source_output_dir: Path,
 ) -> RunManifest | None:
-    manifest_path = (
-        source_output_dir
-        / "manifest"
-        / "month"
-        / "created_at"
-        / "manifest.json"
-    )
+    manifest_path = _dashboard_manifest_path(source_output_dir)
     if not manifest_path.exists():
         return None
     return _load_source_manifest(
@@ -432,12 +435,16 @@ def _period_keys_for_window(
     until: date,
 ) -> list[str]:
     keys: list[str] = []
-    cursor = since.replace(day=1)
-    until_month_start = until.replace(day=1)
+    cursor = _month_start(since)
+    until_month_start = _month_start(until)
     while cursor <= until_month_start:
         keys.append(cursor.strftime("%Y-%m"))
         cursor = _next_month_start(cursor)
     return keys
+
+
+def _month_start(current: date) -> date:
+    return current.replace(day=1)
 
 
 def _next_month_start(current: date) -> date:
@@ -453,29 +460,13 @@ def _load_local_snapshots(
 ) -> list[PullRequestSnapshot]:
     snapshots: list[PullRequestSnapshot] = []
     for period_key in _period_keys_for_window(since=since, until=until):
-        period = period_index[period_key]
-        pull_request_rows = _read_csv_rows(period.pull_requests_path)
-        review_rows = _read_csv_rows(period.reviews_path)
-        timeline_rows = _read_csv_rows(period.timeline_events_path)
-        reviews_by_pull_request = _reviews_by_pull_request(review_rows)
-        timeline_events_by_pull_request = _timeline_events_by_pull_request(timeline_rows)
-        for pull_request_row in pull_request_rows:
-            created_at = _parse_datetime(pull_request_row["created_at"])
-            if created_at.date() < since or created_at.date() > until:
-                continue
-            pull_request_key = _pull_request_key(
-                repository_full_name=pull_request_row["repository_full_name"],
-                pull_request_number=pull_request_row["pull_request_number"],
+        snapshots.extend(
+            _period_snapshots(
+                period=period_index[period_key],
+                since=since,
+                until=until,
             )
-            reviews = reviews_by_pull_request.get(pull_request_key, [])
-            timeline_events = timeline_events_by_pull_request.get(pull_request_key, [])
-            snapshots.append(
-                _snapshot_from_local_rows(
-                    pull_request_row,
-                    reviews=reviews,
-                    timeline_events=timeline_events,
-                )
-            )
+        )
     return sorted(
         snapshots,
         key=lambda snapshot: (
@@ -484,6 +475,39 @@ def _load_local_snapshots(
             snapshot.number,
         ),
     )
+
+
+def _period_snapshots(
+    *,
+    period: RawSnapshotPeriod,
+    since: date,
+    until: date,
+) -> list[PullRequestSnapshot]:
+    pull_request_rows = _read_csv_rows(period.pull_requests_path)
+    review_rows = _read_csv_rows(period.reviews_path)
+    timeline_rows = _read_csv_rows(period.timeline_events_path)
+    reviews_by_pull_request = _reviews_by_pull_request(review_rows)
+    timeline_events_by_pull_request = _timeline_events_by_pull_request(timeline_rows)
+    snapshots: list[PullRequestSnapshot] = []
+    for pull_request_row in pull_request_rows:
+        created_at = _parse_datetime(pull_request_row["created_at"])
+        if created_at.date() < since or created_at.date() > until:
+            continue
+        pull_request_key = _pull_request_key(
+            repository_full_name=pull_request_row["repository_full_name"],
+            pull_request_number=pull_request_row["pull_request_number"],
+        )
+        snapshots.append(
+            _snapshot_from_local_rows(
+                pull_request_row,
+                reviews=reviews_by_pull_request.get(pull_request_key, []),
+                timeline_events=timeline_events_by_pull_request.get(
+                    pull_request_key,
+                    [],
+                ),
+            )
+        )
+    return snapshots
 
 
 def _read_csv_rows(path: Path) -> list[dict[str, str]]:

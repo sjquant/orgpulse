@@ -17,6 +17,11 @@ from orgpulse.distribution import (
     validate_distribution_percentile,
 )
 
+AUTHOR_ROSTER_LIMIT = 12
+LEADERBOARD_LIMIT = 10
+WEEKLY_RECENT_TREND_COUNT = 12
+MONTHLY_RECENT_TREND_COUNT = 6
+
 
 def main() -> None:
     args = _parse_args()
@@ -116,77 +121,117 @@ def prepare_manual_dashboard_payload(
         pull_requests,
         distribution_percentile=distribution_percentile,
     )
+    payload.update(
+        _build_dashboard_sections(
+            payload,
+            pull_requests=pull_requests,
+            distribution_percentile=distribution_percentile,
+            distribution_thresholds=distribution_thresholds,
+        )
+    )
     payload["distribution_percentile"] = distribution_percentile
-    payload["overview"] = _build_overview(
-        payload,
-        pull_requests=pull_requests,
-        distribution_percentile=distribution_percentile,
-        distribution_thresholds=distribution_thresholds,
-    )
-    payload["authors"] = _build_author_rows(
-        pull_requests,
-        distribution_percentile=distribution_percentile,
-        distribution_thresholds=distribution_thresholds,
-    )
-    payload["reviewers"] = _sort_reviewers(payload["reviewers"])
-    payload["repositories"] = _build_repository_rows(
-        pull_requests,
-        distribution_percentile=distribution_percentile,
-        distribution_thresholds=distribution_thresholds,
-    )
-    payload["size_buckets"] = _build_size_bucket_rows(
-        pull_requests,
-        distribution_percentile=distribution_percentile,
-        distribution_thresholds=distribution_thresholds,
-    )
-    payload["methodology"] = _build_methodology(payload)
-    payload["authors_roster_top"] = payload["authors"][:12]
-    payload["authors_roster_rest"] = payload["authors"][12:]
-    payload["reviewers_top"] = payload["reviewers"][:10]
-    payload["reviewers_rest"] = payload["reviewers"][10:]
-    payload["repositories_top"] = payload["repositories"][:10]
-    payload["repositories_rest"] = payload["repositories"][10:]
-    payload["weekly_trends"] = _build_trend_rows(
-        pull_requests,
-        grain="week",
-        distribution_percentile=distribution_percentile,
-        distribution_thresholds=distribution_thresholds,
-    )
-    payload["monthly_trends"] = _build_trend_rows(
-        pull_requests,
-        grain="month",
-        distribution_percentile=distribution_percentile,
-        distribution_thresholds=distribution_thresholds,
-    )
     payload["overview"] = _build_team_normalized_overview(
         payload["overview"],
         monthly_trends=payload["monthly_trends"],
     )
-    payload["weekly_trends_recent"], payload["weekly_trends_older"] = _split_recent_rows(
-        payload["weekly_trends"],
-        recent_count=12,
-    )
-    payload["monthly_trends_recent"], payload["monthly_trends_older"] = _split_recent_rows(
-        payload["monthly_trends"],
-        recent_count=6,
-    )
+    _attach_dashboard_slices(payload)
+    payload["methodology"] = _build_methodology(payload)
     payload["reference_summary"] = _build_reference_summary(payload)
     payload["size_diagnostic"] = _build_size_diagnostic(payload["size_buckets"])
     payload["default_author"] = (
         payload["authors"][0]["author_login"] if payload["authors"] else None
     )
-    author_details = _build_author_details(
+    payload["author_details_json"] = _build_author_details_json(
         authors=payload["authors"],
         reviewers=payload["reviewers"],
         pull_requests=pull_requests,
         distribution_percentile=distribution_percentile,
         distribution_thresholds=distribution_thresholds,
     )
-    payload["author_details_json"] = json.dumps(
+    return payload
+
+
+def _build_dashboard_sections(
+    payload: dict[str, Any],
+    *,
+    pull_requests: list[dict[str, Any]],
+    distribution_percentile: int,
+    distribution_thresholds: dict[str, float | None],
+) -> dict[str, Any]:
+    return {
+        "overview": _build_overview(
+            payload,
+            pull_requests=pull_requests,
+            distribution_percentile=distribution_percentile,
+            distribution_thresholds=distribution_thresholds,
+        ),
+        "authors": _build_author_rows(
+            pull_requests,
+            distribution_percentile=distribution_percentile,
+            distribution_thresholds=distribution_thresholds,
+        ),
+        "reviewers": _sort_reviewers(payload["reviewers"]),
+        "repositories": _build_repository_rows(
+            pull_requests,
+            distribution_percentile=distribution_percentile,
+            distribution_thresholds=distribution_thresholds,
+        ),
+        "size_buckets": _build_size_bucket_rows(
+            pull_requests,
+            distribution_percentile=distribution_percentile,
+            distribution_thresholds=distribution_thresholds,
+        ),
+        "weekly_trends": _build_trend_rows(
+            pull_requests,
+            grain="week",
+            distribution_percentile=distribution_percentile,
+            distribution_thresholds=distribution_thresholds,
+        ),
+        "monthly_trends": _build_trend_rows(
+            pull_requests,
+            grain="month",
+            distribution_percentile=distribution_percentile,
+            distribution_thresholds=distribution_thresholds,
+        ),
+    }
+
+
+def _attach_dashboard_slices(payload: dict[str, Any]) -> None:
+    payload["authors_roster_top"] = payload["authors"][:AUTHOR_ROSTER_LIMIT]
+    payload["authors_roster_rest"] = payload["authors"][AUTHOR_ROSTER_LIMIT:]
+    payload["reviewers_top"] = payload["reviewers"][:LEADERBOARD_LIMIT]
+    payload["reviewers_rest"] = payload["reviewers"][LEADERBOARD_LIMIT:]
+    payload["repositories_top"] = payload["repositories"][:LEADERBOARD_LIMIT]
+    payload["repositories_rest"] = payload["repositories"][LEADERBOARD_LIMIT:]
+    payload["weekly_trends_recent"], payload["weekly_trends_older"] = _split_recent_rows(
+        payload["weekly_trends"],
+        recent_count=WEEKLY_RECENT_TREND_COUNT,
+    )
+    payload["monthly_trends_recent"], payload["monthly_trends_older"] = _split_recent_rows(
+        payload["monthly_trends"],
+        recent_count=MONTHLY_RECENT_TREND_COUNT,
+    )
+
+
+def _build_author_details_json(
+    *,
+    authors: list[dict[str, Any]],
+    reviewers: list[dict[str, Any]],
+    pull_requests: list[dict[str, Any]],
+    distribution_percentile: int,
+    distribution_thresholds: dict[str, float | None],
+) -> str:
+    author_details = _build_author_details(
+        authors=authors,
+        reviewers=reviewers,
+        pull_requests=pull_requests,
+        distribution_percentile=distribution_percentile,
+        distribution_thresholds=distribution_thresholds,
+    )
+    return json.dumps(
         author_details,
         ensure_ascii=False,
     ).replace("</script>", "<\\/script>")
-    return payload
 
 
 def _sort_reviewers(reviewers: list[dict[str, Any]]) -> list[dict[str, Any]]:

@@ -4,8 +4,9 @@ import csv
 import json
 import re
 import shutil
-from datetime import datetime
+from datetime import date, datetime, timedelta
 from io import StringIO
+from pathlib import Path
 from unittest.mock import create_autospec
 
 import pytest
@@ -15,7 +16,12 @@ from typer.testing import CliRunner
 from orgpulse.cli import app, build_run_config
 from orgpulse.errors import AuthResolutionError, GitHubApiError
 from orgpulse.github_auth import GitHubAuthService
-from orgpulse.ingestion import PULL_REQUEST_FIELDNAMES, NormalizedRawSnapshotWriter
+from orgpulse.ingestion import (
+    PULL_REQUEST_FIELDNAMES,
+    PULL_REQUEST_REVIEW_FIELDNAMES,
+    PULL_REQUEST_TIMELINE_EVENT_FIELDNAMES,
+    NormalizedRawSnapshotWriter,
+)
 from orgpulse.metrics import (
     OrganizationMetricCollectionBuilder,
     PullRequestMetricCollectionBuilder,
@@ -35,7 +41,9 @@ from orgpulse.models import (
     PullRequestRecord,
     PullRequestReviewRecord,
     PullRequestTimelineEventRecord,
+    RawSnapshotPeriod,
     RawSnapshotWriteResult,
+    ReportingPeriod,
     RepositoryCollectionFailure,
     RepositoryInventory,
     RepositorySummaryCsvWriteResult,
@@ -4311,6 +4319,534 @@ class TestAnalyzeCommand:
         assert result.exit_code == 1
         assert "orgpulse: analysis input failed" in result.stderr
         assert "Run `orgpulse run`" in result.stderr
+
+
+class TestDashboardCommand:
+    def test_renders_dashboard_exports_from_local_outputs_without_refresh(
+        self,
+        runner: CliRunner,
+        tmp_path,
+    ) -> None:
+        """Render dashboard JSON, CSV, and HTML artifacts from local snapshot outputs."""
+        # Given
+        source_output_dir = tmp_path / "source"
+        report_output_dir = tmp_path / "report"
+        _write_dashboard_source_period(
+            period_dir=source_output_dir / "raw" / "month" / "created_at" / "2026-03",
+            pull_request_rows=[
+                _dashboard_pull_request_row(
+                    period_key="2026-03",
+                    repository_full_name="acme/api",
+                    pull_request_number=1,
+                    author_login="alice",
+                    created_at="2026-03-20T09:00:00+00:00",
+                    updated_at="2026-03-20T12:00:00+00:00",
+                    closed_at="2026-03-20T12:00:00+00:00",
+                    merged_at="2026-03-20T12:00:00+00:00",
+                    additions=30,
+                    deletions=10,
+                    changed_files=3,
+                    commits=2,
+                ),
+            ],
+            review_rows=[
+                _dashboard_review_row(
+                    period_key="2026-03",
+                    repository_full_name="acme/api",
+                    pull_request_number=1,
+                    review_id=101,
+                    author_login="reviewer-1",
+                    submitted_at="2026-03-20T10:00:00+00:00",
+                ),
+            ],
+            timeline_rows=[],
+        )
+        _write_dashboard_source_manifest(
+            source_output_dir=source_output_dir,
+            refreshed_period_keys=("2026-03",),
+            locked_period_keys=(),
+            as_of="2026-03-31",
+        )
+
+        # When
+        result = runner.invoke(
+            app,
+            [
+                "dashboard",
+                "--org",
+                "acme",
+                "--since",
+                "2026-03-01",
+                "--until",
+                "2026-03-31",
+                "--source-output-dir",
+                str(source_output_dir),
+                "--output-dir",
+                str(report_output_dir),
+                "--no-refresh",
+                "--distribution-percentile",
+                "99",
+            ],
+        )
+
+        # Then
+        payload = json.loads(result.stdout)
+        assert result.exit_code == 0
+        assert payload["distribution_percentile"] == 99
+        assert payload["pull_requests"] == 1
+        assert payload["json_path"].endswith("acme-created-at-since-2026-03-01.json")
+        assert Path(payload["json_path"]).exists()
+        assert Path(payload["csv_path"]).exists()
+        assert Path(payload["html_path"]).exists()
+        assert json.loads(Path(payload["json_path"]).read_text(encoding="utf-8"))[
+            "overview"
+        ]["org"] == "acme"
+        assert (
+            "Lines / Active Author"
+            in Path(payload["html_path"]).read_text(encoding="utf-8")
+        )
+
+    def test_ignores_run_mode_environment_when_rendering_dashboard(
+        self,
+        runner: CliRunner,
+        tmp_path,
+    ) -> None:
+        """Render the dashboard without inheriting unrelated ORGPULSE run-mode defaults."""
+        # Given
+        source_output_dir = tmp_path / "source"
+        report_output_dir = tmp_path / "report"
+        _write_dashboard_source_period(
+            period_dir=source_output_dir / "raw" / "month" / "created_at" / "2026-03",
+            pull_request_rows=[
+                _dashboard_pull_request_row(
+                    period_key="2026-03",
+                    repository_full_name="acme/api",
+                    pull_request_number=1,
+                    author_login="alice",
+                    created_at="2026-03-20T09:00:00+00:00",
+                    updated_at="2026-03-20T12:00:00+00:00",
+                    closed_at="2026-03-20T12:00:00+00:00",
+                    merged_at="2026-03-20T12:00:00+00:00",
+                    additions=30,
+                    deletions=10,
+                    changed_files=3,
+                    commits=2,
+                ),
+            ],
+            review_rows=[],
+            timeline_rows=[],
+        )
+        _write_dashboard_source_manifest(
+            source_output_dir=source_output_dir,
+            refreshed_period_keys=("2026-03",),
+            locked_period_keys=(),
+            as_of="2026-03-31",
+        )
+
+        # When
+        result = runner.invoke(
+            app,
+            [
+                "dashboard",
+                "--org",
+                "acme",
+                "--since",
+                "2026-03-01",
+                "--until",
+                "2026-03-31",
+                "--source-output-dir",
+                str(source_output_dir),
+                "--output-dir",
+                str(report_output_dir),
+                "--no-refresh",
+            ],
+            env={"ORGPULSE_MODE": "backfill"},
+        )
+
+        # Then
+        payload = json.loads(result.stdout)
+        assert result.exit_code == 0
+        assert payload["pull_requests"] == 1
+
+    def test_fails_when_local_dashboard_history_has_coverage_gaps(
+        self,
+        runner: CliRunner,
+        tmp_path,
+    ) -> None:
+        """Fail with a clear error when local dashboard source periods do not cover the requested window."""
+        # Given
+        source_output_dir = tmp_path / "source"
+        _write_dashboard_source_period(
+            period_dir=source_output_dir / "raw" / "month" / "created_at" / "2026-04",
+            pull_request_rows=[
+                _dashboard_pull_request_row(
+                    period_key="2026-04",
+                    repository_full_name="acme/web",
+                    pull_request_number=2,
+                    author_login="bob",
+                    created_at="2026-04-03T09:00:00+00:00",
+                    updated_at="2026-04-03T15:00:00+00:00",
+                    closed_at="2026-04-03T15:00:00+00:00",
+                    merged_at="2026-04-03T15:00:00+00:00",
+                    additions=20,
+                    deletions=10,
+                    changed_files=2,
+                    commits=1,
+                ),
+            ],
+            review_rows=[],
+            timeline_rows=[],
+        )
+        _write_dashboard_source_manifest(
+            source_output_dir=source_output_dir,
+            refreshed_period_keys=("2026-04",),
+            locked_period_keys=(),
+            as_of="2026-04-18",
+        )
+
+        # When
+        result = runner.invoke(
+            app,
+            [
+                "dashboard",
+                "--org",
+                "acme",
+                "--since",
+                "2026-03-01",
+                "--until",
+                "2026-04-18",
+                "--source-output-dir",
+                str(source_output_dir),
+                "--output-dir",
+                str(tmp_path / "report"),
+                "--no-refresh",
+            ],
+        )
+
+        # Then
+        assert result.exit_code == 1
+        assert "orgpulse: dashboard generation failed" in result.stderr
+        assert "Missing periods: 2026-03" in result.stderr
+
+    def test_fails_for_unsupported_weekly_dashboard_source_outputs(
+        self,
+        runner: CliRunner,
+        tmp_path,
+    ) -> None:
+        """Reject weekly dashboard sources with a clear month-grain restriction."""
+        # Given
+        source_output_dir = tmp_path / "source"
+        _write_dashboard_source_manifest(
+            source_output_dir=source_output_dir,
+            refreshed_period_keys=("2026-W16",),
+            locked_period_keys=(),
+            as_of="2026-04-18",
+            period_grain=PeriodGrain.WEEK,
+        )
+
+        # When
+        result = runner.invoke(
+            app,
+            [
+                "dashboard",
+                "--org",
+                "acme",
+                "--since",
+                "2026-04-01",
+                "--until",
+                "2026-04-18",
+                "--source-output-dir",
+                str(source_output_dir),
+                "--output-dir",
+                str(tmp_path / "report"),
+                "--no-refresh",
+            ],
+        )
+
+        # Then
+        assert result.exit_code == 1
+        assert "dashboard currently supports only month/created_at local outputs" in result.stderr
+
+
+class TestDashboardRenderCommand:
+    def test_renders_html_from_existing_dashboard_json(
+        self,
+        runner: CliRunner,
+        tmp_path,
+    ) -> None:
+        """Render dashboard HTML directly from an existing dashboard JSON payload."""
+        # Given
+        source_output_dir = tmp_path / "source"
+        report_output_dir = tmp_path / "report"
+        _write_dashboard_source_period(
+            period_dir=source_output_dir / "raw" / "month" / "created_at" / "2026-03",
+            pull_request_rows=[
+                _dashboard_pull_request_row(
+                    period_key="2026-03",
+                    repository_full_name="acme/api",
+                    pull_request_number=1,
+                    author_login="alice",
+                    created_at="2026-03-20T09:00:00+00:00",
+                    updated_at="2026-03-20T12:00:00+00:00",
+                    closed_at="2026-03-20T12:00:00+00:00",
+                    merged_at="2026-03-20T12:00:00+00:00",
+                    additions=30,
+                    deletions=10,
+                    changed_files=3,
+                    commits=2,
+                ),
+            ],
+            review_rows=[],
+            timeline_rows=[],
+        )
+        _write_dashboard_source_manifest(
+            source_output_dir=source_output_dir,
+            refreshed_period_keys=("2026-03",),
+            locked_period_keys=(),
+            as_of="2026-03-31",
+        )
+        generate_result = runner.invoke(
+            app,
+            [
+                "dashboard",
+                "--org",
+                "acme",
+                "--since",
+                "2026-03-01",
+                "--until",
+                "2026-03-31",
+                "--source-output-dir",
+                str(source_output_dir),
+                "--output-dir",
+                str(report_output_dir),
+                "--no-refresh",
+            ],
+        )
+        generated_payload = json.loads(generate_result.stdout)
+        rendered_html_path = tmp_path / "rerendered.html"
+
+        # When
+        result = runner.invoke(
+            app,
+            [
+                "dashboard-render",
+                "--input-json",
+                generated_payload["json_path"],
+                "--output-html",
+                str(rendered_html_path),
+                "--distribution-percentile",
+                "99",
+            ],
+        )
+
+        # Then
+        payload = json.loads(result.stdout)
+        assert result.exit_code == 0
+        assert payload["distribution_percentile"] == 99
+        assert Path(payload["output_html"]).exists()
+        assert "Lines / Active Author" in rendered_html_path.read_text(encoding="utf-8")
+
+
+def _write_dashboard_source_period(
+    *,
+    period_dir: Path,
+    pull_request_rows: list[dict[str, str]],
+    review_rows: list[dict[str, str]],
+    timeline_rows: list[dict[str, str]],
+) -> None:
+    period_dir.mkdir(parents=True, exist_ok=True)
+    _write_dashboard_csv(
+        path=period_dir / "pull_requests.csv",
+        fieldnames=PULL_REQUEST_FIELDNAMES,
+        rows=pull_request_rows,
+    )
+    _write_dashboard_csv(
+        path=period_dir / "pull_request_reviews.csv",
+        fieldnames=PULL_REQUEST_REVIEW_FIELDNAMES,
+        rows=review_rows,
+    )
+    _write_dashboard_csv(
+        path=period_dir / "pull_request_timeline_events.csv",
+        fieldnames=PULL_REQUEST_TIMELINE_EVENT_FIELDNAMES,
+        rows=timeline_rows,
+    )
+
+
+def _write_dashboard_csv(
+    *,
+    path: Path,
+    fieldnames: tuple[str, ...],
+    rows: list[dict[str, str]],
+) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(rows)
+
+
+def _write_dashboard_source_manifest(
+    *,
+    source_output_dir: Path,
+    refreshed_period_keys: tuple[str, ...],
+    locked_period_keys: tuple[str, ...],
+    as_of: str,
+    period_grain: PeriodGrain = PeriodGrain.MONTH,
+) -> None:
+    raw_root_dir = source_output_dir / "raw" / period_grain.value / "created_at"
+    manifest = RunManifest(
+        target_org="acme",
+        period_grain=period_grain,
+        time_anchor=TimeAnchor.CREATED_AT,
+        include_repos=(),
+        exclude_repos=(),
+        raw_snapshot_root_dir=raw_root_dir,
+        refreshed_periods=tuple(
+            _dashboard_raw_snapshot_period(
+                raw_root_dir=raw_root_dir,
+                key=key,
+                closed=False,
+                period_grain=period_grain,
+            )
+            for key in refreshed_period_keys
+        ),
+        locked_periods=tuple(
+            _dashboard_reporting_period(
+                key=key,
+                closed=True,
+                period_grain=period_grain,
+            )
+            for key in locked_period_keys
+        ),
+        watermarks=ManifestWatermarks(
+            collection_window_start_date=date.fromisoformat("2026-03-01"),
+            collection_window_end_date=date.fromisoformat(as_of),
+            latest_refreshed_period_end_date=date.fromisoformat(as_of),
+            latest_locked_period_end_date=None,
+        ),
+        last_successful_run=LastSuccessfulRun(
+            completed_at=datetime.fromisoformat("2026-04-18T00:00:00+00:00"),
+            as_of=date.fromisoformat(as_of),
+            mode=RunMode.INCREMENTAL,
+            refresh_scope=RunScope.OPEN_PERIOD,
+            repository_count=1,
+            pull_request_count=1,
+        ),
+    )
+    manifest_dir = source_output_dir / "manifest" / period_grain.value / "created_at"
+    manifest_dir.mkdir(parents=True, exist_ok=True)
+    (manifest_dir / "manifest.json").write_text(
+        json.dumps(manifest.model_dump(mode="json"), indent=2),
+        encoding="utf-8",
+    )
+
+
+def _dashboard_reporting_period(
+    *,
+    key: str,
+    closed: bool,
+    period_grain: PeriodGrain = PeriodGrain.MONTH,
+) -> ReportingPeriod:
+    if period_grain is PeriodGrain.MONTH:
+        start_date = date.fromisoformat(f"{key}-01")
+        next_period_start = (start_date.replace(day=28) + timedelta(days=4)).replace(day=1)
+        end_date = next_period_start - timedelta(days=1)
+    else:
+        iso_year, iso_week = key.split("-W", maxsplit=1)
+        start_date = datetime.fromisocalendar(int(iso_year), int(iso_week), 1).date()
+        end_date = start_date + timedelta(days=6)
+    return ReportingPeriod(
+        grain=period_grain,
+        key=key,
+        start_date=start_date,
+        end_date=end_date,
+        closed=closed,
+    )
+
+
+def _dashboard_raw_snapshot_period(
+    *,
+    raw_root_dir: Path,
+    key: str,
+    closed: bool,
+    period_grain: PeriodGrain = PeriodGrain.MONTH,
+) -> RawSnapshotPeriod:
+    reporting_period = _dashboard_reporting_period(
+        key=key,
+        closed=closed,
+        period_grain=period_grain,
+    )
+    period_dir = raw_root_dir / key
+    return RawSnapshotPeriod(
+        key=reporting_period.key,
+        start_date=reporting_period.start_date,
+        end_date=reporting_period.end_date,
+        closed=reporting_period.closed,
+        directory=period_dir,
+        pull_requests_path=period_dir / "pull_requests.csv",
+        pull_request_count=0,
+        reviews_path=period_dir / "pull_request_reviews.csv",
+        review_count=0,
+        timeline_events_path=period_dir / "pull_request_timeline_events.csv",
+        timeline_event_count=0,
+    )
+
+
+def _dashboard_pull_request_row(
+    *,
+    period_key: str,
+    repository_full_name: str,
+    pull_request_number: int,
+    author_login: str,
+    created_at: str,
+    updated_at: str,
+    closed_at: str | None,
+    merged_at: str | None,
+    additions: int,
+    deletions: int,
+    changed_files: int,
+    commits: int,
+) -> dict[str, str]:
+    return {
+        "period_key": period_key,
+        "repository_full_name": repository_full_name,
+        "pull_request_number": str(pull_request_number),
+        "title": f"PR {pull_request_number}",
+        "state": "closed" if closed_at is not None else "open",
+        "draft": "false",
+        "merged": "true" if merged_at is not None else "false",
+        "author_login": author_login,
+        "created_at": created_at,
+        "updated_at": updated_at,
+        "closed_at": closed_at or "",
+        "merged_at": merged_at or "",
+        "additions": str(additions),
+        "deletions": str(deletions),
+        "changed_files": str(changed_files),
+        "commits": str(commits),
+        "html_url": f"https://example.test/pr/{pull_request_number}",
+    }
+
+
+def _dashboard_review_row(
+    *,
+    period_key: str,
+    repository_full_name: str,
+    pull_request_number: int,
+    review_id: int,
+    author_login: str,
+    submitted_at: str,
+) -> dict[str, str]:
+    return {
+        "period_key": period_key,
+        "repository_full_name": repository_full_name,
+        "pull_request_number": str(pull_request_number),
+        "review_id": str(review_id),
+        "state": "APPROVED",
+        "author_login": author_login,
+        "submitted_at": submitted_at,
+        "commit_id": "",
+    }
 
 
 def _configure_production_cli_runtime(

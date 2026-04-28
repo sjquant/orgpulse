@@ -12,10 +12,6 @@ from typing import Any
 
 from github import Auth, Github
 from pydantic import ValidationError
-from render_manual_org_dashboard import (
-    prepare_manual_dashboard_payload,
-    render_manual_dashboard_html,
-)
 
 from orgpulse.cli import (
     _build_metric_outputs,
@@ -28,7 +24,18 @@ from orgpulse.cli import (
 from orgpulse.errors import AuthResolutionError, GitHubApiError, OrgTargetingError
 from orgpulse.github_auth import GitHubAuthService, resolve_auth_token
 from orgpulse.ingestion import GitHubIngestionService
-from orgpulse.models import RawSnapshotPeriod, ReportingPeriod, RunManifest, RunMode
+from orgpulse.manual_dashboard import (
+    prepare_manual_dashboard_payload,
+    render_manual_dashboard_html,
+)
+from orgpulse.models import (
+    PeriodGrain,
+    RawSnapshotPeriod,
+    ReportingPeriod,
+    RunManifest,
+    RunMode,
+    TimeAnchor,
+)
 
 
 @dataclass(frozen=True)
@@ -78,36 +85,50 @@ class PullRequestSnapshot:
     reviews: tuple[PullRequestReview, ...]
 
 
+DASHBOARD_PULL_REQUEST_FIELDNAMES = (
+    "repository_full_name",
+    "pull_request_number",
+    "title",
+    "author_login",
+    "state",
+    "created_at",
+    "updated_at",
+    "closed_at",
+    "merged_at",
+    "html_url",
+    "additions",
+    "deletions",
+    "changed_files",
+    "changed_lines",
+    "commits",
+    "review_count",
+    "approval_count",
+    "changes_requested_count",
+    "comment_review_count",
+    "reviewer_count",
+    "first_review_hours",
+    "merge_hours",
+    "close_hours",
+    "review_rounds",
+    "review_ready_at",
+    "review_requested_at",
+    "size_bucket",
+)
+
+
 def main() -> None:
     args = _parse_args()
-    since = date.fromisoformat(args.since)
-    until = date.fromisoformat(args.until)
-    source_manifest = _try_load_source_manifest(
+    result = generate_manual_dashboard_report(
         org=args.org,
+        since=date.fromisoformat(args.since),
+        until=date.fromisoformat(args.until),
         source_output_dir=args.source_output_dir,
-    )
-    try:
-        if args.refresh:
-            _refresh_local_source_outputs(
-                org=args.org,
-                as_of=date.today(),
-                source_output_dir=args.source_output_dir,
-                source_manifest=source_manifest,
-            )
-    except (AuthResolutionError, GitHubApiError, OrgTargetingError) as exc:
-        raise RuntimeError(f"failed to refresh local source outputs: {exc}") from exc
-    payload = build_manual_dashboard_payload_from_local_outputs(
-        org=args.org,
-        since=since,
-        until=until,
-        source_output_dir=args.source_output_dir,
-    )
-    _write_outputs(
         output_dir=args.output_dir,
         base_name=args.base_name,
-        payload=payload,
+        refresh=args.refresh,
         distribution_percentile=args.distribution_percentile,
     )
+    print(json.dumps(result, ensure_ascii=False))
 
 
 def _parse_args() -> argparse.Namespace:
@@ -142,6 +163,45 @@ def _parse_args() -> argparse.Namespace:
         help="Upper-tail percentile retained for distribution-based metrics in HTML output.",
     )
     return parser.parse_args()
+
+
+def generate_manual_dashboard_report(
+    *,
+    org: str,
+    since: date,
+    until: date,
+    source_output_dir: Path,
+    output_dir: Path,
+    base_name: str,
+    refresh: bool,
+    distribution_percentile: int,
+) -> dict[str, Any]:
+    source_manifest = _try_load_source_manifest(
+        org=org,
+        source_output_dir=source_output_dir,
+    )
+    try:
+        if refresh:
+            _refresh_local_source_outputs(
+                org=org,
+                as_of=date.today(),
+                source_output_dir=source_output_dir,
+                source_manifest=source_manifest,
+            )
+    except (AuthResolutionError, GitHubApiError, OrgTargetingError) as exc:
+        raise RuntimeError(f"failed to refresh local source outputs: {exc}") from exc
+    payload = build_manual_dashboard_payload_from_local_outputs(
+        org=org,
+        since=since,
+        until=until,
+        source_output_dir=source_output_dir,
+    )
+    return _write_outputs(
+        output_dir=output_dir,
+        base_name=base_name,
+        payload=payload,
+        distribution_percentile=distribution_percentile,
+    )
 
 
 def _refresh_local_source_outputs(
@@ -256,6 +316,14 @@ def _load_source_manifest(
         / "manifest.json"
     )
     if not manifest_path.exists():
+        available_manifest_paths = sorted(
+            source_output_dir.glob("manifest/*/*/manifest.json")
+        )
+        if available_manifest_paths:
+            raise RuntimeError(
+                "dashboard currently supports only month/created_at local outputs. "
+                f"Found: {', '.join(str(path.relative_to(source_output_dir)) for path in available_manifest_paths)}"
+            )
         raise RuntimeError(
             "local manual dashboard source is missing: "
             f"{manifest_path}. Run `orgpulse run --org {org}` first."
@@ -269,6 +337,14 @@ def _load_source_manifest(
         raise RuntimeError(
             "local manifest org does not match the requested org: "
             f"expected {org}, found {manifest.target_org}"
+        )
+    if manifest.period_grain is not PeriodGrain.MONTH:
+        raise RuntimeError(
+            "dashboard currently supports only month-grain local outputs."
+        )
+    if manifest.time_anchor is not TimeAnchor.CREATED_AT:
+        raise RuntimeError(
+            "dashboard currently supports only created_at local outputs."
         )
     return manifest
 
@@ -648,7 +724,7 @@ def _write_outputs(
     base_name: str,
     payload: dict[str, Any],
     distribution_percentile: int,
-) -> None:
+) -> dict[str, Any]:
     output_dir.mkdir(parents=True, exist_ok=True)
     json_path = output_dir / f"{base_name}.json"
     csv_path = output_dir / f"{base_name}-prs.csv"
@@ -659,7 +735,7 @@ def _write_outputs(
     )
     with csv_path.open("w", encoding="utf-8", newline="") as handle:
         rows = payload["pull_requests"]
-        writer = csv.DictWriter(handle, fieldnames=list(rows[0].keys()))
+        writer = csv.DictWriter(handle, fieldnames=DASHBOARD_PULL_REQUEST_FIELDNAMES)
         writer.writeheader()
         writer.writerows(rows)
     html_path.write_text(
@@ -671,18 +747,13 @@ def _write_outputs(
         ),
         encoding="utf-8",
     )
-    print(
-        json.dumps(
-            {
-                "json_path": str(json_path),
-                "csv_path": str(csv_path),
-                "html_path": str(html_path),
-                "pull_requests": payload["overview"]["pull_requests"],
-                "distribution_percentile": distribution_percentile,
-            },
-            ensure_ascii=False,
-        )
-    )
+    return {
+        "json_path": str(json_path),
+        "csv_path": str(csv_path),
+        "html_path": str(html_path),
+        "pull_requests": payload["overview"]["pull_requests"],
+        "distribution_percentile": distribution_percentile,
+    }
 
 
 def _review_cycle_markers(
@@ -710,6 +781,7 @@ def _review_cycle_markers(
     )
     for marker_type, marker_at, marker in markers:
         if marker_type == "event":
+            assert isinstance(marker, PullRequestTimelineEvent)
             event = marker
             if event.event in {"converted_to_draft", "ready_for_review"}:
                 review_ready_at = marker_at
@@ -724,6 +796,7 @@ def _review_cycle_markers(
             ):
                 review_requested_at = marker_at
             continue
+        assert isinstance(marker, PullRequestReview)
         if marker_at >= review_ready_at and first_review_at is None:
             first_review_at = marker_at
     return review_ready_at, review_requested_at, first_review_at

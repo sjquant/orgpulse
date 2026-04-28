@@ -259,6 +259,19 @@ focused analysis views without refetching GitHub data.
   diagnostics such as same-period-created ratio, older-PR ratio, top
   contributing repositories, top updated dates, and timeline-event breakdowns
 
+`orgpulse dashboard` reads local `month/created_at` outputs and renders the
+supported dashboard view as JSON, per-PR CSV, and interactive HTML files.
+
+- Reads local manifest-backed raw snapshots instead of refetching full history
+- Currently supports only `month` grain with the `created_at` anchor
+- Respects `--since`, `--until`, `--distribution-percentile`, and
+  `--refresh/--no-refresh`
+- Writes dashboard artifacts under an explicit `--output-dir`
+- Reuses the saved local manifest contract from `--source-output-dir`
+
+`orgpulse dashboard-render` re-renders HTML from an existing dashboard JSON
+payload without requiring manifest-backed raw snapshots.
+
 Example HTML analysis:
 
 ```bash
@@ -272,6 +285,27 @@ uv run orgpulse analyze \
   --distribution-percentile 95 \
   --format html \
   --output-dir output > analysis.html
+```
+
+Example dashboard render:
+
+```bash
+uv run orgpulse dashboard \
+  --org acme \
+  --since 2026-01-01 \
+  --until 2026-04-27 \
+  --source-output-dir output \
+  --output-dir output/acme-review/manual-2026-04-27 \
+  --distribution-percentile 99
+```
+
+Example render-only refresh:
+
+```bash
+uv run orgpulse dashboard-render \
+  --input-json output/acme-review/manual-2026-04-27/acme-created-at-since-2026-01-01.json \
+  --output-html output/acme-review/manual-2026-04-27/acme-created-at-since-2026-01-01.html \
+  --distribution-percentile 99
 ```
 
 ### Raw snapshots

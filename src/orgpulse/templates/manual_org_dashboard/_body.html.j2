@@ -92,7 +92,12 @@
       <article class="summary-card panel">
         <span class="summary-label">Per Active Author</span>
         <strong>{{ overview.pull_requests_per_active_author | numfmt }} PRs</strong>
-        <span>{{ overview.average_active_authors_per_month | numfmt }} avg active authors / month, {{ overview.changed_lines_per_active_author | numfmt }} lines / author</span>
+        <span>{{ overview.average_active_authors_per_month | numfmt }} avg active authors / month</span>
+      </article>
+      <article class="summary-card panel">
+        <span class="summary-label">Lines / Active Author</span>
+        <strong>{{ overview.changed_lines_per_active_author | numfmt }}</strong>
+        <span>normalized changed lines per active author</span>
       </article>
       <article class="summary-card panel">
         <span class="summary-label">Per Reviewer</span>
@@ -148,7 +153,7 @@
           </article>
           <article class="support-card">
             <strong>Normalized lens</strong>
-            <span>The team averaged {{ overview.average_active_authors_per_month | numfmt }} active authors per month, which normalizes to {{ overview.pull_requests_per_active_author | numfmt }} PRs per active author.</span>
+            <span>The team averaged {{ overview.average_active_authors_per_month | numfmt }} active authors per month, which normalizes to {{ overview.pull_requests_per_active_author | numfmt }} PRs and {{ overview.changed_lines_per_active_author | numfmt }} changed lines per active author.</span>
           </article>
           <article class="support-card">
             <strong>Backlog</strong>
@@ -498,6 +503,7 @@
                       <th class="num">Merged</th>
                       <th class="num tablet-hide">Open</th>
                       <th class="num">Changed lines</th>
+                      <th class="num tablet-hide">Lines / active author</th>
                       <th class="num tablet-hide">Reviews / PR</th>
                       <th class="num">Median first review</th>
                     </tr>
@@ -513,6 +519,7 @@
                       <td class="num" data-label="Merged">{{ row.merged_pull_requests | intfmt }}</td>
                       <td class="num tablet-hide" data-label="Open">{{ row.open_pull_requests | intfmt }}</td>
                       <td class="num" data-label="Changed lines">{{ row.changed_lines | intfmt }}</td>
+                      <td class="num tablet-hide" data-label="Lines / active author">{{ row.changed_lines_per_active_author | numfmt }}</td>
                       <td class="num tablet-hide" data-label="Reviews / PR">{{ row.average_reviews_per_pr | numfmt }}</td>
                       <td class="num" data-label="Median first review">{{ row.median_first_review_hours | duration }}</td>
                     </tr>
@@ -530,6 +537,7 @@
                       <td class="num" data-label="Merged">{{ row.merged_pull_requests | intfmt }}</td>
                       <td class="num tablet-hide" data-label="Open">{{ row.open_pull_requests | intfmt }}</td>
                       <td class="num" data-label="Changed lines">{{ row.changed_lines | intfmt }}</td>
+                      <td class="num tablet-hide" data-label="Lines / active author">{{ row.changed_lines_per_active_author | numfmt }}</td>
                       <td class="num tablet-hide" data-label="Reviews / PR">{{ row.average_reviews_per_pr | numfmt }}</td>
                       <td class="num" data-label="Median first review">{{ row.median_first_review_hours | duration }}</td>
                     </tr>
@@ -560,6 +568,7 @@
                       <th class="num">Merged</th>
                       <th class="num tablet-hide">Open</th>
                       <th class="num">Changed lines</th>
+                      <th class="num tablet-hide">Lines / active author</th>
                       <th class="num">Median first review</th>
                       <th class="num tablet-hide">Median merge</th>
                     </tr>
@@ -575,6 +584,7 @@
                       <td class="num" data-label="Merged">{{ row.merged_pull_requests | intfmt }}</td>
                       <td class="num tablet-hide" data-label="Open">{{ row.open_pull_requests | intfmt }}</td>
                       <td class="num" data-label="Changed lines">{{ row.changed_lines | intfmt }}</td>
+                      <td class="num tablet-hide" data-label="Lines / active author">{{ row.changed_lines_per_active_author | numfmt }}</td>
                       <td class="num" data-label="Median first review">{{ row.median_first_review_hours | duration }}</td>
                       <td class="num tablet-hide" data-label="Median merge">{{ row.median_merge_hours | duration }}</td>
                     </tr>
@@ -592,6 +602,7 @@
                       <td class="num" data-label="Merged">{{ row.merged_pull_requests | intfmt }}</td>
                       <td class="num tablet-hide" data-label="Open">{{ row.open_pull_requests | intfmt }}</td>
                       <td class="num" data-label="Changed lines">{{ row.changed_lines | intfmt }}</td>
+                      <td class="num tablet-hide" data-label="Lines / active author">{{ row.changed_lines_per_active_author | numfmt }}</td>
                       <td class="num" data-label="Median first review">{{ row.median_first_review_hours | duration }}</td>
                       <td class="num tablet-hide" data-label="Median merge">{{ row.median_merge_hours | duration }}</td>
                     </tr>

@@ -526,6 +526,155 @@ def analyze_command(
     typer.echo(render_analysis_result(result))
 
 
+@app.command("dashboard")
+def dashboard_command(
+    since: Annotated[
+        str,
+        typer.Option(
+            "--since",
+            help="Inclusive ISO date lower bound for the dashboard window.",
+        ),
+    ],
+    until: Annotated[
+        str,
+        typer.Option(
+            "--until",
+            help="Inclusive ISO date upper bound for the dashboard window.",
+        ),
+    ],
+    output_dir: Annotated[
+        Path,
+        typer.Option(
+            "--output-dir",
+            help="Directory where the dashboard JSON, CSV, and HTML exports will be written.",
+        ),
+    ],
+    org: Annotated[
+        str | None,
+        typer.Option(
+            "--org",
+            help="GitHub organization whose local outputs should be rendered into a dashboard. Falls back to ORGPULSE_ORG.",
+        ),
+    ] = None,
+    source_output_dir: Annotated[
+        Path | None,
+        typer.Option(
+            "--source-output-dir",
+            help="Directory containing local orgpulse outputs used as the dashboard source. Falls back to ORGPULSE_OUTPUT_DIR. Currently supports month/created_at sources only.",
+        ),
+    ] = None,
+    base_name: Annotated[
+        str | None,
+        typer.Option(
+            "--base-name",
+            help="Base filename for the rendered dashboard artifacts. Defaults to <org>-created-at-since-<since>.",
+        ),
+    ] = None,
+    refresh: Annotated[
+        bool,
+        typer.Option(
+            "--refresh/--no-refresh",
+            help="Refresh the current open source period incrementally before rendering.",
+        ),
+    ] = True,
+    distribution_percentile: Annotated[
+        int,
+        typer.Option(
+            "--distribution-percentile",
+            help="Upper-tail percentile retained for distribution-based metrics. Use 95, 99, or 100.",
+        ),
+    ] = 100,
+) -> None:
+    from orgpulse.dashboard import generate_manual_dashboard_report
+
+    try:
+        resolved_org, resolved_source_output_dir = _resolve_dashboard_source(
+            org=org,
+            source_output_dir=source_output_dir,
+        )
+        resolved_since = date.fromisoformat(since)
+        resolved_until = date.fromisoformat(until)
+        if resolved_since > resolved_until:
+            raise ValueError("--since must be on or before --until")
+        _validate_dashboard_distribution_percentile(distribution_percentile)
+    except (ValidationError, ValueError) as exc:
+        typer.echo(f"orgpulse: invalid dashboard configuration\n{exc}", err=True)
+        raise typer.Exit(code=2) from exc
+
+    try:
+        result = generate_manual_dashboard_report(
+            org=resolved_org,
+            since=resolved_since,
+            until=resolved_until,
+            source_output_dir=resolved_source_output_dir,
+            output_dir=output_dir,
+            base_name=_default_dashboard_base_name(
+                org=resolved_org,
+                since=resolved_since,
+                base_name=base_name,
+            ),
+            refresh=refresh,
+            distribution_percentile=distribution_percentile,
+        )
+    except RuntimeError as exc:
+        typer.echo(f"orgpulse: dashboard generation failed\n{exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+    typer.echo(
+        json.dumps(
+            result,
+            indent=2,
+            sort_keys=True,
+        )
+    )
+
+
+@app.command("dashboard-render")
+def dashboard_render_command(
+    input_json: Annotated[
+        Path,
+        typer.Option(
+            "--input-json",
+            help="Existing dashboard JSON payload to render.",
+        ),
+    ],
+    output_html: Annotated[
+        Path,
+        typer.Option(
+            "--output-html",
+            help="Destination HTML path for the rendered dashboard.",
+        ),
+    ],
+    distribution_percentile: Annotated[
+        int,
+        typer.Option(
+            "--distribution-percentile",
+            help="Upper-tail percentile retained for distribution-based metrics. Use 95, 99, or 100.",
+        ),
+    ] = 100,
+) -> None:
+    from orgpulse.manual_dashboard import render_manual_dashboard_artifact
+
+    try:
+        _validate_dashboard_distribution_percentile(distribution_percentile)
+        result = render_manual_dashboard_artifact(
+            input_json=input_json,
+            output_html=output_html,
+            distribution_percentile=distribution_percentile,
+        )
+    except (OSError, json.JSONDecodeError, RuntimeError, ValueError) as exc:
+        typer.echo(f"orgpulse: dashboard render failed\n{exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+    typer.echo(
+        json.dumps(
+            result,
+            indent=2,
+            sort_keys=True,
+        )
+    )
+
+
 def _write_outputs(
     config: RunConfig,
     repository_count: int,
@@ -754,6 +903,39 @@ def _canonical_inventory_repository_count(
             for pull_request in canonical_pull_requests
         }
     )
+
+
+def _default_dashboard_base_name(
+    *,
+    org: str,
+    since: date,
+    base_name: str | None,
+) -> str:
+    if base_name is not None:
+        return base_name
+    return f"{org}-created-at-since-{since.isoformat()}"
+
+
+def _resolve_dashboard_source(
+    *,
+    org: str | None,
+    source_output_dir: Path | None,
+) -> tuple[str, Path]:
+    settings = get_settings()
+    resolved_org = settings.org if org is None else org
+    if resolved_org is None:
+        raise ValueError("dashboard rendering requires --org or ORGPULSE_ORG")
+    return (
+        resolved_org,
+        settings.output_dir if source_output_dir is None else source_output_dir,
+    )
+
+
+def _validate_dashboard_distribution_percentile(value: int) -> None:
+    if value not in {95, 99, 100}:
+        raise ValueError(
+            "distribution percentile must be one of 95, 99, or 100"
+        )
 
 
 def build_run_config(

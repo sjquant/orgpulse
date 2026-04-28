@@ -2,20 +2,23 @@ from __future__ import annotations
 
 import argparse
 import csv
-import importlib.util
 import json
-import sys
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
 import pytest
 
+from orgpulse import dashboard as _generate_manual_dashboard
 from orgpulse.ingestion import (
     PULL_REQUEST_FIELDNAMES,
     PULL_REQUEST_REVIEW_FIELDNAMES,
     PULL_REQUEST_TIMELINE_EVENT_FIELDNAMES,
     NormalizedRawSnapshotWriter,
+)
+from orgpulse.manual_dashboard import (
+    prepare_manual_dashboard_payload,
+    render_manual_dashboard_html,
 )
 from orgpulse.metrics import (
     PullRequestMetricCollectionBuilder,
@@ -48,35 +51,6 @@ from orgpulse.output import (
     RunManifestWriter,
 )
 
-_RENDER_MANUAL_DASHBOARD_SPEC = importlib.util.spec_from_file_location(
-    "render_manual_org_dashboard",
-    Path(__file__).resolve().parents[1] / "scripts" / "render_manual_org_dashboard.py",
-)
-assert _RENDER_MANUAL_DASHBOARD_SPEC is not None
-assert _RENDER_MANUAL_DASHBOARD_SPEC.loader is not None
-_render_manual_dashboard = importlib.util.module_from_spec(
-    _RENDER_MANUAL_DASHBOARD_SPEC,
-)
-sys.modules["render_manual_org_dashboard"] = _render_manual_dashboard
-_RENDER_MANUAL_DASHBOARD_SPEC.loader.exec_module(_render_manual_dashboard)
-prepare_manual_dashboard_payload = (
-    _render_manual_dashboard.prepare_manual_dashboard_payload
-)
-render_manual_dashboard_html = (
-    _render_manual_dashboard.render_manual_dashboard_html
-)
-
-_GENERATE_MANUAL_DASHBOARD_SPEC = importlib.util.spec_from_file_location(
-    "generate_manual_org_dashboard",
-    Path(__file__).resolve().parents[1] / "scripts" / "generate_manual_org_dashboard.py",
-)
-assert _GENERATE_MANUAL_DASHBOARD_SPEC is not None
-assert _GENERATE_MANUAL_DASHBOARD_SPEC.loader is not None
-_generate_manual_dashboard = importlib.util.module_from_spec(
-    _GENERATE_MANUAL_DASHBOARD_SPEC,
-)
-sys.modules["generate_manual_org_dashboard"] = _generate_manual_dashboard
-_GENERATE_MANUAL_DASHBOARD_SPEC.loader.exec_module(_generate_manual_dashboard)
 build_manual_dashboard_payload_from_local_outputs = (
     _generate_manual_dashboard.build_manual_dashboard_payload_from_local_outputs
 )
@@ -1843,6 +1817,8 @@ class TestManualDashboardPayload:
         assert "PRs / active author" in html
         assert "Lines / active author" in html
         assert "avg active authors / month" in html
+        assert "normalized changed lines per active author" in html
+        assert 'data-label="Lines / active author"' in html
 
     def test_renders_expansion_controls_below_long_tables_and_lists(self) -> None:
         """Render overflow controls below long lists and tables so the dashboard scales vertically."""

@@ -20,22 +20,31 @@ from orgpulse.distribution import (
 
 def main() -> None:
     args = _parse_args()
-    payload = _load_payload(
-        args.input_json,
+    result = render_manual_dashboard_artifact(
+        input_json=args.input_json,
+        output_html=args.output_html,
         distribution_percentile=args.distribution_percentile,
     )
-    html = _render_html(payload)
-    args.output_html.write_text(html, encoding="utf-8")
-    print(
-        json.dumps(
-            {
-                "input_json": str(args.input_json),
-                "output_html": str(args.output_html),
-                "distribution_percentile": args.distribution_percentile,
-            },
-            ensure_ascii=False,
-        )
+    print(json.dumps(result, ensure_ascii=False))
+
+
+def render_manual_dashboard_artifact(
+    *,
+    input_json: Path,
+    output_html: Path,
+    distribution_percentile: int,
+) -> dict[str, str | int]:
+    payload = _load_payload(
+        input_json,
+        distribution_percentile=distribution_percentile,
     )
+    html = _render_html(payload)
+    output_html.write_text(html, encoding="utf-8")
+    return {
+        "input_json": str(input_json),
+        "output_html": str(output_html),
+        "distribution_percentile": distribution_percentile,
+    }
 
 
 def _parse_args() -> argparse.Namespace:
@@ -250,8 +259,8 @@ def _build_overview(
         "review_submissions": sum(
             int(pull_request["review_count"]) for pull_request in pull_requests
         ),
-        "total_changed_lines": int(changed_lines["total"]),
-        "total_commits": int(commits["total"]),
+        "total_changed_lines": _as_int(changed_lines["total"]),
+        "total_commits": _as_int(commits["total"]),
         "median_first_review_hours": _round(_median_or_none(first_review_values)),
         "median_merge_hours": _round(_median_or_none(merge_values)),
         "median_close_hours": _round(_median_or_none(close_values)),
@@ -376,8 +385,8 @@ def _author_row(
         "open_pull_requests": sum(
             1 for pull_request in pull_requests if pull_request["state"] == "open"
         ),
-        "changed_lines": int(changed_lines["total"]),
-        "commits": int(commits["total"]),
+        "changed_lines": _as_int(changed_lines["total"]),
+        "commits": _as_int(commits["total"]),
         "review_submissions_received": sum(
             int(pull_request["review_count"]) for pull_request in pull_requests
         ),
@@ -468,7 +477,7 @@ def _repository_row(
             1 for pull_request in pull_requests if pull_request["state"] == "open"
         ),
         "authors": len({pull_request["author_login"] for pull_request in pull_requests}),
-        "changed_lines": int(changed_lines["total"]),
+        "changed_lines": _as_int(changed_lines["total"]),
         "review_submissions": sum(
             int(pull_request["review_count"]) for pull_request in pull_requests
         ),
@@ -605,13 +614,15 @@ def _build_trend_rows(
             "merged_pull_requests": merged_count,
             "open_pull_requests": open_count,
             "active_authors": active_authors,
-            "changed_lines": int(changed_lines["total"]),
+            "changed_lines": _as_int(changed_lines["total"]),
             "review_submissions": review_submissions,
             "pull_requests_per_active_author": _round(
                 pull_request_count / active_authors if active_authors else None
             ),
             "changed_lines_per_active_author": _round(
-                int(changed_lines["total"]) / active_authors if active_authors else None
+                _as_int(changed_lines["total"]) / active_authors
+                if active_authors
+                else None
             ),
             "average_reviews_per_pr": _round(
                 review_submissions / pull_request_count if pull_request_count else None
@@ -628,14 +639,14 @@ def _build_trend_rows(
                 else None
             ),
             "changed_lines_delta": (
-                int(changed_lines["total"]) - previous_changed_lines
+                _as_int(changed_lines["total"]) - previous_changed_lines
                 if previous_changed_lines is not None
                 else None
             ),
         }
         rows.append(row)
         previous_pull_requests = pull_request_count
-        previous_changed_lines = int(changed_lines["total"])
+        previous_changed_lines = _as_int(changed_lines["total"])
     return rows
 
 
@@ -750,7 +761,7 @@ def _build_author_details(
                 {
                     "repository_full_name": repository_full_name,
                     "pull_requests": count,
-                    "changed_lines": int(
+                    "changed_lines": _as_int(
                         _summary(
                             _trimmed_values(
                                 [
@@ -835,7 +846,7 @@ def _build_author_size_mix_rows(
             {
                 "bucket": bucket,
                 "pull_requests": pull_request_count,
-                "changed_lines": int(changed_lines["total"]),
+                "changed_lines": _as_int(changed_lines["total"]),
                 "median_first_review_hours": _round(_median_or_none(first_review_values)),
                 "median_merge_hours": _round(_median_or_none(merge_values)),
                 "average_reviews_per_pr": _round(
@@ -1159,10 +1170,16 @@ def _round(value: float | None) -> float | None:
     return round(value, 2)
 
 
+def _as_int(value: int | float | None) -> int:
+    if value is None:
+        return 0
+    return int(value)
+
+
 def _template_environment() -> Environment:
     environment = Environment(
         loader=FileSystemLoader(
-            str(Path(__file__).resolve().parents[1] / "src" / "orgpulse" / "templates")
+            str(Path(__file__).resolve().parent / "templates")
         ),
         autoescape=select_autoescape(["html", "html.j2", "xml"]),
     )

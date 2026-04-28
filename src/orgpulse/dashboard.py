@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import argparse
 import csv
 import json
 from collections import Counter, defaultdict
@@ -117,55 +116,6 @@ DASHBOARD_PULL_REQUEST_FIELDNAMES = (
     "review_requested_at",
     "size_bucket",
 )
-
-
-def main() -> None:
-    args = _parse_args()
-    result = generate_manual_dashboard_report(
-        org=args.org,
-        since=date.fromisoformat(args.since),
-        until=date.fromisoformat(args.until),
-        source_output_dir=args.source_output_dir,
-        output_dir=args.output_dir,
-        base_name=args.base_name,
-        refresh=args.refresh,
-        distribution_percentile=args.distribution_percentile,
-    )
-    print(json.dumps(result, ensure_ascii=False))
-
-
-def _parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        description=(
-            "Generate a manual org dashboard from local orgpulse raw snapshots. "
-            "By default this refreshes the current open period incrementally first."
-        ),
-    )
-    parser.add_argument("--org", required=True)
-    parser.add_argument("--since", required=True, help="Inclusive YYYY-MM-DD")
-    parser.add_argument("--until", required=True, help="Inclusive YYYY-MM-DD")
-    parser.add_argument("--output-dir", type=Path, required=True)
-    parser.add_argument("--base-name", required=True)
-    parser.add_argument(
-        "--source-output-dir",
-        type=Path,
-        default=Path("output"),
-        help="Root orgpulse output directory used for manifest and raw snapshots.",
-    )
-    parser.add_argument(
-        "--refresh",
-        action=argparse.BooleanOptionalAction,
-        default=True,
-        help="Refresh local orgpulse outputs incrementally before rendering.",
-    )
-    parser.add_argument(
-        "--distribution-percentile",
-        type=int,
-        default=100,
-        choices=(95, 99, 100),
-        help="Upper-tail percentile retained for distribution-based metrics in HTML output.",
-    )
-    return parser.parse_args()
 
 
 def generate_manual_dashboard_report(
@@ -1298,5 +1248,9 @@ def _round(value: float | None) -> float | None:
         return None
     return round(value, 2)
 
+
 if __name__ == "__main__":
-    main()
+    raise SystemExit(
+        "orgpulse.dashboard is no longer executable as a module. "
+        "Use `orgpulse dashboard`."
+    )

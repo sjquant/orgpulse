@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import argparse
 import csv
 import json
 import subprocess
@@ -50,6 +49,7 @@ from orgpulse.output import (
 )
 from orgpulse.reporting.dashboard_html import (
     prepare_manual_dashboard_payload,
+    render_manual_dashboard_artifact,
     render_manual_dashboard_html,
 )
 from orgpulse.reporting.run_outputs import (
@@ -2214,27 +2214,14 @@ class TestManualDashboardLocalSource:
         assert captured["include_repos"] == ["acme/api"]
         assert captured["exclude_repos"] == ["acme/legacy"]
 
-    def test_main_refreshes_using_today_instead_of_historical_until(
+    def test_generate_report_refreshes_using_today_instead_of_historical_until(
         self,
         monkeypatch,
         tmp_path,
     ) -> None:
         """Refresh the shared source output using today's open period rather than the report's historical until date."""
         # Given
-        args = argparse.Namespace(
-            org="acme",
-            since="2026-01-01",
-            until="2026-03-31",
-            output_dir=tmp_path / "dashboard",
-            base_name="acme-created-at-since-2026-01-01",
-            source_output_dir=tmp_path / "source",
-            refresh=True,
-            distribution_percentile=99,
-        )
         captured: dict[str, object] = {}
-
-        def fake_parse_args() -> argparse.Namespace:
-            return args
 
         def fake_try_load_source_manifest(
             *,
@@ -2276,13 +2263,13 @@ class TestManualDashboardLocalSource:
             base_name: str,
             payload: dict[str, Any],
             distribution_percentile: int,
-        ) -> None:
+        ) -> dict[str, object]:
             captured["output_dir"] = output_dir
             captured["base_name"] = base_name
             captured["payload"] = payload
             captured["distribution_percentile"] = distribution_percentile
+            return {"html_path": "report.html"}
 
-        monkeypatch.setattr(_generate_manual_dashboard, "_parse_args", fake_parse_args)
         monkeypatch.setattr(
             _generate_manual_dashboard,
             "_try_load_source_manifest",
@@ -2305,7 +2292,16 @@ class TestManualDashboardLocalSource:
         )
 
         # When
-        _generate_manual_dashboard.main()
+        _generate_manual_dashboard.generate_manual_dashboard_report(
+            org="acme",
+            since=date.fromisoformat("2026-01-01"),
+            until=date.fromisoformat("2026-03-31"),
+            source_output_dir=tmp_path / "source",
+            output_dir=tmp_path / "dashboard",
+            base_name="acme-created-at-since-2026-01-01",
+            refresh=True,
+            distribution_percentile=99,
+        )
 
         # Then
         assert captured["refresh_as_of"] == date.today()
@@ -2491,11 +2487,11 @@ class TestReportingCompatibilityShims:
         assert callable(build_organization_report_payload)
         assert callable(render_organization_report_html)
 
-    def test_preserves_legacy_manual_dashboard_module_entrypoint(
+    def test_renders_dashboard_html_through_public_artifact_function(
         self,
         tmp_path: Path,
     ) -> None:
-        """Render HTML when the legacy manual-dashboard module is executed directly."""
+        """Render HTML through the reporting helper without relying on a module entrypoint."""
         # Given
         payload = {
             "overview": {
@@ -2540,18 +2536,29 @@ class TestReportingCompatibilityShims:
         input_json.write_text(json.dumps(payload), encoding="utf-8")
 
         # When
+        result = render_manual_dashboard_artifact(
+            input_json=input_json,
+            output_html=output_html,
+            distribution_percentile=99,
+        )
+
+        # Then
+        assert result["distribution_percentile"] == 99
+        assert output_html.exists()
+        assert "Lines / Active Author" in output_html.read_text(encoding="utf-8")
+
+    def test_legacy_manual_dashboard_module_fails_with_cli_guidance(self) -> None:
+        """Fail loudly with CLI guidance when the legacy manual-dashboard module is executed."""
+        # Given
+        command = [
+            sys.executable,
+            "-m",
+            "orgpulse.manual_dashboard",
+        ]
+
+        # When
         result = subprocess.run(
-            [
-                sys.executable,
-                "-m",
-                "orgpulse.manual_dashboard",
-                "--input-json",
-                str(input_json),
-                "--output-html",
-                str(output_html),
-                "--distribution-percentile",
-                "99",
-            ],
+            command,
             check=False,
             capture_output=True,
             text=True,
@@ -2559,9 +2566,52 @@ class TestReportingCompatibilityShims:
         )
 
         # Then
-        assert result.returncode == 0
-        assert output_html.exists()
-        assert "Lines / Active Author" in output_html.read_text(encoding="utf-8")
+        assert result.returncode != 0
+        assert "Use `orgpulse dashboard-render`." in result.stderr
+
+    def test_dashboard_module_fails_with_cli_guidance(self) -> None:
+        """Fail loudly with CLI guidance when the dashboard module is executed directly."""
+        # Given
+        command = [
+            sys.executable,
+            "-m",
+            "orgpulse.dashboard",
+        ]
+
+        # When
+        result = subprocess.run(
+            command,
+            check=False,
+            capture_output=True,
+            text=True,
+            cwd=str(Path(__file__).resolve().parents[1]),
+        )
+
+        # Then
+        assert result.returncode != 0
+        assert "Use `orgpulse dashboard`." in result.stderr
+
+    def test_dashboard_html_module_fails_with_cli_guidance(self) -> None:
+        """Fail loudly with CLI guidance when the HTML reporting module is executed directly."""
+        # Given
+        command = [
+            sys.executable,
+            "-m",
+            "orgpulse.reporting.dashboard_html",
+        ]
+
+        # When
+        result = subprocess.run(
+            command,
+            check=False,
+            capture_output=True,
+            text=True,
+            cwd=str(Path(__file__).resolve().parents[1]),
+        )
+
+        # Then
+        assert result.returncode != 0
+        assert "Use `orgpulse dashboard-render`." in result.stderr
 
 
 def _manual_pull_request(

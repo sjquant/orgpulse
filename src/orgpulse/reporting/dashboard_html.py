@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import argparse
 import json
 from collections import Counter, defaultdict
 from datetime import datetime
@@ -23,16 +22,6 @@ WEEKLY_RECENT_TREND_COUNT = 12
 MONTHLY_RECENT_TREND_COUNT = 6
 
 
-def main() -> None:
-    args = _parse_args()
-    result = render_manual_dashboard_artifact(
-        input_json=args.input_json,
-        output_html=args.output_html,
-        distribution_percentile=args.distribution_percentile,
-    )
-    print(json.dumps(result, ensure_ascii=False))
-
-
 def render_manual_dashboard_artifact(
     *,
     input_json: Path,
@@ -50,22 +39,6 @@ def render_manual_dashboard_artifact(
         "output_html": str(output_html),
         "distribution_percentile": distribution_percentile,
     }
-
-
-def _parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        description="Render the manual org dashboard HTML from an existing JSON payload.",
-    )
-    parser.add_argument("--input-json", type=Path, required=True)
-    parser.add_argument("--output-html", type=Path, required=True)
-    parser.add_argument(
-        "--distribution-percentile",
-        type=int,
-        default=100,
-        choices=(95, 99, 100),
-        help="Upper-tail percentile retained for distribution-based metrics.",
-    )
-    return parser.parse_args()
 
 
 def _load_payload(
@@ -1274,4 +1247,7 @@ def _format_delta(value: Any) -> Markup:
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(
+        "orgpulse.reporting.dashboard_html is no longer executable as a module. "
+        "Use `orgpulse dashboard-render`."
+    )

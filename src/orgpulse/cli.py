@@ -585,7 +585,7 @@ def dashboard_command(
         ),
     ] = 100,
 ) -> None:
-    from orgpulse.dashboard import generate_manual_dashboard_report
+    from orgpulse.dashboard import generate_dashboard_report
 
     try:
         resolved_org, resolved_source_output_dir = _resolve_dashboard_source(
@@ -602,7 +602,7 @@ def dashboard_command(
         raise typer.Exit(code=2) from exc
 
     try:
-        result = generate_manual_dashboard_report(
+        result = generate_dashboard_report(
             org=resolved_org,
             since=resolved_since,
             until=resolved_until,
@@ -653,11 +653,11 @@ def dashboard_render_command(
         ),
     ] = 100,
 ) -> None:
-    from orgpulse.reporting.dashboard_html import render_manual_dashboard_artifact
+    from orgpulse.reporting.dashboard_html import render_dashboard_artifact
 
     try:
         _validate_dashboard_distribution_percentile(distribution_percentile)
-        result = render_manual_dashboard_artifact(
+        result = render_dashboard_artifact(
             input_json=input_json,
             output_html=output_html,
             distribution_percentile=distribution_percentile,

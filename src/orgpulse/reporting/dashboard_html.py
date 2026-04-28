@@ -22,7 +22,7 @@ WEEKLY_RECENT_TREND_COUNT = 12
 MONTHLY_RECENT_TREND_COUNT = 6
 
 
-def render_manual_dashboard_artifact(
+def render_dashboard_artifact(
     *,
     input_json: Path,
     output_html: Path,
@@ -46,14 +46,14 @@ def _load_payload(
     *,
     distribution_percentile: int,
 ) -> dict[str, Any]:
-    return prepare_manual_dashboard_payload(
+    return prepare_dashboard_payload(
         json.loads(path.read_text(encoding="utf-8")),
         distribution_percentile=distribution_percentile,
     )
 
 
-def render_manual_dashboard_html(payload: dict[str, Any]) -> str:
-    template = _template_environment().get_template("manual_org_dashboard.html.j2")
+def render_dashboard_html(payload: dict[str, Any]) -> str:
+    template = _template_environment().get_template("org_dashboard.html.j2")
     return template.render(
         overview=payload["overview"],
         authors=payload["authors"],
@@ -80,10 +80,10 @@ def render_manual_dashboard_html(payload: dict[str, Any]) -> str:
 
 
 def _render_html(payload: dict[str, Any]) -> str:
-    return render_manual_dashboard_html(payload)
+    return render_dashboard_html(payload)
 
 
-def prepare_manual_dashboard_payload(
+def prepare_dashboard_payload(
     payload: dict[str, Any],
     *,
     distribution_percentile: int = 100,

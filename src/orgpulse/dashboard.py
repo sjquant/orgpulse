@@ -32,8 +32,8 @@ from orgpulse.models import (
     TimeAnchor,
 )
 from orgpulse.reporting.dashboard_html import (
-    prepare_manual_dashboard_payload,
-    render_manual_dashboard_html,
+    prepare_dashboard_payload,
+    render_dashboard_html,
 )
 
 DASHBOARD_SOURCE_GRAIN = PeriodGrain.MONTH
@@ -118,7 +118,7 @@ DASHBOARD_PULL_REQUEST_FIELDNAMES = (
 )
 
 
-def generate_manual_dashboard_report(
+def generate_dashboard_report(
     *,
     org: str,
     since: date,
@@ -143,7 +143,7 @@ def generate_manual_dashboard_report(
             )
     except (AuthResolutionError, GitHubApiError, OrgTargetingError) as exc:
         raise RuntimeError(f"failed to refresh local source outputs: {exc}") from exc
-    payload = build_manual_dashboard_payload_from_local_outputs(
+    payload = build_dashboard_payload_from_local_outputs(
         org=org,
         since=since,
         until=until,
@@ -225,7 +225,7 @@ def _refresh_local_source_outputs(
         ingestion_service.clear_checkpoint(config)
 
 
-def build_manual_dashboard_payload_from_local_outputs(
+def build_dashboard_payload_from_local_outputs(
     *,
     org: str,
     since: date,
@@ -713,8 +713,8 @@ def _write_outputs(
         writer.writeheader()
         writer.writerows(rows)
     html_path.write_text(
-        render_manual_dashboard_html(
-            prepare_manual_dashboard_payload(
+        render_dashboard_html(
+            prepare_dashboard_payload(
                 payload,
                 distribution_percentile=distribution_percentile,
             )

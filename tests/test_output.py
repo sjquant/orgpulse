@@ -10,7 +10,7 @@ from typing import Any
 
 import pytest
 
-from orgpulse import dashboard as _generate_manual_dashboard
+from orgpulse import dashboard as _dashboard_module
 from orgpulse.ingestion import (
     PULL_REQUEST_FIELDNAMES,
     PULL_REQUEST_REVIEW_FIELDNAMES,
@@ -48,9 +48,9 @@ from orgpulse.output import (
     REQUIRED_RAW_SNAPSHOT_HEADERS,
 )
 from orgpulse.reporting.dashboard_html import (
-    prepare_manual_dashboard_payload,
-    render_manual_dashboard_artifact,
-    render_manual_dashboard_html,
+    prepare_dashboard_payload,
+    render_dashboard_artifact,
+    render_dashboard_html,
 )
 from orgpulse.reporting.run_outputs import (
     OrgSummaryWriter,
@@ -62,8 +62,8 @@ from orgpulse.visualization import (
     render_organization_report_html,
 )
 
-build_manual_dashboard_payload_from_local_outputs = (
-    _generate_manual_dashboard.build_manual_dashboard_payload_from_local_outputs
+build_dashboard_payload_from_local_outputs = (
+    _dashboard_module.build_dashboard_payload_from_local_outputs
 )
 
 
@@ -1560,9 +1560,9 @@ class TestManualDashboardPayload:
         }
 
         # When
-        prepared = prepare_manual_dashboard_payload(payload)
+        prepared = prepare_dashboard_payload(payload)
         prepared["review_state_rows"] = []
-        html = render_manual_dashboard_html(prepared)
+        html = render_dashboard_html(prepared)
 
         # Then
         assert 'orgpulse-manual-dashboard-theme' in html
@@ -1658,7 +1658,7 @@ class TestManualDashboardPayload:
         }
 
         # When
-        prepared = prepare_manual_dashboard_payload(
+        prepared = prepare_dashboard_payload(
             payload,
             distribution_percentile=95,
         )
@@ -1783,8 +1783,8 @@ class TestManualDashboardPayload:
         }
 
         # When
-        prepared = prepare_manual_dashboard_payload(payload)
-        html = render_manual_dashboard_html(prepared)
+        prepared = prepare_dashboard_payload(payload)
+        html = render_dashboard_html(prepared)
 
         # Then
         assert prepared["overview"]["average_active_authors_per_month"] == 1.5
@@ -1882,8 +1882,8 @@ class TestManualDashboardPayload:
         }
 
         # When
-        prepared = prepare_manual_dashboard_payload(payload)
-        html = render_manual_dashboard_html(prepared)
+        prepared = prepare_dashboard_payload(payload)
+        html = render_dashboard_html(prepared)
 
         # Then
         assert 'class="table-footer"' in html
@@ -1943,7 +1943,7 @@ class TestManualDashboardPayload:
         }
 
         # When
-        prepared = prepare_manual_dashboard_payload(payload)
+        prepared = prepare_dashboard_payload(payload)
 
         # Then
         assert [row["period_key"] for row in prepared["monthly_trends_recent"]] == [
@@ -2015,8 +2015,8 @@ class TestManualDashboardPayload:
         }
 
         # When
-        prepared = prepare_manual_dashboard_payload(payload)
-        html = render_manual_dashboard_html(prepared)
+        prepared = prepare_dashboard_payload(payload)
+        html = render_dashboard_html(prepared)
 
         # Then
         assert "Latency and quality" in html
@@ -2082,8 +2082,8 @@ class TestManualDashboardPayload:
         }
 
         # When
-        prepared = prepare_manual_dashboard_payload(payload)
-        html = render_manual_dashboard_html(prepared)
+        prepared = prepare_dashboard_payload(payload)
+        html = render_dashboard_html(prepared)
 
         # Then
         assert '["Value", "value", true]' in html
@@ -2143,7 +2143,7 @@ class TestManualDashboardPayload:
         }
 
         # When
-        prepared = prepare_manual_dashboard_payload(payload)
+        prepared = prepare_dashboard_payload(payload)
 
         # Then
         assert [row["reviewer_login"] for row in prepared["reviewers"]] == [
@@ -2185,7 +2185,7 @@ class TestManualDashboardLocalSource:
             json.dumps(manifest_payload),
             encoding="utf-8",
         )
-        source_manifest = _generate_manual_dashboard._load_source_manifest(
+        source_manifest = _dashboard_module._load_source_manifest(
             org="acme",
             source_output_dir=source_output_dir,
         )
@@ -2196,14 +2196,14 @@ class TestManualDashboardLocalSource:
             return RunConfig.model_validate({})
 
         monkeypatch.setattr(
-            _generate_manual_dashboard,
+            _dashboard_module,
             "build_run_config",
             fake_build_run_config,
         )
 
         # When
         with pytest.raises(RuntimeError, match="invalid run configuration"):
-            _generate_manual_dashboard._refresh_local_source_outputs(
+            _dashboard_module._refresh_local_source_outputs(
                 org="acme",
                 as_of=date.fromisoformat("2026-04-27"),
                 source_output_dir=source_output_dir,
@@ -2244,7 +2244,7 @@ class TestManualDashboardLocalSource:
             captured["refresh_source_output_dir"] = source_output_dir
             captured["refresh_source_manifest"] = source_manifest
 
-        def fake_build_manual_dashboard_payload_from_local_outputs(
+        def fake_build_dashboard_payload_from_local_outputs(
             *,
             org: str,
             since: date,
@@ -2271,28 +2271,28 @@ class TestManualDashboardLocalSource:
             return {"html_path": "report.html"}
 
         monkeypatch.setattr(
-            _generate_manual_dashboard,
+            _dashboard_module,
             "_try_load_source_manifest",
             fake_try_load_source_manifest,
         )
         monkeypatch.setattr(
-            _generate_manual_dashboard,
+            _dashboard_module,
             "_refresh_local_source_outputs",
             fake_refresh_local_source_outputs,
         )
         monkeypatch.setattr(
-            _generate_manual_dashboard,
-            "build_manual_dashboard_payload_from_local_outputs",
-            fake_build_manual_dashboard_payload_from_local_outputs,
+            _dashboard_module,
+            "build_dashboard_payload_from_local_outputs",
+            fake_build_dashboard_payload_from_local_outputs,
         )
         monkeypatch.setattr(
-            _generate_manual_dashboard,
+            _dashboard_module,
             "_write_outputs",
             fake_write_outputs,
         )
 
         # When
-        _generate_manual_dashboard.generate_manual_dashboard_report(
+        _dashboard_module.generate_dashboard_report(
             org="acme",
             since=date.fromisoformat("2026-01-01"),
             until=date.fromisoformat("2026-03-31"),
@@ -2394,7 +2394,7 @@ class TestManualDashboardLocalSource:
         )
 
         # When
-        payload = build_manual_dashboard_payload_from_local_outputs(
+        payload = build_dashboard_payload_from_local_outputs(
             org="acme",
             since=date.fromisoformat("2026-03-01"),
             until=date.fromisoformat("2026-04-18"),
@@ -2452,7 +2452,7 @@ class TestManualDashboardLocalSource:
         # When
         error_message = ""
         try:
-            build_manual_dashboard_payload_from_local_outputs(
+            build_dashboard_payload_from_local_outputs(
                 org="acme",
                 since=date.fromisoformat("2026-03-01"),
                 until=date.fromisoformat("2026-04-18"),
@@ -2536,7 +2536,7 @@ class TestReportingCompatibilityShims:
         input_json.write_text(json.dumps(payload), encoding="utf-8")
 
         # When
-        result = render_manual_dashboard_artifact(
+        result = render_dashboard_artifact(
             input_json=input_json,
             output_html=output_html,
             distribution_percentile=99,
@@ -2546,28 +2546,6 @@ class TestReportingCompatibilityShims:
         assert result["distribution_percentile"] == 99
         assert output_html.exists()
         assert "Lines / Active Author" in output_html.read_text(encoding="utf-8")
-
-    def test_legacy_manual_dashboard_module_fails_with_cli_guidance(self) -> None:
-        """Fail loudly with CLI guidance when the legacy manual-dashboard module is executed."""
-        # Given
-        command = [
-            sys.executable,
-            "-m",
-            "orgpulse.manual_dashboard",
-        ]
-
-        # When
-        result = subprocess.run(
-            command,
-            check=False,
-            capture_output=True,
-            text=True,
-            cwd=str(Path(__file__).resolve().parents[1]),
-        )
-
-        # Then
-        assert result.returncode != 0
-        assert "Use `orgpulse dashboard-render`." in result.stderr
 
     def test_dashboard_module_fails_with_cli_guidance(self) -> None:
         """Fail loudly with CLI guidance when the dashboard module is executed directly."""

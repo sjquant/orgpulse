@@ -24,10 +24,6 @@ from orgpulse.cli import (
 from orgpulse.errors import AuthResolutionError, GitHubApiError, OrgTargetingError
 from orgpulse.github_auth import GitHubAuthService, resolve_auth_token
 from orgpulse.ingestion import GitHubIngestionService
-from orgpulse.manual_dashboard import (
-    prepare_manual_dashboard_payload,
-    render_manual_dashboard_html,
-)
 from orgpulse.models import (
     PeriodGrain,
     RawSnapshotPeriod,
@@ -35,6 +31,10 @@ from orgpulse.models import (
     RunManifest,
     RunMode,
     TimeAnchor,
+)
+from orgpulse.reporting.dashboard_html import (
+    prepare_manual_dashboard_payload,
+    render_manual_dashboard_html,
 )
 
 DASHBOARD_SOURCE_GRAIN = PeriodGrain.MONTH

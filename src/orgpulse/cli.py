@@ -14,7 +14,6 @@ from orgpulse.analysis import (
     AnalysisGrouping,
     AnalysisService,
     build_analysis_config,
-    render_analysis_result,
 )
 from orgpulse.config import get_settings
 from orgpulse.errors import (
@@ -55,7 +54,8 @@ from orgpulse.models import (
     RunMode,
     TimeAnchor,
 )
-from orgpulse.output import (
+from orgpulse.reporting.analysis_export import render_analysis_result
+from orgpulse.reporting.run_outputs import (
     OrgSummaryWriter,
     RepositorySummaryCsvWriter,
     RunManifestWriter,
@@ -653,7 +653,7 @@ def dashboard_render_command(
         ),
     ] = 100,
 ) -> None:
-    from orgpulse.manual_dashboard import render_manual_dashboard_artifact
+    from orgpulse.reporting.dashboard_html import render_manual_dashboard_artifact
 
     try:
         _validate_dashboard_distribution_percentile(distribution_percentile)

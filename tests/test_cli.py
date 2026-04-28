@@ -53,7 +53,7 @@ from orgpulse.models import (
     RunScope,
     TimeAnchor,
 )
-from orgpulse.output import (
+from orgpulse.reporting.run_outputs import (
     REPOSITORY_SUMMARY_CSV_FIELDNAMES,
     OrgSummaryWriter,
     RepositorySummaryCsvWriter,

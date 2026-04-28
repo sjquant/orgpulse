@@ -3,6 +3,8 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import subprocess
+import sys
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -15,10 +17,6 @@ from orgpulse.ingestion import (
     PULL_REQUEST_REVIEW_FIELDNAMES,
     PULL_REQUEST_TIMELINE_EVENT_FIELDNAMES,
     NormalizedRawSnapshotWriter,
-)
-from orgpulse.manual_dashboard import (
-    prepare_manual_dashboard_payload,
-    render_manual_dashboard_html,
 )
 from orgpulse.metrics import (
     PullRequestMetricCollectionBuilder,
@@ -46,9 +44,22 @@ from orgpulse.models import (
     TimeAnchor,
 )
 from orgpulse.output import (
+    MANIFEST_FILENAME,
+    ORG_SUMMARY_DIRNAME,
+    REQUIRED_RAW_SNAPSHOT_HEADERS,
+)
+from orgpulse.reporting.dashboard_html import (
+    prepare_manual_dashboard_payload,
+    render_manual_dashboard_html,
+)
+from orgpulse.reporting.run_outputs import (
     OrgSummaryWriter,
     RepositorySummaryCsvWriter,
     RunManifestWriter,
+)
+from orgpulse.visualization import (
+    build_organization_report_payload,
+    render_organization_report_html,
 )
 
 build_manual_dashboard_payload_from_local_outputs = (
@@ -2456,6 +2467,101 @@ class TestManualDashboardLocalSource:
 
         # Then
         assert "Missing periods: 2026-03" in error_message
+
+
+class TestReportingCompatibilityShims:
+    def test_preserves_legacy_output_module_constants(self) -> None:
+        """Expose historical reporting constants through the legacy output shim."""
+        # Given
+
+        # When
+
+        # Then
+        assert MANIFEST_FILENAME == "manifest.json"
+        assert ORG_SUMMARY_DIRNAME == "org_summary"
+        assert "pull_requests.csv" in REQUIRED_RAW_SNAPSHOT_HEADERS
+
+    def test_preserves_legacy_visualization_exports(self) -> None:
+        """Expose legacy organization-report helpers through the visualization shim."""
+        # Given
+
+        # When
+
+        # Then
+        assert callable(build_organization_report_payload)
+        assert callable(render_organization_report_html)
+
+    def test_preserves_legacy_manual_dashboard_module_entrypoint(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """Render HTML when the legacy manual-dashboard module is executed directly."""
+        # Given
+        payload = {
+            "overview": {
+                "org": "acme",
+                "generated_at": "2026-04-23T09:00:00+00:00",
+                "since": "2026-04-01",
+                "until": "2026-04-30",
+                "time_anchor": "created_at",
+                "top_repository": "acme/api",
+                "top_author": "alice",
+                "unique_reviewers": 1,
+            },
+            "reviewers": [
+                {
+                    "reviewer_login": "reviewer-1",
+                    "review_submissions": 1,
+                    "pull_requests_reviewed": 1,
+                    "approvals": 1,
+                    "changes_requested": 0,
+                    "comments": 0,
+                    "authors_supported": 1,
+                },
+            ],
+            "pull_requests": [
+                _manual_pull_request(
+                    repository_full_name="acme/api",
+                    pull_request_number=1,
+                    author_login="alice",
+                    created_at="2026-04-01T09:00:00+00:00",
+                    merged_at="2026-04-02T09:00:00+00:00",
+                    changed_lines=10,
+                    additions=8,
+                    deletions=2,
+                    first_review_hours=1.0,
+                    merge_hours=24.0,
+                    size_bucket="XS",
+                ),
+            ],
+        }
+        input_json = tmp_path / "payload.json"
+        output_html = tmp_path / "payload.html"
+        input_json.write_text(json.dumps(payload), encoding="utf-8")
+
+        # When
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "orgpulse.manual_dashboard",
+                "--input-json",
+                str(input_json),
+                "--output-html",
+                str(output_html),
+                "--distribution-percentile",
+                "99",
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+            cwd=str(Path(__file__).resolve().parents[1]),
+        )
+
+        # Then
+        assert result.returncode == 0
+        assert output_html.exists()
+        assert "Lines / Active Author" in output_html.read_text(encoding="utf-8")
 
 
 def _manual_pull_request(

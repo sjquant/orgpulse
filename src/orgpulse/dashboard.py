@@ -46,6 +46,7 @@ from orgpulse.models import (
     TimeAnchor,
 )
 from orgpulse.raw_snapshot_source import read_snapshot_csv_rows
+from orgpulse.reporting.contracts import build_time_anchor_context
 from orgpulse.reporting.dashboard_html import (
     prepare_dashboard_payload,
     render_dashboard_html,
@@ -304,6 +305,7 @@ def build_dashboard_payload_from_local_outputs(
         org=org,
         since=since,
         until=until,
+        source_as_of=manifest.last_successful_run.as_of,
         snapshots=snapshots,
     )
 
@@ -651,6 +653,7 @@ def _build_dashboard_payload(
     org: str,
     since: date,
     until: date,
+    source_as_of: date | None = None,
     snapshots: list[PullRequestSnapshot],
 ) -> DashboardSourcePayload:
     total_pull_requests = len(snapshots)
@@ -683,6 +686,7 @@ def _build_dashboard_payload(
         org=org,
         since=since,
         until=until,
+        source_as_of=source_as_of or until,
         snapshots=snapshots,
         author_rows=author_rows,
         reviewer_rows=reviewer_rows,
@@ -839,6 +843,7 @@ def _overview_summary(
     org: str,
     since: date,
     until: date,
+    source_as_of: date,
     snapshots: list[PullRequestSnapshot],
     author_rows: list[DashboardAuthorPayload],
     reviewer_rows: list[DashboardReviewerPayload],
@@ -858,8 +863,12 @@ def _overview_summary(
     return DashboardOverviewPayload(
         org=org,
         time_anchor="created_at",
+        time_anchor_context=build_time_anchor_context(
+            "created_at"
+        ),
         since=since.isoformat(),
         until=until.isoformat(),
+        source_as_of=source_as_of.isoformat(),
         generated_at=datetime.now(UTC).isoformat(),
         pull_requests=len(snapshots),
         merged_pull_requests=sum(1 for snapshot in snapshots if snapshot.merged_at),
@@ -903,7 +912,24 @@ def _overview_summary(
         ),
         top_repository=repository_rows[0].repository_full_name if repository_rows else None,
         top_author=author_rows[0].author_login if author_rows else None,
+        open_week=source_as_of < _week_end(until),
+        open_week_key=_week_key(until) if source_as_of < _week_end(until) else None,
+        open_month=source_as_of < _month_end(until),
+        open_month_key=until.strftime("%Y-%m") if source_as_of < _month_end(until) else None,
     )
+
+
+def _week_key(current: date) -> str:
+    iso_year, iso_week, _iso_weekday = current.isocalendar()
+    return f"{iso_year}-W{iso_week:02d}"
+
+
+def _week_end(current: date) -> date:
+    return current + timedelta(days=6 - current.weekday())
+
+
+def _month_end(current: date) -> date:
+    return _next_month_start(_month_start(current)) - timedelta(days=1)
 
 
 def _author_rows(

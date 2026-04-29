@@ -297,6 +297,7 @@ class AnalysisService:
             time_anchor=config.time_anchor.value,
             initial_view=config.grouping.value,
             default_top_n=8 if config.top_n is None else config.top_n,
+            as_of=manifest.last_successful_run.as_of,
             since=config.since,
             until=config.until,
             distribution_percentile=config.distribution_percentile,

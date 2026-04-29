@@ -116,6 +116,11 @@
       box-shadow: var(--shadow);
     }
 
+    .summary-card.partial-period {
+      background: linear-gradient(180deg, rgba(255, 249, 238, 0.96), rgba(254, 244, 225, 0.96));
+      border-color: rgba(143, 95, 21, 0.28);
+    }
+
     .summary-card h3 {
       margin-bottom: 10px;
       font-size: 0.86rem;
@@ -131,6 +136,19 @@
     }
 
     .summary-meta { margin-top: 8px; font-size: 0.9rem; color: var(--muted); }
+
+    .period-badge {
+      display: inline-flex;
+      align-items: center;
+      margin-top: 10px;
+      border-radius: 999px;
+      padding: 5px 9px;
+      border: 1px solid rgba(143, 95, 21, 0.28);
+      background: rgba(143, 95, 21, 0.1);
+      color: var(--warn);
+      font-size: 0.78rem;
+      font-weight: 800;
+    }
 
     .panel-header {
       display: flex;
@@ -246,6 +264,17 @@
       font-size: 0.75rem;
       fill: var(--muted);
       font-family: "JetBrains Mono", "SFMono-Regular", monospace;
+    }
+
+    .partial-period-band { fill: rgba(143, 95, 21, 0.1); }
+
+    .partial-period-marker {
+      stroke: var(--warn);
+      stroke-width: 3;
+    }
+
+    .partial-period-row {
+      background: rgba(143, 95, 21, 0.08);
     }
 
     @media (max-width: 920px) {
@@ -464,7 +493,12 @@
       }
       const summary = selectedPeriod.summary;
       summaryCards.innerHTML = [
-        summaryCard("Period", selectedPeriod.label, `${selectedPeriod.start_date} to ${selectedPeriod.end_date}`),
+        summaryCard(
+          "Period",
+          selectedPeriod.label,
+          `${selectedPeriod.start_date} to ${selectedPeriod.end_date}`,
+          selectedPeriod
+        ),
         summaryCard("Pull requests", formatValue(summary.pull_request_count, "int"), `Merged ${formatValue(summary.merged_pull_request_count, "int")}`),
         summaryCard("Active authors", formatValue(summary.active_author_count, "int"), `Merged PR / author ${formatValue(summary.merged_pull_requests_per_active_author, "float")}`),
         summaryCard("Median merge", formatValue(summary.time_to_merge_median_hours, "float"), "hours"),
@@ -472,12 +506,17 @@
       ].join("");
     }
 
-    function summaryCard(title, value, meta) {
+    function summaryCard(title, value, meta, period = null) {
+      const isPartial = Boolean(period?.is_partial);
+      const badge = isPartial
+        ? `<span class="period-badge">${periodStatusText(period)} · observed through ${period.observed_through_date}</span>`
+        : "";
       return `
-        <article class="summary-card">
+        <article class="summary-card ${isPartial ? "partial-period" : ""}">
           <h3>${title}</h3>
           <div class="summary-value">${value}</div>
           <div class="summary-meta">${meta}</div>
+          ${badge}
         </article>
       `;
     }
@@ -494,6 +533,7 @@
         <div class="diagnostic-grid">
           ${diagnosticCard("Same-period created", formatValue(diagnostics.same_period_created_ratio, "percent"), `${formatValue(diagnostics.same_period_created_count, "int")} pull requests`, "good")}
           ${diagnosticCard("Older PR ratio", formatValue(diagnostics.older_pull_request_ratio, "percent"), `${formatValue(diagnostics.older_pull_request_count, "int")} carried into this period`, "warn")}
+          ${diagnosticCard("Period state", periodStatusText(selectedPeriod), `Observed through ${selectedPeriod.observed_through_date}`, selectedPeriod.is_partial ? "warn" : "good")}
         </div>
         <div class="table-stack">
           ${renderMiniTable("Top contributing repositories", diagnostics.top_contributing_repositories, [
@@ -538,7 +578,7 @@
       }
       const headers = columns.map(column => `<th>${column.label}</th>`).join("");
       const body = rows.map(row => `
-        <tr>
+        <tr class="${row.is_partial || String(row.state || "").startsWith("open") ? "partial-period-row" : ""}">
           ${columns.map(column => `<td>${formatValue(row[column.key], column.format ?? "text")}</td>`).join("")}
         </tr>
       `).join("");
@@ -564,7 +604,9 @@
           color: palette[0],
           points: periodView.periods.map(period => ({
             label: period.label,
-            value: period.values[state.metric]
+            value: period.values[state.metric],
+            isPartial: period.is_partial,
+            statusText: periodStatusText(period)
           }))
         }
       ], metric.format);
@@ -590,7 +632,9 @@
             color: palette[index % palette.length],
             points: entity.period_values.map(periodValue => ({
               label: periodValue.label,
-              value: periodValue.values[state.metric]
+              value: periodValue.values[state.metric],
+              isPartial: periodValue.is_partial,
+              statusText: periodStatusText(periodValue)
             }))
           })), metric.format)
         : renderEmptyState("No matching series for the current filter.");
@@ -623,11 +667,14 @@
         label: period.label,
         start_date: period.start_date,
         end_date: period.end_date,
+        state: periodStatusText(period),
+        is_partial: period.is_partial,
         value: period.values[state.metric]
       })), [
         { key: "label", label: "Period" },
         { key: "start_date", label: "Start" },
         { key: "end_date", label: "End" },
+        { key: "state", label: "State" },
         { key: "value", label: metric.label, format: metric.format }
       ]);
     }
@@ -705,6 +752,15 @@
       const xFor = index => padding.left + (seriesList[0].points.length === 1 ? innerWidth / 2 : (innerWidth * index) / (seriesList[0].points.length - 1));
       const yFor = value => padding.top + innerHeight - ((Number(value) - baseline) / range) * innerHeight;
       const axisTicks = Array.from({ length: 4 }, (_, index) => baseline + (range * index) / 3);
+      const partialBands = seriesList[0].points.map((point, index) => {
+        if (!point.isPartial) {
+          return "";
+        }
+        const previousX = index === 0 ? padding.left : xFor(index - 1);
+        const nextX = index === seriesList[0].points.length - 1 ? width - padding.right : xFor(index + 1);
+        const bandWidth = Math.max(12, (nextX - previousX) / 2);
+        return `<rect class="partial-period-band" x="${xFor(index) - bandWidth / 2}" y="${padding.top}" width="${bandWidth}" height="${innerHeight}" rx="8" />`;
+      }).join("");
 
       const gridLines = axisTicks.map(tick => {
         const y = yFor(tick);
@@ -723,7 +779,9 @@
           .map((point, index) => `${index === 0 ? "M" : "L"} ${xFor(index)} ${yFor(point.value ?? baseline)}`)
           .join(" ");
         const markers = series.points.map((point, index) => `
-          <circle cx="${xFor(index)}" cy="${yFor(point.value ?? baseline)}" r="4" fill="${series.color}" />
+          <circle class="${point.isPartial ? "partial-period-marker" : ""}" cx="${xFor(index)}" cy="${yFor(point.value ?? baseline)}" r="${point.isPartial ? 5 : 4}" fill="${series.color}">
+            <title>${point.label}: ${formatValue(point.value, format)}${point.isPartial ? ` (${point.statusText})` : ""}</title>
+          </circle>
         `).join("");
         return `
           <path d="${path}" fill="none" stroke="${series.color}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" />
@@ -733,11 +791,28 @@
 
       return `
         <svg viewBox="0 0 ${width} ${height}" width="100%" height="${height}" role="img" aria-label="Line chart">
+          ${partialBands}
           ${gridLines}
           ${lines}
           ${labels}
         </svg>
       `;
+    }
+
+    function periodStatusText(period) {
+      if (!period) {
+        return "unknown period";
+      }
+      if (period.open_week) {
+        return "open week";
+      }
+      if (period.open_month) {
+        return "open month";
+      }
+      if (period.is_partial) {
+        return "partial period";
+      }
+      return period.status || "closed";
     }
 
     function renderEmptyState(message) {

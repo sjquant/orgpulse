@@ -42,10 +42,9 @@ from orgpulse.models import (
     RunScope,
     TimeAnchor,
 )
-from orgpulse.output import (
-    MANIFEST_FILENAME,
-    ORG_SUMMARY_DIRNAME,
-    REQUIRED_RAW_SNAPSHOT_HEADERS,
+from orgpulse.reporting.analysis_report import (
+    build_organization_report_payload,
+    render_organization_report_html,
 )
 from orgpulse.reporting.dashboard_html import (
     prepare_dashboard_payload,
@@ -53,13 +52,12 @@ from orgpulse.reporting.dashboard_html import (
     render_dashboard_html,
 )
 from orgpulse.reporting.run_outputs import (
+    MANIFEST_FILENAME,
+    ORG_SUMMARY_DIRNAME,
+    REQUIRED_RAW_SNAPSHOT_HEADERS,
     OrgSummaryWriter,
     RepositorySummaryCsvWriter,
     RunManifestWriter,
-)
-from orgpulse.visualization import (
-    build_organization_report_payload,
-    render_organization_report_html,
 )
 
 build_dashboard_payload_from_local_outputs = (
@@ -2652,9 +2650,9 @@ class TestManualDashboardLocalSource:
         assert "Missing periods: 2026-03" in error_message
 
 
-class TestReportingCompatibilityShims:
-    def test_preserves_legacy_output_module_constants(self) -> None:
-        """Expose historical reporting constants through the legacy output shim."""
+class TestReportingModules:
+    def test_exposes_reporting_module_constants(self) -> None:
+        """Expose reporting constants from the run outputs module."""
         # Given
 
         # When
@@ -2664,8 +2662,8 @@ class TestReportingCompatibilityShims:
         assert ORG_SUMMARY_DIRNAME == "org_summary"
         assert "pull_requests.csv" in REQUIRED_RAW_SNAPSHOT_HEADERS
 
-    def test_preserves_legacy_visualization_exports(self) -> None:
-        """Expose legacy organization-report helpers through the visualization shim."""
+    def test_exposes_analysis_report_renderers(self) -> None:
+        """Expose organization report helpers from the analysis report module."""
         # Given
 
         # When

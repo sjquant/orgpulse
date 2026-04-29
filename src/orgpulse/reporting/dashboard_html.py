@@ -18,12 +18,16 @@ from orgpulse.distribution import (
 )
 from orgpulse.models import (
     DashboardChartsPayload,
+    DashboardMethodologyPayload,
     DashboardOverviewPayload,
     DashboardPreparedPayload,
     DashboardPullRequestPayload,
+    DashboardReferenceSummaryPayload,
     DashboardReviewerPayload,
     DashboardReviewStatePayload,
+    DashboardSizeDiagnosticPayload,
     DashboardSourcePayload,
+    DashboardTrendRowPayload,
 )
 
 AUTHOR_ROSTER_LIMIT = 12
@@ -126,9 +130,15 @@ def prepare_dashboard_payload(
         monthly_trends=normalized_payload["monthly_trends"],
     )
     _attach_dashboard_slices(normalized_payload)
-    normalized_payload["methodology"] = _build_methodology(normalized_payload)
-    normalized_payload["reference_summary"] = _build_reference_summary(normalized_payload)
-    normalized_payload["size_diagnostic"] = _build_size_diagnostic(normalized_payload["size_buckets"])
+    normalized_payload["methodology"] = _build_methodology(
+        normalized_payload
+    ).model_dump(mode="json")
+    normalized_payload["reference_summary"] = _build_reference_summary(
+        normalized_payload
+    ).model_dump(mode="json")
+    normalized_payload["size_diagnostic"] = _build_size_diagnostic(
+        normalized_payload["size_buckets"]
+    ).model_dump(mode="json")
     normalized_payload["default_author"] = (
         normalized_payload["authors"][0]["author_login"] if normalized_payload["authors"] else None
     )
@@ -233,18 +243,24 @@ def _build_dashboard_sections(
             distribution_percentile=distribution_percentile,
             distribution_thresholds=distribution_thresholds,
         ),
-        "weekly_trends": _build_trend_rows(
-            pull_requests,
-            grain="week",
-            distribution_percentile=distribution_percentile,
-            distribution_thresholds=distribution_thresholds,
-        ),
-        "monthly_trends": _build_trend_rows(
-            pull_requests,
-            grain="month",
-            distribution_percentile=distribution_percentile,
-            distribution_thresholds=distribution_thresholds,
-        ),
+        "weekly_trends": [
+            row.model_dump(mode="json")
+            for row in _build_trend_rows(
+                pull_requests,
+                grain="week",
+                distribution_percentile=distribution_percentile,
+                distribution_thresholds=distribution_thresholds,
+            )
+        ],
+        "monthly_trends": [
+            row.model_dump(mode="json")
+            for row in _build_trend_rows(
+                pull_requests,
+                grain="month",
+                distribution_percentile=distribution_percentile,
+                distribution_thresholds=distribution_thresholds,
+            )
+        ],
     }
 
 
@@ -657,13 +673,13 @@ def _build_trend_rows(
     grain: str,
     distribution_percentile: int,
     distribution_thresholds: dict[str, float | None],
-) -> list[dict[str, Any]]:
+) -> list[DashboardTrendRowPayload]:
     grouped: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for pull_request in pull_requests:
         created_at = _parse_datetime(pull_request["created_at"])
         period_key = _period_key(created_at, grain=grain)
         grouped[period_key].append(pull_request)
-    rows: list[dict[str, Any]] = []
+    rows: list[DashboardTrendRowPayload] = []
     previous_pull_requests: int | None = None
     previous_changed_lines: int | None = None
     for period_key in sorted(grouped):
@@ -705,42 +721,42 @@ def _build_trend_rows(
             distribution_percentile=distribution_percentile,
             distribution_thresholds=distribution_thresholds,
         )
-        row = {
-            "period_key": period_key,
-            "pull_requests": pull_request_count,
-            "merged_pull_requests": merged_count,
-            "open_pull_requests": open_count,
-            "active_authors": active_authors,
-            "changed_lines": _as_int(changed_lines["total"]),
-            "review_submissions": review_submissions,
-            "pull_requests_per_active_author": _round(
+        row = DashboardTrendRowPayload(
+            period_key=period_key,
+            pull_requests=pull_request_count,
+            merged_pull_requests=merged_count,
+            open_pull_requests=open_count,
+            active_authors=active_authors,
+            changed_lines=_as_int(changed_lines["total"]),
+            review_submissions=review_submissions,
+            pull_requests_per_active_author=_round(
                 pull_request_count / active_authors if active_authors else None
             ),
-            "changed_lines_per_active_author": _round(
+            changed_lines_per_active_author=_round(
                 _as_int(changed_lines["total"]) / active_authors
                 if active_authors
                 else None
             ),
-            "average_reviews_per_pr": _round(
+            average_reviews_per_pr=_round(
                 review_submissions / pull_request_count if pull_request_count else None
             ),
-            "median_first_review_hours": _round(
+            median_first_review_hours=_round(
                 float(median(first_review_values)) if first_review_values else None
             ),
-            "median_merge_hours": _round(
+            median_merge_hours=_round(
                 float(median(merge_values)) if merge_values else None
             ),
-            "pull_request_delta": (
+            pull_request_delta=(
                 pull_request_count - previous_pull_requests
                 if previous_pull_requests is not None
                 else None
             ),
-            "changed_lines_delta": (
+            changed_lines_delta=(
                 _as_int(changed_lines["total"]) - previous_changed_lines
                 if previous_changed_lines is not None
                 else None
             ),
-        }
+        )
         rows.append(row)
         previous_pull_requests = pull_request_count
         previous_changed_lines = _as_int(changed_lines["total"])
@@ -885,18 +901,24 @@ def _build_author_details(
                 distribution_percentile=distribution_percentile,
                 distribution_thresholds=distribution_thresholds,
             ),
-            "weekly_trends": _build_trend_rows(
-                author_pull_requests,
-                grain="week",
-                distribution_percentile=distribution_percentile,
-                distribution_thresholds=distribution_thresholds,
-            ),
-            "monthly_trends": _build_trend_rows(
-                author_pull_requests,
-                grain="month",
-                distribution_percentile=distribution_percentile,
-                distribution_thresholds=distribution_thresholds,
-            ),
+            "weekly_trends": [
+                row.model_dump(mode="json")
+                for row in _build_trend_rows(
+                    author_pull_requests,
+                    grain="week",
+                    distribution_percentile=distribution_percentile,
+                    distribution_thresholds=distribution_thresholds,
+                )
+            ],
+            "monthly_trends": [
+                row.model_dump(mode="json")
+                for row in _build_trend_rows(
+                    author_pull_requests,
+                    grain="month",
+                    distribution_percentile=distribution_percentile,
+                    distribution_thresholds=distribution_thresholds,
+                )
+            ],
         }
     return details
 
@@ -1048,69 +1070,78 @@ def _build_insights(payload: dict[str, Any]) -> list[dict[str, str]]:
     return insights[:5]
 
 
-def _build_methodology(payload: dict[str, Any]) -> dict[str, Any]:
+def _build_methodology(
+    payload: dict[str, Any],
+) -> DashboardMethodologyPayload:
     overview = payload["overview"]
-    return {
-        "window": f"{overview['since']} to {overview['until']}",
-        "anchor": overview["time_anchor"],
-        "distribution_percentile": overview["distribution_percentile"],
-        "generated_at": overview["generated_at"],
-    }
+    return DashboardMethodologyPayload(
+        window=f"{overview['since']} to {overview['until']}",
+        anchor=overview["time_anchor"],
+        distribution_percentile=overview["distribution_percentile"],
+        generated_at=overview["generated_at"],
+    )
 
 
-def _build_reference_summary(payload: dict[str, Any]) -> dict[str, Any]:
+def _build_reference_summary(
+    payload: dict[str, Any],
+) -> DashboardReferenceSummaryPayload:
     overview = payload["overview"]
     authors = payload["authors"]
     reviewers = payload["reviewers"]
     repositories = payload["repositories"]
-    return {
-        "author_roster_coverage_pct": _coverage_share(
+    return DashboardReferenceSummaryPayload(
+        author_roster_coverage_pct=_coverage_share(
             authors,
             value_key="pull_requests",
             total=float(overview["pull_requests"]),
             top_n=12,
         ),
-        "reviewers_top_coverage_pct": _coverage_share(
+        reviewers_top_coverage_pct=_coverage_share(
             reviewers,
             value_key="pull_requests_reviewed",
             total=float(sum(int(row["pull_requests_reviewed"]) for row in reviewers)),
             top_n=10,
         ),
-        "repositories_top_coverage_pct": _coverage_share(
+        repositories_top_coverage_pct=_coverage_share(
             repositories,
             value_key="pull_requests",
             total=float(overview["pull_requests"]),
             top_n=10,
         ),
-        "top3_author_share_pct": _coverage_share(
+        top3_author_share_pct=_coverage_share(
             authors,
             value_key="pull_requests",
             total=float(overview["pull_requests"]),
             top_n=3,
         ),
-        "top3_repository_share_pct": _coverage_share(
+        top3_repository_share_pct=_coverage_share(
             repositories,
             value_key="pull_requests",
             total=float(overview["pull_requests"]),
             top_n=3,
         ),
-        "weekly_hidden_count": len(payload["weekly_trends_older"]),
-        "monthly_hidden_count": len(payload["monthly_trends_older"]),
-        "author_reference_count": len(payload["authors"]),
-    }
+        weekly_hidden_count=len(payload["weekly_trends_older"]),
+        monthly_hidden_count=len(payload["monthly_trends_older"]),
+        author_reference_count=len(payload["authors"]),
+    )
 
 
-def _build_size_diagnostic(size_buckets: list[dict[str, Any]]) -> dict[str, Any]:
+def _build_size_diagnostic(
+    size_buckets: list[dict[str, Any]],
+) -> DashboardSizeDiagnosticPayload:
     rows_with_latency = [
         row
         for row in size_buckets
         if row["pull_requests"] and row["median_first_review_hours"] is not None
     ]
     if not rows_with_latency:
-        return {
-            "headline": "No review-latency size signal available in this window.",
-            "supporting": "This window does not contain enough reviewed PR size data to compare latency by bucket.",
-        }
+        return DashboardSizeDiagnosticPayload(
+            headline="No review-latency size signal available in this window.",
+            supporting=(
+                "This window does not contain enough reviewed PR size data "
+                "to compare latency by bucket."
+            ),
+        )
     slowest_row = max(rows_with_latency, key=lambda row: row["median_first_review_hours"])
     fastest_row = min(rows_with_latency, key=lambda row: row["median_first_review_hours"])
     gap = None
@@ -1122,17 +1153,17 @@ def _build_size_diagnostic(size_buckets: list[dict[str, Any]]) -> dict[str, Any]
             float(slowest_row["median_first_review_hours"])
             - float(fastest_row["median_first_review_hours"])
         )
-    return {
-        "headline": (
+    return DashboardSizeDiagnosticPayload(
+        headline=(
             f"{slowest_row['bucket']} PRs waited the longest for first review at "
             f"{_format_duration(slowest_row['median_first_review_hours'])} median."
         ),
-        "supporting": (
+        supporting=(
             "Compared with "
             f"{fastest_row['bucket']} at {_format_duration(fastest_row['median_first_review_hours'])}, "
             f"the gap is {_format_duration(gap) if gap is not None else '-'}."
         ),
-    }
+    )
 
 
 def _split_recent_rows(

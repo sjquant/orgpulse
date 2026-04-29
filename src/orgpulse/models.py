@@ -599,6 +599,54 @@ class DashboardChartsPayload(BaseModel):
     size_bucket_latency: list[DashboardSizeBucketPayload] = Field(default_factory=list)
 
 
+class DashboardTrendRowPayload(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    period_key: str
+    pull_requests: int
+    merged_pull_requests: int
+    open_pull_requests: int
+    active_authors: int
+    changed_lines: int
+    review_submissions: int
+    pull_requests_per_active_author: float | None = None
+    changed_lines_per_active_author: float | None = None
+    average_reviews_per_pr: float | None = None
+    median_first_review_hours: float | None = None
+    median_merge_hours: float | None = None
+    pull_request_delta: int | None = None
+    changed_lines_delta: int | None = None
+
+
+class DashboardMethodologyPayload(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    window: str
+    anchor: str
+    distribution_percentile: int
+    generated_at: str
+
+
+class DashboardReferenceSummaryPayload(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    author_roster_coverage_pct: float | None = None
+    reviewers_top_coverage_pct: float | None = None
+    repositories_top_coverage_pct: float | None = None
+    top3_author_share_pct: float | None = None
+    top3_repository_share_pct: float | None = None
+    weekly_hidden_count: int
+    monthly_hidden_count: int
+    author_reference_count: int
+
+
+class DashboardSizeDiagnosticPayload(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    headline: str
+    supporting: str
+
+
 class DashboardSourcePayload(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 

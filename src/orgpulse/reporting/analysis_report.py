@@ -88,6 +88,25 @@ def build_analysis_report_payload(
     filtered_metrics: tuple[PullRequestMetricRecord, ...],
     raw_snapshot: RawSnapshotWriteResult,
 ) -> AnalysisReportPayload:
+    """Build the HTML report payload for a completed analysis run.
+
+    Args:
+        target_org: Target organization login.
+        grain: Reporting grain label.
+        time_anchor: Active time anchor label.
+        initial_view: Default visualization view key.
+        default_top_n: Default entity cutoff for interactive views.
+        since: Optional lower date bound.
+        until: Optional upper date bound.
+        distribution_percentile: Percentile cutoff applied to latency metrics.
+        matched_pull_request_count: Pull request count after filtering.
+        filtered_metrics: Metrics included in the report window.
+        raw_snapshot: Normalized raw snapshot backing the metrics.
+
+    Returns:
+        A validated analysis report payload.
+    """
+
     raw_periods = _load_filtered_raw_periods(raw_snapshot, filtered_metrics)
     period_catalog = _period_catalog(raw_snapshot, filtered_metrics)
     metrics_by_period = _metrics_by_period(filtered_metrics)
@@ -624,6 +643,15 @@ def _hours_from_seconds(value: float | None) -> float | None:
 def render_analysis_report_html(
     report_payload: AnalysisReportPayload | dict[str, object],
 ) -> str:
+    """Render analysis report HTML from a typed or raw payload.
+
+    Args:
+        report_payload: Prepared analysis report payload.
+
+    Returns:
+        Rendered analysis report HTML.
+    """
+
     normalized_payload = _validate_analysis_report_payload(report_payload)
     serialized_payload = json.dumps(
         normalized_payload.model_dump(mode="json"),

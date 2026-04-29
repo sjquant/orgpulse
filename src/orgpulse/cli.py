@@ -145,6 +145,8 @@ def run_command(
         ),
     ] = None,
 ) -> None:
+    """Collect GitHub data and write normalized run outputs."""
+
     try:
         config = build_run_config(
             org=org,
@@ -317,6 +319,8 @@ def reaggregate_command(
         ),
     ] = None,
 ) -> None:
+    """Rebuild stored raw data into alternate grains or anchors locally."""
+
     try:
         config = build_run_config(
             org=org,
@@ -500,6 +504,8 @@ def analyze_command(
         ),
     ] = None,
 ) -> None:
+    """Analyze stored raw data with explicit grouping and export controls."""
+
     try:
         config = build_analysis_config(
             org=org,
@@ -585,6 +591,8 @@ def dashboard_command(
         ),
     ] = 100,
 ) -> None:
+    """Build a dashboard report from stored local outputs."""
+
     from orgpulse.dashboard import generate_dashboard_report
 
     try:
@@ -653,6 +661,8 @@ def dashboard_render_command(
         ),
     ] = 100,
 ) -> None:
+    """Render dashboard HTML from a previously generated JSON payload."""
+
     from orgpulse.reporting.dashboard_html import render_dashboard_artifact
 
     try:
@@ -951,6 +961,25 @@ def build_run_config(
     backfill_start: str | None = None,
     backfill_end: str | None = None,
 ) -> RunConfig:
+    """Build a validated run configuration from CLI inputs and defaults.
+
+    Args:
+        org: Explicit organization override.
+        github_token: Explicit token override.
+        as_of: Explicit anchor date override.
+        period: Explicit reporting grain override.
+        time_anchor: Explicit time anchor override.
+        mode: Explicit run mode override.
+        output_dir: Explicit output root override.
+        include_repos: Optional repository allowlist.
+        exclude_repos: Optional repository denylist.
+        backfill_start: Optional backfill lower bound.
+        backfill_end: Optional backfill upper bound.
+
+    Returns:
+        A validated run configuration.
+    """
+
     settings = get_settings()
     payload: dict[str, object] = {
         "org": settings.org if org is None else org,
@@ -973,4 +1002,6 @@ def build_run_config(
 
 
 def main() -> None:
+    """Run the Typer CLI application."""
+
     app()

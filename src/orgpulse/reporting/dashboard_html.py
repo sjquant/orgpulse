@@ -44,6 +44,17 @@ def render_dashboard_artifact(
     output_html: Path,
     distribution_percentile: int,
 ) -> dict[str, str | int]:
+    """Render a dashboard HTML artifact from a stored JSON payload.
+
+    Args:
+        input_json: JSON payload path to load.
+        output_html: HTML artifact path to write.
+        distribution_percentile: Percentile cutoff applied during enrichment.
+
+    Returns:
+        Metadata describing the generated HTML artifact.
+    """
+
     payload = _load_payload(
         input_json,
         distribution_percentile=distribution_percentile,
@@ -73,6 +84,15 @@ def _load_payload(
 def render_dashboard_html(
     payload: DashboardPreparedPayload | dict[str, Any],
 ) -> str:
+    """Render dashboard HTML from a prepared payload.
+
+    Args:
+        payload: Prepared dashboard payload to render.
+
+    Returns:
+        Rendered dashboard HTML.
+    """
+
     prepared_payload = _validate_prepared_payload(payload)
     template = _template_environment().get_template("org_dashboard.html.j2")
     return template.render(
@@ -109,6 +129,16 @@ def prepare_dashboard_payload(
     *,
     distribution_percentile: int = 100,
 ) -> DashboardPreparedPayload:
+    """Expand a dashboard source payload into template-ready structures.
+
+    Args:
+        payload: Source dashboard payload to enrich for presentation.
+        distribution_percentile: Percentile cutoff applied to latency metrics.
+
+    Returns:
+        A prepared dashboard payload suitable for HTML rendering.
+    """
+
     validate_distribution_percentile(distribution_percentile)
     normalized_payload = _validate_source_payload(payload).model_dump(mode="json")
     pull_requests = normalized_payload["pull_requests"]

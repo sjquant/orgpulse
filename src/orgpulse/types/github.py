@@ -6,14 +6,20 @@ from typing import Protocol
 
 
 class GitHubActorLike(Protocol):
+    """Describe the subset of a GitHub actor object used by ingestion."""
+
     login: str
 
 
 class GitHubTeamLike(Protocol):
+    """Describe the subset of a GitHub team object used by ingestion."""
+
     name: str
 
 
 class GitHubReviewLike(Protocol):
+    """Describe the GitHub review attributes consumed during normalization."""
+
     id: int
     state: str
     user: GitHubActorLike | None
@@ -22,6 +28,8 @@ class GitHubReviewLike(Protocol):
 
 
 class GitHubTimelineEventLike(Protocol):
+    """Describe the GitHub timeline attributes consumed during normalization."""
+
     id: int
     event: str
     actor: GitHubActorLike | None
@@ -30,10 +38,14 @@ class GitHubTimelineEventLike(Protocol):
 
 
 class GitHubIssueLike(Protocol):
+    """Describe the issue API surface needed to load pull request timelines."""
+
     def get_timeline(self) -> Iterable[GitHubTimelineEventLike]: ...
 
 
 class GraphQLRequesterLike(Protocol):
+    """Describe the GraphQL requester surface used for repository backfill."""
+
     def graphql_query(
         self,
         query: str,
@@ -42,6 +54,8 @@ class GraphQLRequesterLike(Protocol):
 
 
 class GitHubPullRequestLike(Protocol):
+    """Describe the pull request surface used by ingestion."""
+
     number: int
     title: str
     state: str
@@ -64,6 +78,8 @@ class GitHubPullRequestLike(Protocol):
 
 
 class GitHubRepositoryLike(Protocol):
+    """Describe the repository surface used by ingestion."""
+
     name: str
     full_name: str
     default_branch: str
@@ -83,6 +99,8 @@ class GitHubRepositoryLike(Protocol):
 
 
 class GitHubOrganizationLike(Protocol):
+    """Describe the organization surface used by ingestion."""
+
     login: str
 
     def get_repos(
@@ -95,6 +113,8 @@ class GitHubOrganizationLike(Protocol):
 
 
 class GitHubIngestionClientLike(Protocol):
+    """Describe the GitHub client surface required for ingestion flows."""
+
     requester: GraphQLRequesterLike | None
 
     def get_organization(self, org: str) -> GitHubOrganizationLike: ...
@@ -103,6 +123,8 @@ class GitHubIngestionClientLike(Protocol):
 
 
 class GitHubAuthClientLike(Protocol):
+    """Describe the GitHub client surface required for auth validation."""
+
     def get_user(self) -> GitHubActorLike: ...
 
     def get_organization(self, org: str) -> GitHubOrganizationLike: ...

@@ -15,6 +15,14 @@ def atomic_write_csv(
     fieldnames: tuple[str, ...],
     rows: Iterable[Mapping[str, object]],
 ) -> None:
+    """Atomically write CSV rows to disk.
+
+    Args:
+        path: Destination file path.
+        fieldnames: Ordered CSV header names.
+        rows: Rows to serialize into the CSV document.
+    """
+
     def write(handle) -> None:
         writer = csv.DictWriter(handle, fieldnames=fieldnames, lineterminator="\n")
         writer.writeheader()
@@ -27,6 +35,13 @@ def atomic_write_json(
     path: Path,
     payload: dict[str, object],
 ) -> None:
+    """Atomically write a JSON payload to disk.
+
+    Args:
+        path: Destination file path.
+        payload: JSON-serializable mapping to persist.
+    """
+
     def write(handle) -> None:
         json.dump(payload, handle, indent=2, sort_keys=True)
         handle.write("\n")
@@ -38,6 +53,13 @@ def atomic_write_text(
     path: Path,
     document: str,
 ) -> None:
+    """Atomically write a text document to disk.
+
+    Args:
+        path: Destination file path.
+        document: Text content to persist.
+    """
+
     def write(handle) -> None:
         handle.write(document)
 

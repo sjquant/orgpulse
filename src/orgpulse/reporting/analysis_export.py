@@ -16,6 +16,15 @@ from orgpulse.reporting.analysis_report import render_analysis_report_html
 def render_analysis_result(
     result: AnalysisResult,
 ) -> str:
+    """Render an analysis result into the requested export format.
+
+    Args:
+        result: Fully computed analysis result.
+
+    Returns:
+        A serialized export document.
+    """
+
     if result.export_format is AnalysisExportFormat.CSV:
         return _render_csv(result)
     if result.export_format is AnalysisExportFormat.MARKDOWN:

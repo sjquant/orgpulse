@@ -57,6 +57,8 @@ DASHBOARD_SOURCE_TIME_ANCHOR = TimeAnchor.CREATED_AT
 
 @dataclass(frozen=True)
 class PullRequestReview:
+    """Represent one normalized review event attached to a pull request."""
+
     author_login: str
     state: str
     submitted_at: datetime
@@ -64,6 +66,8 @@ class PullRequestReview:
 
 @dataclass(frozen=True)
 class PullRequestTimelineEvent:
+    """Represent one normalized timeline event attached to a pull request."""
+
     event: str
     created_at: datetime | None
     requested_reviewer_login: str | None
@@ -71,6 +75,8 @@ class PullRequestTimelineEvent:
 
 @dataclass(frozen=True)
 class PullRequestSnapshot:
+    """Represent one dashboard-oriented pull request snapshot."""
+
     repository_full_name: str
     number: int
     title: str
@@ -144,6 +150,22 @@ def generate_dashboard_report(
     refresh: bool,
     distribution_percentile: int,
 ) -> dict[str, Any]:
+    """Generate dashboard artifacts from local source data.
+
+    Args:
+        org: Target organization login.
+        since: Inclusive lower date bound for the rendered dashboard.
+        until: Inclusive upper date bound for the rendered dashboard.
+        source_output_dir: Directory containing normalized local source outputs.
+        output_dir: Directory that should receive rendered dashboard artifacts.
+        base_name: Base filename for generated dashboard artifacts.
+        refresh: Whether to refresh the open source period before rendering.
+        distribution_percentile: Percentile cutoff applied to latency metrics.
+
+    Returns:
+        A mapping of generated dashboard artifact paths.
+    """
+
     source_manifest = _try_load_source_manifest(
         org=org,
         source_output_dir=source_output_dir,
@@ -250,6 +272,18 @@ def build_dashboard_payload_from_local_outputs(
     until: date,
     source_output_dir: Path,
 ) -> DashboardSourcePayload:
+    """Build a typed dashboard payload from stored local run outputs.
+
+    Args:
+        org: Target organization login.
+        since: Inclusive lower date bound for the dashboard window.
+        until: Inclusive upper date bound for the dashboard window.
+        source_output_dir: Directory containing normalized local source outputs.
+
+    Returns:
+        A validated source payload for dashboard rendering.
+    """
+
     manifest = _load_source_manifest(
         org=org,
         source_output_dir=source_output_dir,

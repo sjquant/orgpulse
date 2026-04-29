@@ -32,12 +32,16 @@ from orgpulse.reporting.analysis_report import (
 
 
 class AnalysisGrouping(StrEnum):
+    """Enumerate supported aggregation lenses for analysis output."""
+
     PERIOD = "period"
     REPOSITORY = "repository"
     AUTHOR = "author"
 
 
 class AnalysisExportFormat(StrEnum):
+    """Enumerate supported serialization formats for analysis output."""
+
     JSON = "json"
     CSV = "csv"
     MARKDOWN = "markdown"
@@ -45,6 +49,8 @@ class AnalysisExportFormat(StrEnum):
 
 
 class AnalysisConfig(BaseModel):
+    """Capture validated settings for a local analysis run."""
+
     model_config = ConfigDict(frozen=True)
 
     org: OrgSlug
@@ -87,6 +93,8 @@ class AnalysisConfig(BaseModel):
 
 
 class AnalysisRow(BaseModel):
+    """Represent one grouped analysis row in the exported result set."""
+
     model_config = ConfigDict(frozen=True)
 
     group_value: str
@@ -116,6 +124,8 @@ class AnalysisRow(BaseModel):
 
 
 class AnalysisResult(BaseModel):
+    """Store the fully rendered outcome of an analysis run."""
+
     model_config = ConfigDict(frozen=True)
 
     target_org: str
@@ -573,6 +583,24 @@ def build_analysis_config(
     distribution_percentile: int | None = None,
     export_format: AnalysisExportFormat | None = None,
 ) -> AnalysisConfig:
+    """Build analysis settings from CLI inputs and application defaults.
+
+    Args:
+        org: Explicit organization override.
+        output_dir: Explicit output root override.
+        grain: Requested reporting grain override.
+        time_anchor: Requested time anchor override.
+        grouping: Requested grouping override.
+        top_n: Optional top-N limit for grouped views.
+        since: Optional lower date bound.
+        until: Optional upper date bound.
+        distribution_percentile: Optional percentile cutoff override.
+        export_format: Optional export format override.
+
+    Returns:
+        A validated analysis configuration.
+    """
+
     settings = get_settings()
     payload: dict[str, object] = {
         "org": settings.org if org is None else org,
@@ -602,6 +630,15 @@ def build_analysis_config(
 def render_analysis_result(
     result: AnalysisResult,
 ) -> str:
+    """Render an analysis result using its configured export format.
+
+    Args:
+        result: Fully computed analysis result.
+
+    Returns:
+        A serialized analysis document.
+    """
+
     from orgpulse.reporting.analysis_export import render_analysis_result as _render
 
     return _render(result)

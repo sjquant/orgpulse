@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 # ruff: noqa: F403,F405
-from .support.output_support import *
+from ..helpers.output import *
 
 
 class TestOrgSummaryWriter:
@@ -557,5 +557,4 @@ class TestOrgSummaryWriter:
             average=average,
             median=average,
         )
-
 

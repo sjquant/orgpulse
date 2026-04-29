@@ -62,15 +62,11 @@ from orgpulse.reporting.run_outputs import (
 from .dashboard_source import (
     dashboard_pull_request_row as _manual_dashboard_pull_request_row,
 )
-from .dashboard_source import (
-    dashboard_review_row as _manual_dashboard_review_row,
-)
+from .dashboard_source import dashboard_review_row as _manual_dashboard_review_row
 from .dashboard_source import (
     dashboard_timeline_event_row as _manual_dashboard_timeline_event_row,
 )
-from .dashboard_source import (
-    expected_period_state as _expected_period_state,
-)
+from .dashboard_source import expected_period_state as _expected_period_state
 from .dashboard_source import (
     expected_time_anchor_context as _expected_time_anchor_context,
 )

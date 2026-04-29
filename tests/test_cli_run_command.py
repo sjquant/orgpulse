@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 # ruff: noqa: F403,F405
-from .support.cli_support import *
+from .helpers.cli import *
 
 
 class TestRunCommandRuntime:
@@ -2564,5 +2564,4 @@ class TestRunCommandRuntime:
         assert result.exit_code == 0
         assert clear_calls == []
         assert checkpoint_root.exists() is True
-
 

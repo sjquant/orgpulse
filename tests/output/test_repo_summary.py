@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 # ruff: noqa: F403,F405
-from .support.output_support import *
+from ..helpers.output import *
 
 
 class TestRepositorySummaryCsvWriter:
@@ -554,5 +554,4 @@ class TestRepositorySummaryCsvWriter:
         """Read repo summary CSV rows into dictionaries for assertions."""
         with path.open(newline="", encoding="utf-8") as handle:
             return list(csv.DictReader(handle))
-
 

@@ -558,6 +558,15 @@
       const averageValue = primaryValues.reduce((sum, value) => sum + value, 0) / primaryValues.length;
       const averageLineY = yFor(averageValue);
       const labelInterval = chartLabelInterval(rows.length);
+      const partialBands = rows.map((row, index) => {
+        if (!row.is_partial) {
+          return "";
+        }
+        const previousX = index === 0 ? padding.left : xFor(index - 1);
+        const nextX = index === rows.length - 1 ? width - padding.right : xFor(index + 1);
+        const bandWidth = Math.max(12, (nextX - previousX) / 2);
+        return `<rect class="chart-partial-band" x="${xFor(index) - bandWidth / 2}" y="${padding.top}" width="${bandWidth}" height="${plotHeight}" rx="8"></rect>`;
+      }).join("");
       const points = rows.map((row, index) => {
         const value = toNumeric(row[metric]);
         if (value === null) {
@@ -565,10 +574,11 @@
         }
         const isSelected = index === selectedIndex;
         const showLabel = index === 0 || index === rows.length - 1 || index % labelInterval === 0;
+        const stateSuffix = row.is_partial ? `, ${periodStatusText(row)}` : "";
         return `
-          <g class="chart-node" data-point-index="${index}" data-point-label="${formatAttribute(row[labelKey])}" data-point-value="${formatAttribute(formatChartValue(value, metric))}" tabindex="0" role="button" aria-label="${formatAttribute(row[labelKey])} ${formatAttribute(formatChartValue(value, metric))}">
+          <g class="chart-node ${row.is_partial ? "partial-period" : ""}" data-point-index="${index}" data-point-label="${formatAttribute(row[labelKey])}" data-point-value="${formatAttribute(formatChartValue(value, metric))}" tabindex="0" role="button" aria-label="${formatAttribute(row[labelKey])} ${formatAttribute(formatChartValue(value, metric))}${formatAttribute(stateSuffix)}">
             <circle cx="${xFor(index)}" cy="${yFor(value)}" r="${isSelected ? 6 : 4}" fill="${getCss("--accent")}" stroke="${isSelected ? getCss("--text") : "transparent"}" stroke-width="${isSelected ? 2 : 0}">
-              <title>${formatCell(row[labelKey])}: ${formatChartValue(value, metric)}</title>
+              <title>${formatCell(row[labelKey])}: ${formatChartValue(value, metric)}${row.is_partial ? ` (${periodStatusText(row)})` : ""}</title>
             </circle>
           </g>
           ${showLabel ? `<text x="${xFor(index)}" y="${height - 12}" text-anchor="middle" class="chart-axis">${shortLabel(row[labelKey])}</text>` : ""}
@@ -591,6 +601,7 @@
             </linearGradient>
           </defs>
           ${ticks}
+          ${partialBands}
           <line x1="${padding.left}" x2="${width - padding.right}" y1="${averageLineY}" y2="${averageLineY}" stroke="${getCss("--avg-stroke")}" stroke-dasharray="5 5"></line>
           ${areaPath ? `<path d="${areaPath}" fill="url(#series-fill-${metric})"></path>` : ""}
           <path d="${linePath}" fill="none" stroke="${getCss("--accent")}" stroke-width="3" stroke-linecap="round"></path>
@@ -799,7 +810,7 @@
         ["Selected period", selectedRow[labelKey]],
         ["Selected value", formatChartValue(selectedValue, metric)],
         ["Window average", formatChartValue(average, metric)],
-        ["Peak period", peakRow[labelKey]],
+        ["Period state", periodStatusText(selectedRow)],
       ].map(([label, value]) => `<div class="readout-card"><strong>${label}</strong><span>${value}</span></div>`).join("");
     }
 
@@ -921,6 +932,22 @@
         return formatDuration(value);
       }
       return formatCell(value);
+    }
+
+    function periodStatusText(row) {
+      if (!row) {
+        return "-";
+      }
+      if (row.open_week) {
+        return "open week";
+      }
+      if (row.open_month) {
+        return "open month";
+      }
+      if (row.is_partial) {
+        return "partial period";
+      }
+      return row.status || "closed";
     }
 
     function toNumeric(value) {

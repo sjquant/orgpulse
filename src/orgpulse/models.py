@@ -483,6 +483,8 @@ class DashboardOverviewPayload(BaseModel):
     since: str
     until: str
     time_anchor: str
+    time_anchor_context: TimeAnchorContextPayload | None = None
+    source_as_of: str | None = None
     open_pull_requests: int | None = None
     repositories: int | None = None
     authors: int | None = None
@@ -509,6 +511,10 @@ class DashboardOverviewPayload(BaseModel):
     pull_requests_per_active_author: float | None = None
     changed_lines_per_active_author: float | None = None
     review_submissions_per_reviewer: float | None = None
+    open_week: bool = False
+    open_week_key: str | None = None
+    open_month: bool = False
+    open_month_key: str | None = None
 
 
 class DashboardReviewerPayload(BaseModel):
@@ -706,6 +712,16 @@ class DashboardTrendRowPayload(BaseModel):
     median_merge_hours: float | None = None
     pull_request_delta: int | None = None
     changed_lines_delta: int | None = None
+    period_start_date: str | None = None
+    period_end_date: str | None = None
+    status: str = "closed"
+    label: str = "closed period"
+    is_open: bool = False
+    is_closed: bool = True
+    is_partial: bool = False
+    observed_through_date: str | None = None
+    open_week: bool = False
+    open_month: bool = False
 
 
 class DashboardMethodologyPayload(BaseModel):
@@ -811,6 +827,13 @@ class AnalysisReportPeriodDescriptor(BaseModel):
     start_date: str
     end_date: str
     closed: bool
+    status: str
+    is_open: bool
+    is_closed: bool
+    is_partial: bool
+    observed_through_date: str
+    open_week: bool = False
+    open_month: bool = False
 
 
 class AnalysisReportPeriodValues(BaseModel):
@@ -823,6 +846,13 @@ class AnalysisReportPeriodValues(BaseModel):
     start_date: str
     end_date: str
     closed: bool
+    status: str
+    is_open: bool
+    is_closed: bool
+    is_partial: bool
+    observed_through_date: str
+    open_week: bool = False
+    open_month: bool = False
     values: dict[str, int | float | None]
 
 
@@ -886,6 +916,7 @@ class AnalysisReportPayload(BaseModel):
     target_org: str
     grain: str
     time_anchor: str
+    time_anchor_context: TimeAnchorContextPayload
     initial_view: str
     default_top_n: int
     since: str | None = None
@@ -918,6 +949,8 @@ class PeriodStatePayload(BaseModel):
     is_closed: bool
     is_partial: bool
     observed_through_date: str
+    open_week: bool = False
+    open_month: bool = False
 
 
 class RepositorySummaryHistoryEntryPayload(BaseModel):
@@ -935,6 +968,8 @@ class RepositorySummaryHistoryEntryPayload(BaseModel):
     is_closed: bool
     is_partial: bool
     observed_through_date: str
+    open_week: bool = False
+    open_month: bool = False
     path: str
 
 
@@ -990,6 +1025,8 @@ class OrgSummaryPeriodPayload(BaseModel):
     is_closed: bool
     is_partial: bool
     observed_through_date: str
+    open_week: bool = False
+    open_month: bool = False
 
 
 class OrgSummaryHistoryEntryPayload(OrgSummaryPeriodPayload):
@@ -1071,6 +1108,8 @@ class ManifestPeriodPayload(BaseModel):
     is_closed: bool
     is_partial: bool
     observed_through_date: str
+    open_week: bool = False
+    open_month: bool = False
 
 
 class ManifestIndexLatestPayload(BaseModel):

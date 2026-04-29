@@ -3623,6 +3623,96 @@ class TestAnalyzeCommand:
         assert rows[0]["merged_pull_request_count"] == "2"
         assert rows[0]["period_key"] == ""
 
+    def test_marks_filtered_closed_analysis_period_as_partial(
+        self,
+        runner: CliRunner,
+        github_auth_service: None,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path,
+        pull_request_factory,
+    ) -> None:
+        """Mark a closed period as partial when the analysis window starts inside it."""
+        # Given
+        collection = PullRequestCollection(
+            window=CollectionWindow(
+                scope=RunScope.FULL_HISTORY,
+                start_date=None,
+                end_date=datetime.fromisoformat("2026-02-28T00:00:00").date(),
+            ),
+            pull_requests=(
+                pull_request_factory(
+                    repository_full_name="acme/api",
+                    number=25,
+                    title="Mid-January API work",
+                    author_login="alice",
+                    created_at=datetime.fromisoformat("2026-01-10T09:00:00"),
+                    updated_at=datetime.fromisoformat("2026-01-11T09:00:00"),
+                    closed_at=datetime.fromisoformat("2026-01-12T09:00:00"),
+                    merged=True,
+                    merged_at=datetime.fromisoformat("2026-01-12T09:00:00"),
+                ),
+            ),
+            failures=(),
+        )
+        _configure_production_cli_runtime(
+            monkeypatch,
+            collection=collection,
+        )
+        run_result = runner.invoke(
+            app,
+            [
+                "run",
+                "--org",
+                "acme",
+                "--mode",
+                "full",
+                "--as-of",
+                "2026-02-28",
+                "--output-dir",
+                str(tmp_path),
+            ],
+        )
+        assert run_result.exit_code == 0
+
+        # When
+        result = runner.invoke(
+            app,
+            [
+                "analyze",
+                "--org",
+                "acme",
+                "--grain",
+                "month",
+                "--group-by",
+                "period",
+                "--since",
+                "2026-01-10",
+                "--until",
+                "2026-01-31",
+                "--output-dir",
+                str(tmp_path),
+                "--format",
+                "html",
+            ],
+        )
+
+        # Then
+        assert result.exit_code == 0
+        payload_match = re.search(
+            r'<script id="report-data" type="application/json">(.*?)</script>',
+            result.stdout,
+            re.S,
+        )
+        assert payload_match is not None
+        payload = json.loads(payload_match.group(1))
+        assert payload["periods"][0]["status"] == "closed"
+        assert payload["periods"][0]["is_partial"] is True
+        assert payload["periods"][0]["open_month"] is False
+        assert payload["periods"][0]["diagnostics"]["period_state_label"] == (
+            "partial month"
+        )
+        assert "partial-period-row" in result.stdout
+
     def test_writes_period_analysis_top_n_from_largest_periods(
         self,
         runner: CliRunner,
@@ -4069,6 +4159,9 @@ class TestAnalyzeCommand:
         assert 'data-control="view"' in result.stdout
         assert 'data-control="focus-series"' in result.stdout
         assert "Single-series focus" in result.stdout
+        assert "open month" in result.stdout
+        assert "partial-period-band" in result.stdout
+        assert "partial-period-row" in result.stdout
         payload_match = re.search(
             r'<script id="report-data" type="application/json">(.*?)</script>',
             result.stdout,
@@ -4078,11 +4171,25 @@ class TestAnalyzeCommand:
         payload = json.loads(payload_match.group(1))
         assert payload["initial_view"] == "repository"
         assert payload["distribution_percentile"] == 100
+        assert payload["time_anchor_context"] == (
+            _expected_time_anchor_context("updated_at")
+        )
         assert set(payload["views"].keys()) == {"author", "period", "repository"}
+        assert payload["views"]["period"]["metrics"][0]["label"] == (
+            "Pull requests (pull_request.updated_at)"
+        )
         assert payload["matched_pull_request_count"] == 3
+        assert payload["periods"][0]["open_month"] is True
+        assert payload["periods"][0]["open_week"] is False
         assert payload["periods"][0]["diagnostics"] == {
+            "open_month": True,
+            "open_week": False,
             "older_pull_request_count": 1,
             "older_pull_request_ratio": 1 / 3,
+            "period_observed_through_date": "2026-04-18",
+            "period_partial": True,
+            "period_state_label": "open month",
+            "period_status": "open",
             "same_period_created_count": 2,
             "same_period_created_ratio": 2 / 3,
             "timeline_event_breakdown": [
@@ -4232,9 +4339,16 @@ class TestAnalyzeCommand:
                     {
                         "closed": True,
                         "end_date": "2026-01-31",
+                        "is_closed": True,
+                        "is_open": False,
+                        "is_partial": False,
                         "key": "2026-01",
-                        "label": "2026-01",
+                        "label": "closed month",
+                        "observed_through_date": "2026-01-31",
+                        "open_month": False,
+                        "open_week": False,
                         "start_date": "2026-01-01",
+                        "status": "closed",
                         "values": {
                             "median_time_to_first_review_hours": None,
                             "median_time_to_merge_hours": 24.0,
@@ -4246,9 +4360,16 @@ class TestAnalyzeCommand:
                     {
                         "closed": False,
                         "end_date": "2026-02-28",
+                        "is_closed": False,
+                        "is_open": True,
+                        "is_partial": True,
                         "key": "2026-02",
-                        "label": "2026-02",
+                        "label": "open month",
+                        "observed_through_date": "2026-02-28",
+                        "open_month": True,
+                        "open_week": False,
                         "start_date": "2026-02-01",
+                        "status": "open",
                         "values": {
                             "median_time_to_first_review_hours": None,
                             "median_time_to_merge_hours": 96.0,

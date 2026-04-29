@@ -5,10 +5,11 @@ from collections import Counter, defaultdict
 from datetime import datetime
 from pathlib import Path
 from statistics import median
-from typing import Any
+from typing import Any, TypeVar
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from markupsafe import Markup, escape
+from pydantic import BaseModel
 
 from orgpulse.distribution import (
     trim_upper_tail,
@@ -16,7 +17,12 @@ from orgpulse.distribution import (
     validate_distribution_percentile,
 )
 from orgpulse.models import (
+    DashboardChartsPayload,
+    DashboardOverviewPayload,
     DashboardPreparedPayload,
+    DashboardPullRequestPayload,
+    DashboardReviewerPayload,
+    DashboardReviewStatePayload,
     DashboardSourcePayload,
 )
 
@@ -24,6 +30,8 @@ AUTHOR_ROSTER_LIMIT = 12
 LEADERBOARD_LIMIT = 10
 WEEKLY_RECENT_TREND_COUNT = 12
 MONTHLY_RECENT_TREND_COUNT = 6
+
+DashboardModelT = TypeVar("DashboardModelT", bound=BaseModel)
 
 
 def render_dashboard_artifact(
@@ -139,7 +147,7 @@ def _validate_source_payload(
 ) -> DashboardSourcePayload:
     if isinstance(payload, DashboardSourcePayload):
         return payload
-    return DashboardSourcePayload.model_validate(payload)
+    return _sanitize_dashboard_source_payload(payload)
 
 
 def _validate_prepared_payload(
@@ -148,6 +156,51 @@ def _validate_prepared_payload(
     if isinstance(payload, DashboardPreparedPayload):
         return payload
     return DashboardPreparedPayload.model_validate(payload)
+
+
+def _sanitize_dashboard_source_payload(
+    payload: dict[str, Any],
+) -> DashboardSourcePayload:
+    return DashboardSourcePayload(
+        overview=_sanitize_model_payload(
+            DashboardOverviewPayload,
+            payload.get("overview", {}),
+        ),
+        insights=[],
+        charts=DashboardChartsPayload(),
+        authors=[],
+        reviewers=[
+            _sanitize_model_payload(DashboardReviewerPayload, row)
+            for row in payload.get("reviewers", [])
+            if isinstance(row, dict)
+        ],
+        repositories=[],
+        size_buckets=[],
+        review_state_rows=[
+            _sanitize_model_payload(DashboardReviewStatePayload, row)
+            for row in payload.get("review_state_rows", [])
+            if isinstance(row, dict)
+        ],
+        pull_requests=[
+            _sanitize_model_payload(DashboardPullRequestPayload, row)
+            for row in payload.get("pull_requests", [])
+            if isinstance(row, dict)
+        ],
+    )
+
+
+def _sanitize_model_payload(
+    model_class: type[DashboardModelT],
+    payload: object,
+) -> DashboardModelT:
+    filtered_payload = {}
+    if isinstance(payload, dict):
+        filtered_payload = {
+            key: value
+            for key, value in payload.items()
+            if key in model_class.model_fields
+        }
+    return model_class.model_validate(filtered_payload)
 
 
 def _build_dashboard_sections(

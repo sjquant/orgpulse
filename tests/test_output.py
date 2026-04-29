@@ -2016,6 +2016,91 @@ class TestManualDashboardPayload:
         assert "normalized changed lines per active author" in html
         assert 'data-label="Lines / active author"' in html
 
+    def test_tolerates_additive_and_stale_source_sections_when_preparing_payload(
+        self,
+    ) -> None:
+        """Prepare dashboard payloads from legacy JSON even when additive or stale source sections are present."""
+        # Given
+        payload = {
+            "overview": {
+                "org": "acme",
+                "generated_at": "2026-04-24T00:00:00+00:00",
+                "since": "2026-04-01",
+                "until": "2026-04-30",
+                "time_anchor": "created_at",
+                "top_repository": "acme/api",
+                "top_author": "alice",
+                "unique_reviewers": 1,
+                "debug_note": "legacy",
+            },
+            "reviewers": [
+                {
+                    "reviewer_login": "reviewer-1",
+                    "review_submissions": 2,
+                    "pull_requests_reviewed": 2,
+                    "approvals": 2,
+                    "changes_requested": 0,
+                    "comments": 0,
+                    "authors_supported": 1,
+                    "custom_field": "legacy",
+                },
+            ],
+            "authors": [
+                {
+                    "author_login": "stale-author",
+                },
+            ],
+            "charts": {
+                "custom_chart": [{"label": "ignored", "count": 1}],
+            },
+            "size_buckets": [
+                {
+                    "bucket": "XS",
+                },
+            ],
+            "review_state_rows": [
+                {
+                    "state": "APPROVED",
+                    "count": 1,
+                    "share_pct": 100.0,
+                    "custom_field": "legacy",
+                }
+            ],
+            "pull_requests": [
+                {
+                    **_manual_pull_request(
+                        repository_full_name="acme/api",
+                        pull_request_number=1,
+                        author_login="alice",
+                        created_at="2026-04-01T09:00:00+00:00",
+                        merged_at="2026-04-02T09:00:00+00:00",
+                        changed_lines=10,
+                        additions=8,
+                        deletions=2,
+                        first_review_hours=1.0,
+                        merge_hours=24.0,
+                        size_bucket="XS",
+                    ),
+                    "custom_field": "legacy",
+                },
+            ],
+        }
+
+        # When
+        prepared = prepare_dashboard_payload(payload)
+
+        # Then
+        assert prepared.overview["pull_requests"] == 1
+        assert prepared.authors[0]["author_login"] == "alice"
+        assert prepared.reviewers[0]["reviewer_login"] == "reviewer-1"
+        assert prepared.review_state_rows == [
+            {
+                "state": "APPROVED",
+                "count": 1,
+                "share_pct": 100.0,
+            }
+        ]
+
     def test_renders_expansion_controls_below_long_tables_and_lists(self) -> None:
         """Render overflow controls below long lists and tables so the dashboard scales vertically."""
         # Given

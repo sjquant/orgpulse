@@ -24,7 +24,20 @@ from orgpulse.errors import AuthResolutionError, GitHubApiError, OrgTargetingErr
 from orgpulse.github_auth import GitHubAuthService, resolve_auth_token
 from orgpulse.ingestion import GitHubIngestionService
 from orgpulse.models import (
+    DashboardAuthorPayload,
+    DashboardAuthorThroughputPointPayload,
+    DashboardChartsPayload,
+    DashboardInsightPayload,
+    DashboardOverviewPayload,
+    DashboardPullRequestPayload,
+    DashboardRepositoryPayload,
+    DashboardRepositoryThroughputPointPayload,
+    DashboardReviewerPayload,
+    DashboardReviewLatencyPointPayload,
+    DashboardReviewStatePayload,
+    DashboardSizeBucketPayload,
     DashboardSourcePayload,
+    DashboardTimeSeriesPointPayload,
     PeriodGrain,
     RawSnapshotPeriod,
     ReportingPeriod,
@@ -647,53 +660,53 @@ def _build_dashboard_payload(
         reviewer_rows=reviewer_rows,
         repository_rows=repository_rows,
     )
-    return DashboardSourcePayload.model_validate({
-        "overview": overview,
-        "insights": _insights(
+    return DashboardSourcePayload(
+        overview=overview,
+        insights=_insights(
             overview=overview,
             author_rows=author_rows,
             reviewer_rows=reviewer_rows,
             repository_rows=repository_rows,
             size_bucket_rows=size_bucket_rows,
         ),
-        "charts": {
-            "created_series": created_series,
-            "merged_series": merged_series,
-            "review_series": review_series,
-            "author_throughput": [
-                {
-                    "label": row["author_login"],
-                    "pull_requests": row["pull_requests"],
-                    "merged_pull_requests": row["merged_pull_requests"],
-                    "changed_lines": row["changed_lines"],
-                }
+        charts=DashboardChartsPayload(
+            created_series=created_series,
+            merged_series=merged_series,
+            review_series=review_series,
+            author_throughput=[
+                DashboardAuthorThroughputPointPayload(
+                    label=row.author_login,
+                    pull_requests=row.pull_requests,
+                    merged_pull_requests=row.merged_pull_requests,
+                    changed_lines=row.changed_lines,
+                )
                 for row in author_rows[:8]
             ],
-            "review_latency_by_author": [
-                {
-                    "label": row["author_login"],
-                    "median_first_review_hours": row["median_first_review_hours"],
-                }
+            review_latency_by_author=[
+                DashboardReviewLatencyPointPayload(
+                    label=row.author_login,
+                    median_first_review_hours=row.median_first_review_hours,
+                )
                 for row in author_rows
-                if row["median_first_review_hours"] is not None
+                if row.median_first_review_hours is not None
             ][:8],
-            "repository_throughput": [
-                {
-                    "label": row["repository_full_name"],
-                    "pull_requests": row["pull_requests"],
-                    "merged_pull_requests": row["merged_pull_requests"],
-                }
+            repository_throughput=[
+                DashboardRepositoryThroughputPointPayload(
+                    label=row.repository_full_name,
+                    pull_requests=row.pull_requests,
+                    merged_pull_requests=row.merged_pull_requests,
+                )
                 for row in repository_rows[:10]
             ],
-            "size_bucket_latency": size_bucket_rows,
-        },
-        "authors": author_rows,
-        "reviewers": reviewer_rows,
-        "repositories": repository_rows,
-        "size_buckets": size_bucket_rows,
-        "review_state_rows": review_state_rows,
-        "pull_requests": [_snapshot_row(snapshot) for snapshot in snapshots],
-    })
+            size_bucket_latency=size_bucket_rows,
+        ),
+        authors=author_rows,
+        reviewers=reviewer_rows,
+        repositories=repository_rows,
+        size_buckets=size_bucket_rows,
+        review_state_rows=review_state_rows,
+        pull_requests=[_snapshot_row(snapshot) for snapshot in snapshots],
+    )
 
 
 def _write_outputs(
@@ -785,10 +798,10 @@ def _time_series(
     *,
     snapshots: list[PullRequestSnapshot],
     date_selector,
-) -> list[dict[str, Any]]:
+) -> list[DashboardTimeSeriesPointPayload]:
     counts = Counter(date_selector(snapshot).isoformat() for snapshot in snapshots)
     return [
-        {"date": label, "count": counts[label]}
+        DashboardTimeSeriesPointPayload(date=label, count=counts[label])
         for label in sorted(counts)
     ]
 
@@ -799,10 +812,10 @@ def _overview_summary(
     since: date,
     until: date,
     snapshots: list[PullRequestSnapshot],
-    author_rows: list[dict[str, Any]],
-    reviewer_rows: list[dict[str, Any]],
-    repository_rows: list[dict[str, Any]],
-) -> dict[str, Any]:
+    author_rows: list[DashboardAuthorPayload],
+    reviewer_rows: list[DashboardReviewerPayload],
+    repository_rows: list[DashboardRepositoryPayload],
+) -> DashboardOverviewPayload:
     first_review_values = [
         snapshot.first_review_hours
         for snapshot in snapshots
@@ -814,35 +827,35 @@ def _overview_summary(
     close_values = [
         snapshot.close_hours for snapshot in snapshots if snapshot.close_hours is not None
     ]
-    return {
-        "org": org,
-        "time_anchor": "created_at",
-        "since": since.isoformat(),
-        "until": until.isoformat(),
-        "generated_at": datetime.now(UTC).isoformat(),
-        "pull_requests": len(snapshots),
-        "merged_pull_requests": sum(1 for snapshot in snapshots if snapshot.merged_at),
-        "open_pull_requests": sum(1 for snapshot in snapshots if snapshot.state == "open"),
-        "repositories": len(repository_rows),
-        "authors": len(author_rows),
-        "review_submissions": sum(snapshot.review_count for snapshot in snapshots),
-        "unique_reviewers": len(reviewer_rows),
-        "total_changed_lines": sum(snapshot.changed_lines for snapshot in snapshots),
-        "total_commits": sum(snapshot.commits for snapshot in snapshots),
-        "median_first_review_hours": _round(_median_or_none(first_review_values)),
-        "median_merge_hours": _round(_median_or_none(merge_values)),
-        "median_close_hours": _round(_median_or_none(close_values)),
-        "average_reviews_per_pr": _round(
+    return DashboardOverviewPayload(
+        org=org,
+        time_anchor="created_at",
+        since=since.isoformat(),
+        until=until.isoformat(),
+        generated_at=datetime.now(UTC).isoformat(),
+        pull_requests=len(snapshots),
+        merged_pull_requests=sum(1 for snapshot in snapshots if snapshot.merged_at),
+        open_pull_requests=sum(1 for snapshot in snapshots if snapshot.state == "open"),
+        repositories=len(repository_rows),
+        authors=len(author_rows),
+        review_submissions=sum(snapshot.review_count for snapshot in snapshots),
+        unique_reviewers=len(reviewer_rows),
+        total_changed_lines=sum(snapshot.changed_lines for snapshot in snapshots),
+        total_commits=sum(snapshot.commits for snapshot in snapshots),
+        median_first_review_hours=_round(_median_or_none(first_review_values)),
+        median_merge_hours=_round(_median_or_none(merge_values)),
+        median_close_hours=_round(_median_or_none(close_values)),
+        average_reviews_per_pr=_round(
             sum(snapshot.review_count for snapshot in snapshots) / len(snapshots)
             if snapshots
             else None
         ),
-        "average_changed_lines_per_pr": _round(
+        average_changed_lines_per_pr=_round(
             sum(snapshot.changed_lines for snapshot in snapshots) / len(snapshots)
             if snapshots
             else None
         ),
-        "review_coverage_pct": _round(
+        review_coverage_pct=_round(
             (
                 sum(1 for snapshot in snapshots if snapshot.review_count > 0)
                 / len(snapshots)
@@ -851,7 +864,7 @@ def _overview_summary(
             if snapshots
             else None
         ),
-        "merge_rate_pct": _round(
+        merge_rate_pct=_round(
             (
                 sum(1 for snapshot in snapshots if snapshot.merged_at)
                 / len(snapshots)
@@ -860,16 +873,16 @@ def _overview_summary(
             if snapshots
             else None
         ),
-        "top_repository": repository_rows[0]["repository_full_name"] if repository_rows else None,
-        "top_author": author_rows[0]["author_login"] if author_rows else None,
-    }
+        top_repository=repository_rows[0].repository_full_name if repository_rows else None,
+        top_author=author_rows[0].author_login if author_rows else None,
+    )
 
 
 def _author_rows(
     snapshots: list[PullRequestSnapshot],
     *,
     total_pull_requests: int,
-) -> list[dict[str, Any]]:
+) -> list[DashboardAuthorPayload]:
     grouped: dict[str, list[PullRequestSnapshot]] = defaultdict(list)
     for snapshot in snapshots:
         grouped[snapshot.author_login].append(snapshot)
@@ -883,11 +896,13 @@ def _author_rows(
     ]
     return sorted(
         rows,
-        key=lambda row: (-row["pull_requests"], -row["changed_lines"], row["author_login"]),
+        key=lambda row: (-row.pull_requests, -row.changed_lines, row.author_login),
     )
 
 
-def _reviewer_rows(snapshots: list[PullRequestSnapshot]) -> list[dict[str, Any]]:
+def _reviewer_rows(
+    snapshots: list[PullRequestSnapshot],
+) -> list[DashboardReviewerPayload]:
     review_records: dict[str, list[PullRequestSnapshot]] = defaultdict(list)
     review_counts: Counter[str] = Counter()
     approval_counts: Counter[str] = Counter()
@@ -910,24 +925,24 @@ def _reviewer_rows(snapshots: list[PullRequestSnapshot]) -> list[dict[str, Any]]
     rows = []
     for reviewer_login, reviewer_snapshots in review_records.items():
         rows.append(
-            {
-                "reviewer_login": reviewer_login,
-                "review_submissions": review_counts[reviewer_login],
-                "pull_requests_reviewed": len(prs_reviewed[reviewer_login]),
-                "approvals": approval_counts[reviewer_login],
-                "changes_requested": change_request_counts[reviewer_login],
-                "comments": comment_counts[reviewer_login],
-                "authors_supported": len(
+            DashboardReviewerPayload(
+                reviewer_login=reviewer_login,
+                review_submissions=review_counts[reviewer_login],
+                pull_requests_reviewed=len(prs_reviewed[reviewer_login]),
+                approvals=approval_counts[reviewer_login],
+                changes_requested=change_request_counts[reviewer_login],
+                comments=comment_counts[reviewer_login],
+                authors_supported=len(
                     {snapshot.author_login for snapshot in reviewer_snapshots}
                 ),
-            }
+            )
         )
     return sorted(
         rows,
         key=lambda row: (
-            -row["pull_requests_reviewed"],
-            -row["review_submissions"],
-            row["reviewer_login"],
+            -row.pull_requests_reviewed,
+            -row.review_submissions,
+            row.reviewer_login,
         ),
     )
 
@@ -936,7 +951,7 @@ def _repository_rows(
     snapshots: list[PullRequestSnapshot],
     *,
     total_pull_requests: int,
-) -> list[dict[str, Any]]:
+) -> list[DashboardRepositoryPayload]:
     grouped: dict[str, list[PullRequestSnapshot]] = defaultdict(list)
     for snapshot in snapshots:
         grouped[snapshot.repository_full_name].append(snapshot)
@@ -951,14 +966,16 @@ def _repository_rows(
     return sorted(
         rows,
         key=lambda row: (
-            -row["pull_requests"],
-            -row["changed_lines"],
-            row["repository_full_name"],
+            -row.pull_requests,
+            -row.changed_lines,
+            row.repository_full_name,
         ),
     )
 
 
-def _size_bucket_rows(snapshots: list[PullRequestSnapshot]) -> list[dict[str, Any]]:
+def _size_bucket_rows(
+    snapshots: list[PullRequestSnapshot],
+) -> list[DashboardSizeBucketPayload]:
     grouped: dict[str, list[PullRequestSnapshot]] = defaultdict(list)
     for snapshot in snapshots:
         grouped[snapshot.size_bucket].append(snapshot)
@@ -967,13 +984,13 @@ def _size_bucket_rows(snapshots: list[PullRequestSnapshot]) -> list[dict[str, An
     for bucket in ordered_buckets:
         bucket_snapshots = grouped.get(bucket, [])
         rows.append(
-            {
-                "bucket": bucket,
-                "pull_requests": len(bucket_snapshots),
-                "median_changed_lines": _round(
+            DashboardSizeBucketPayload(
+                bucket=bucket,
+                pull_requests=len(bucket_snapshots),
+                median_changed_lines=_round(
                     _median_or_none([snapshot.changed_lines for snapshot in bucket_snapshots])
                 ),
-                "median_first_review_hours": _round(
+                median_first_review_hours=_round(
                     _median_or_none(
                         [
                             snapshot.first_review_hours
@@ -982,7 +999,7 @@ def _size_bucket_rows(snapshots: list[PullRequestSnapshot]) -> list[dict[str, An
                         ]
                     )
                 ),
-                "median_merge_hours": _round(
+                median_merge_hours=_round(
                     _median_or_none(
                         [
                             snapshot.merge_hours
@@ -991,7 +1008,7 @@ def _size_bucket_rows(snapshots: list[PullRequestSnapshot]) -> list[dict[str, An
                         ]
                     )
                 ),
-                "average_reviews_per_pr": _round(
+                average_reviews_per_pr=_round(
                     (
                         sum(snapshot.review_count for snapshot in bucket_snapshots)
                         / len(bucket_snapshots)
@@ -999,12 +1016,14 @@ def _size_bucket_rows(snapshots: list[PullRequestSnapshot]) -> list[dict[str, An
                     if bucket_snapshots
                     else None
                 ),
-            }
+            )
         )
     return rows
 
 
-def _review_state_rows(snapshots: list[PullRequestSnapshot]) -> list[dict[str, Any]]:
+def _review_state_rows(
+    snapshots: list[PullRequestSnapshot],
+) -> list[DashboardReviewStatePayload]:
     states = Counter()
     for snapshot in snapshots:
         states["APPROVED"] += snapshot.approval_count
@@ -1012,93 +1031,93 @@ def _review_state_rows(snapshots: list[PullRequestSnapshot]) -> list[dict[str, A
         states["COMMENTED"] += snapshot.comment_review_count
     total = sum(states.values())
     return [
-        {
-            "state": state,
-            "count": count,
-            "share_pct": _round((count / total) * 100 if total else None),
-        }
+        DashboardReviewStatePayload(
+            state=state,
+            count=count,
+            share_pct=_round((count / total) * 100 if total else None),
+        )
         for state, count in sorted(states.items(), key=lambda item: (-item[1], item[0]))
     ]
 
 
 def _insights(
     *,
-    overview: dict[str, Any],
-    author_rows: list[dict[str, Any]],
-    reviewer_rows: list[dict[str, Any]],
-    repository_rows: list[dict[str, Any]],
-    size_bucket_rows: list[dict[str, Any]],
-) -> list[dict[str, str]]:
-    insights: list[dict[str, str]] = []
+    overview: DashboardOverviewPayload,
+    author_rows: list[DashboardAuthorPayload],
+    reviewer_rows: list[DashboardReviewerPayload],
+    repository_rows: list[DashboardRepositoryPayload],
+    size_bucket_rows: list[DashboardSizeBucketPayload],
+) -> list[DashboardInsightPayload]:
+    insights: list[DashboardInsightPayload] = []
     if repository_rows:
         top_repo = repository_rows[0]
         insights.append(
-            {
-                "title": "Throughput concentration",
-                "body": (
-                    f"{top_repo['repository_full_name']} accounted for "
-                    f"{top_repo['pull_requests']} PRs and "
-                    f"{top_repo['share_of_prs_pct']}% of total flow."
+            DashboardInsightPayload(
+                title="Throughput concentration",
+                body=(
+                    f"{top_repo.repository_full_name} accounted for "
+                    f"{top_repo.pull_requests} PRs and "
+                    f"{top_repo.share_of_prs_pct}% of total flow."
                 ),
-            }
+            )
         )
     fast_review_authors = [
         row
         for row in author_rows
-        if row["pull_requests"] >= 20 and row["median_first_review_hours"] is not None
+        if row.pull_requests >= 20 and row.median_first_review_hours is not None
     ]
     if fast_review_authors:
         fastest_author = min(
             fast_review_authors,
-            key=lambda row: row["median_first_review_hours"],
+            key=lambda row: row.median_first_review_hours or 0,
         )
         insights.append(
-            {
-                "title": "Fastest review entry",
-                "body": (
-                    f"{fastest_author['author_login']} had the fastest median first review "
+            DashboardInsightPayload(
+                title="Fastest review entry",
+                body=(
+                    f"{fastest_author.author_login} had the fastest median first review "
                     f"among authors with 20+ PRs at "
-                    f"{fastest_author['median_first_review_hours']} hours."
+                    f"{fastest_author.median_first_review_hours} hours."
                 ),
-            }
+            )
         )
     if reviewer_rows:
         top_reviewer = reviewer_rows[0]
         insights.append(
-            {
-                "title": "Review load",
-                "body": (
-                    f"{top_reviewer['reviewer_login']} submitted "
-                    f"{top_reviewer['review_submissions']} reviews across "
-                    f"{top_reviewer['pull_requests_reviewed']} PRs."
+            DashboardInsightPayload(
+                title="Review load",
+                body=(
+                    f"{top_reviewer.reviewer_login} submitted "
+                    f"{top_reviewer.review_submissions} reviews across "
+                    f"{top_reviewer.pull_requests_reviewed} PRs."
                 ),
-            }
+            )
         )
-    large_buckets = [row for row in size_bucket_rows if row["bucket"] in {"L", "XL"}]
+    large_buckets = [row for row in size_bucket_rows if row.bucket in {"L", "XL"}]
     if large_buckets:
         slowest_bucket = max(
             large_buckets,
-            key=lambda row: row["median_first_review_hours"] or -1,
+            key=lambda row: row.median_first_review_hours or -1,
         )
-        if slowest_bucket["median_first_review_hours"] is not None:
+        if slowest_bucket.median_first_review_hours is not None:
             insights.append(
-                {
-                    "title": "Size penalty",
-                    "body": (
-                        f"{slowest_bucket['bucket']} PRs waited "
-                        f"{slowest_bucket['median_first_review_hours']} hours median "
+                DashboardInsightPayload(
+                    title="Size penalty",
+                    body=(
+                        f"{slowest_bucket.bucket} PRs waited "
+                        f"{slowest_bucket.median_first_review_hours} hours median "
                         f"for first review."
                     ),
-                }
+                )
             )
     insights.append(
-        {
-            "title": "Review coverage",
-            "body": (
-                f"{overview['review_coverage_pct']}% of PRs received at least one review "
-                f"submission in the selected window."
+        DashboardInsightPayload(
+            title="Review coverage",
+            body=(
+                f"{overview.review_coverage_pct}% of PRs received at least one review "
+                "submission in the selected window."
             ),
-        }
+        )
     )
     return insights
 
@@ -1108,7 +1127,7 @@ def _author_row(
     snapshots: list[PullRequestSnapshot],
     *,
     total_pull_requests: int,
-) -> dict[str, Any]:
+) -> DashboardAuthorPayload:
     first_review_values = [
         snapshot.first_review_hours
         for snapshot in snapshots
@@ -1117,30 +1136,30 @@ def _author_row(
     merge_values = [
         snapshot.merge_hours for snapshot in snapshots if snapshot.merge_hours is not None
     ]
-    return {
-        "author_login": author_login,
-        "pull_requests": len(snapshots),
-        "merged_pull_requests": sum(1 for snapshot in snapshots if snapshot.merged_at),
-        "open_pull_requests": sum(1 for snapshot in snapshots if snapshot.state == "open"),
-        "changed_lines": sum(snapshot.changed_lines for snapshot in snapshots),
-        "commits": sum(snapshot.commits for snapshot in snapshots),
-        "review_submissions_received": sum(snapshot.review_count for snapshot in snapshots),
-        "average_reviews_per_pr": _round(
+    return DashboardAuthorPayload(
+        author_login=author_login,
+        pull_requests=len(snapshots),
+        merged_pull_requests=sum(1 for snapshot in snapshots if snapshot.merged_at),
+        open_pull_requests=sum(1 for snapshot in snapshots if snapshot.state == "open"),
+        changed_lines=sum(snapshot.changed_lines for snapshot in snapshots),
+        commits=sum(snapshot.commits for snapshot in snapshots),
+        review_submissions_received=sum(snapshot.review_count for snapshot in snapshots),
+        average_reviews_per_pr=_round(
             sum(snapshot.review_count for snapshot in snapshots) / len(snapshots)
             if snapshots
             else None
         ),
-        "median_first_review_hours": _round(_median_or_none(first_review_values)),
-        "median_merge_hours": _round(_median_or_none(merge_values)),
-        "median_changed_lines": _round(
+        median_first_review_hours=_round(_median_or_none(first_review_values)),
+        median_merge_hours=_round(_median_or_none(merge_values)),
+        median_changed_lines=_round(
             _median_or_none([snapshot.changed_lines for snapshot in snapshots])
         ),
-        "share_of_prs_pct": _round(
+        share_of_prs_pct=_round(
             (len(snapshots) / total_pull_requests * 100)
             if total_pull_requests
             else None
         ),
-    }
+    )
 
 
 def _repository_row(
@@ -1148,7 +1167,7 @@ def _repository_row(
     snapshots: list[PullRequestSnapshot],
     *,
     total_pull_requests: int,
-) -> dict[str, Any]:
+) -> DashboardRepositoryPayload:
     first_review_values = [
         snapshot.first_review_hours
         for snapshot in snapshots
@@ -1157,63 +1176,63 @@ def _repository_row(
     merge_values = [
         snapshot.merge_hours for snapshot in snapshots if snapshot.merge_hours is not None
     ]
-    return {
-        "repository_full_name": repository_full_name,
-        "pull_requests": len(snapshots),
-        "merged_pull_requests": sum(1 for snapshot in snapshots if snapshot.merged_at),
-        "open_pull_requests": sum(1 for snapshot in snapshots if snapshot.state == "open"),
-        "authors": len({snapshot.author_login for snapshot in snapshots}),
-        "changed_lines": sum(snapshot.changed_lines for snapshot in snapshots),
-        "review_submissions": sum(snapshot.review_count for snapshot in snapshots),
-        "average_reviews_per_pr": _round(
+    return DashboardRepositoryPayload(
+        repository_full_name=repository_full_name,
+        pull_requests=len(snapshots),
+        merged_pull_requests=sum(1 for snapshot in snapshots if snapshot.merged_at),
+        open_pull_requests=sum(1 for snapshot in snapshots if snapshot.state == "open"),
+        authors=len({snapshot.author_login for snapshot in snapshots}),
+        changed_lines=sum(snapshot.changed_lines for snapshot in snapshots),
+        review_submissions=sum(snapshot.review_count for snapshot in snapshots),
+        average_reviews_per_pr=_round(
             sum(snapshot.review_count for snapshot in snapshots) / len(snapshots)
             if snapshots
             else None
         ),
-        "median_first_review_hours": _round(_median_or_none(first_review_values)),
-        "median_merge_hours": _round(_median_or_none(merge_values)),
-        "share_of_prs_pct": _round(
+        median_first_review_hours=_round(_median_or_none(first_review_values)),
+        median_merge_hours=_round(_median_or_none(merge_values)),
+        share_of_prs_pct=_round(
             (len(snapshots) / total_pull_requests * 100)
             if total_pull_requests
             else None
         ),
-    }
+    )
 
 
-def _snapshot_row(snapshot: PullRequestSnapshot) -> dict[str, Any]:
-    return {
-        "repository_full_name": snapshot.repository_full_name,
-        "pull_request_number": snapshot.number,
-        "title": snapshot.title,
-        "author_login": snapshot.author_login,
-        "state": snapshot.state,
-        "created_at": snapshot.created_at.isoformat(),
-        "updated_at": snapshot.updated_at.isoformat(),
-        "closed_at": None if snapshot.closed_at is None else snapshot.closed_at.isoformat(),
-        "merged_at": None if snapshot.merged_at is None else snapshot.merged_at.isoformat(),
-        "html_url": snapshot.html_url,
-        "additions": snapshot.additions,
-        "deletions": snapshot.deletions,
-        "changed_files": snapshot.changed_files,
-        "changed_lines": snapshot.changed_lines,
-        "commits": snapshot.commits,
-        "review_count": snapshot.review_count,
-        "approval_count": snapshot.approval_count,
-        "changes_requested_count": snapshot.changes_requested_count,
-        "comment_review_count": snapshot.comment_review_count,
-        "reviewer_count": snapshot.reviewer_count,
-        "first_review_hours": snapshot.first_review_hours,
-        "merge_hours": snapshot.merge_hours,
-        "close_hours": snapshot.close_hours,
-        "review_rounds": snapshot.review_rounds,
-        "review_ready_at": snapshot.review_ready_at.isoformat(),
-        "review_requested_at": (
+def _snapshot_row(snapshot: PullRequestSnapshot) -> DashboardPullRequestPayload:
+    return DashboardPullRequestPayload(
+        repository_full_name=snapshot.repository_full_name,
+        pull_request_number=snapshot.number,
+        title=snapshot.title,
+        author_login=snapshot.author_login,
+        state=snapshot.state,
+        created_at=snapshot.created_at.isoformat(),
+        updated_at=snapshot.updated_at.isoformat(),
+        closed_at=None if snapshot.closed_at is None else snapshot.closed_at.isoformat(),
+        merged_at=None if snapshot.merged_at is None else snapshot.merged_at.isoformat(),
+        html_url=snapshot.html_url,
+        additions=snapshot.additions,
+        deletions=snapshot.deletions,
+        changed_files=snapshot.changed_files,
+        changed_lines=snapshot.changed_lines,
+        commits=snapshot.commits,
+        review_count=snapshot.review_count,
+        approval_count=snapshot.approval_count,
+        changes_requested_count=snapshot.changes_requested_count,
+        comment_review_count=snapshot.comment_review_count,
+        reviewer_count=snapshot.reviewer_count,
+        first_review_hours=snapshot.first_review_hours,
+        merge_hours=snapshot.merge_hours,
+        close_hours=snapshot.close_hours,
+        review_rounds=snapshot.review_rounds,
+        review_ready_at=snapshot.review_ready_at.isoformat(),
+        review_requested_at=(
             None
             if snapshot.review_requested_at is None
             else snapshot.review_requested_at.isoformat()
         ),
-        "size_bucket": snapshot.size_bucket,
-    }
+        size_bucket=snapshot.size_bucket,
+    )
 
 
 def _parse_datetime(value: str) -> datetime:

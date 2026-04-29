@@ -412,28 +412,43 @@ class AnalysisReportWriteResult(BaseModel):
 
 
 class DashboardOverviewPayload(BaseModel):
-    model_config = ConfigDict(extra="allow")
+    model_config = ConfigDict(frozen=True, extra="forbid")
 
     org: str
     generated_at: str
     since: str
     until: str
     time_anchor: str
+    open_pull_requests: int | None = None
+    repositories: int | None = None
+    authors: int | None = None
     top_repository: str | None = None
     top_author: str | None = None
     unique_reviewers: int | None = None
     pull_requests: int | None = None
     merged_pull_requests: int | None = None
     review_submissions: int | None = None
+    total_changed_lines: int | None = None
+    total_commits: int | None = None
     median_first_review_hours: float | None = None
+    median_merge_hours: float | None = None
+    median_close_hours: float | None = None
+    average_reviews_per_pr: float | None = None
+    average_changed_lines_per_pr: float | None = None
+    review_coverage_pct: float | None = None
+    review_sla_24h_pct: float | None = None
+    stale_open_pull_requests: int | None = None
+    merge_rate_pct: float | None = None
+    distribution_percentile: int | None = None
     average_active_authors_per_month: float | None = None
+    latest_active_authors: int | None = None
     pull_requests_per_active_author: float | None = None
     changed_lines_per_active_author: float | None = None
     review_submissions_per_reviewer: float | None = None
 
 
 class DashboardReviewerPayload(BaseModel):
-    model_config = ConfigDict(extra="allow")
+    model_config = ConfigDict(frozen=True, extra="forbid")
 
     reviewer_login: str
     review_submissions: int
@@ -445,7 +460,7 @@ class DashboardReviewerPayload(BaseModel):
 
 
 class DashboardPullRequestPayload(BaseModel):
-    model_config = ConfigDict(extra="allow")
+    model_config = ConfigDict(frozen=True, extra="forbid")
 
     repository_full_name: str
     pull_request_number: int
@@ -476,17 +491,125 @@ class DashboardPullRequestPayload(BaseModel):
     size_bucket: str
 
 
+class DashboardInsightPayload(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    title: str
+    body: str
+
+
+class DashboardTimeSeriesPointPayload(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    date: str
+    count: int
+
+
+class DashboardAuthorPayload(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    author_login: str
+    pull_requests: int
+    merged_pull_requests: int
+    open_pull_requests: int
+    changed_lines: int
+    commits: int
+    review_submissions_received: int
+    average_reviews_per_pr: float | None = None
+    median_first_review_hours: float | None = None
+    median_merge_hours: float | None = None
+    median_changed_lines: float | None = None
+    share_of_prs_pct: float | None = None
+
+
+class DashboardRepositoryPayload(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    repository_full_name: str
+    pull_requests: int
+    merged_pull_requests: int
+    open_pull_requests: int
+    authors: int
+    changed_lines: int
+    review_submissions: int
+    average_reviews_per_pr: float | None = None
+    median_first_review_hours: float | None = None
+    median_merge_hours: float | None = None
+    share_of_prs_pct: float | None = None
+
+
+class DashboardSizeBucketPayload(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    bucket: str
+    pull_requests: int
+    median_changed_lines: float | None = None
+    median_first_review_hours: float | None = None
+    median_merge_hours: float | None = None
+    average_reviews_per_pr: float | None = None
+
+
+class DashboardReviewStatePayload(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    state: str
+    count: int
+    share_pct: float | None = None
+
+
+class DashboardAuthorThroughputPointPayload(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    label: str
+    pull_requests: int
+    merged_pull_requests: int
+    changed_lines: int
+
+
+class DashboardReviewLatencyPointPayload(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    label: str
+    median_first_review_hours: float | None = None
+
+
+class DashboardRepositoryThroughputPointPayload(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    label: str
+    pull_requests: int
+    merged_pull_requests: int
+
+
+class DashboardChartsPayload(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    created_series: list[DashboardTimeSeriesPointPayload] = Field(default_factory=list)
+    merged_series: list[DashboardTimeSeriesPointPayload] = Field(default_factory=list)
+    review_series: list[DashboardTimeSeriesPointPayload] = Field(default_factory=list)
+    author_throughput: list[DashboardAuthorThroughputPointPayload] = Field(
+        default_factory=list
+    )
+    review_latency_by_author: list[DashboardReviewLatencyPointPayload] = Field(
+        default_factory=list
+    )
+    repository_throughput: list[
+        DashboardRepositoryThroughputPointPayload
+    ] = Field(default_factory=list)
+    size_bucket_latency: list[DashboardSizeBucketPayload] = Field(default_factory=list)
+
+
 class DashboardSourcePayload(BaseModel):
-    model_config = ConfigDict(extra="allow")
+    model_config = ConfigDict(frozen=True, extra="forbid")
 
     overview: DashboardOverviewPayload
-    insights: list[dict[str, Any]] = Field(default_factory=list)
-    charts: dict[str, Any] = Field(default_factory=dict)
-    authors: list[dict[str, Any]] = Field(default_factory=list)
+    insights: list[DashboardInsightPayload] = Field(default_factory=list)
+    charts: DashboardChartsPayload = Field(default_factory=DashboardChartsPayload)
+    authors: list[DashboardAuthorPayload] = Field(default_factory=list)
     reviewers: list[DashboardReviewerPayload]
-    repositories: list[dict[str, Any]] = Field(default_factory=list)
-    size_buckets: list[dict[str, Any]] = Field(default_factory=list)
-    review_state_rows: list[dict[str, Any]] = Field(default_factory=list)
+    repositories: list[DashboardRepositoryPayload] = Field(default_factory=list)
+    size_buckets: list[DashboardSizeBucketPayload] = Field(default_factory=list)
+    review_state_rows: list[DashboardReviewStatePayload] = Field(default_factory=list)
     pull_requests: list[DashboardPullRequestPayload]
 
 

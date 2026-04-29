@@ -1671,6 +1671,144 @@ class TestGitHubIngestionService:
             == []
         )
 
+    def test_rewrites_touched_periods_from_canonical_raw_inventory(
+        self,
+        tmp_path,
+    ) -> None:
+        """Rewrite touched periods from the canonical raw inventory so untouched rows survive incremental refreshes."""
+        # Given
+        writer = NormalizedRawSnapshotWriter()
+        full_config = self._build_run_config(
+            as_of="2026-03-31",
+            mode=RunMode.FULL,
+            output_dir=tmp_path,
+        )
+        full_collection = PullRequestCollection(
+            window=full_config.collection_window,
+            pull_requests=(
+                self._build_pull_request_record(
+                    number=10,
+                    updated_at="2026-03-10T09:00:00",
+                    created_at="2026-03-10T09:00:00",
+                ),
+                self._build_pull_request_record(
+                    number=20,
+                    updated_at="2026-03-31T22:00:00",
+                    created_at="2026-03-31T22:00:00",
+                ),
+            ),
+            failures=(),
+        )
+        incremental_config = self._build_run_config(
+            as_of="2026-04-18",
+            output_dir=tmp_path,
+        )
+        incremental_collection = PullRequestCollection(
+            window=incremental_config.collection_window,
+            pull_requests=(
+                self._build_pull_request_record(
+                    number=20,
+                    updated_at="2026-04-12T09:00:00",
+                    created_at="2026-03-31T22:00:00",
+                    title="PR 20 updated",
+                ),
+            ),
+            failures=(),
+        )
+        writer.write(full_config, full_collection)
+
+        # When
+        result = writer.write(incremental_config, incremental_collection)
+
+        # Then
+        assert [period.key for period in result.periods] == ["2026-03", "2026-04"]
+        assert self._read_csv_rows(tmp_path / "raw_inventory" / "pull_requests.csv") == [
+            {
+                "repository_full_name": "acme/api",
+                "pull_request_number": "10",
+                "title": "PR 10",
+                "state": "closed",
+                "draft": "False",
+                "merged": "True",
+                "author_login": "alice",
+                "created_at": "2026-03-10T09:00:00",
+                "updated_at": "2026-03-10T09:00:00",
+                "closed_at": "2026-03-10T09:00:00",
+                "merged_at": "2026-03-10T09:00:00",
+                "additions": "12",
+                "deletions": "4",
+                "changed_files": "3",
+                "commits": "2",
+                "html_url": "https://example.test/pr/10",
+            },
+            {
+                "repository_full_name": "acme/api",
+                "pull_request_number": "20",
+                "title": "PR 20 updated",
+                "state": "closed",
+                "draft": "False",
+                "merged": "True",
+                "author_login": "alice",
+                "created_at": "2026-03-31T22:00:00",
+                "updated_at": "2026-04-12T09:00:00",
+                "closed_at": "2026-04-12T09:00:00",
+                "merged_at": "2026-04-12T09:00:00",
+                "additions": "12",
+                "deletions": "4",
+                "changed_files": "3",
+                "commits": "2",
+                "html_url": "https://example.test/pr/20",
+            },
+        ]
+        assert self._read_csv_rows(
+            tmp_path / "raw" / "month" / "created_at" / "2026-03" / "pull_requests.csv"
+        ) == [
+            {
+                "period_key": "2026-03",
+                "repository_full_name": "acme/api",
+                "pull_request_number": "10",
+                "title": "PR 10",
+                "state": "closed",
+                "draft": "False",
+                "merged": "True",
+                "author_login": "alice",
+                "created_at": "2026-03-10T09:00:00",
+                "updated_at": "2026-03-10T09:00:00",
+                "closed_at": "2026-03-10T09:00:00",
+                "merged_at": "2026-03-10T09:00:00",
+                "additions": "12",
+                "deletions": "4",
+                "changed_files": "3",
+                "commits": "2",
+                "html_url": "https://example.test/pr/10",
+            },
+            {
+                "period_key": "2026-03",
+                "repository_full_name": "acme/api",
+                "pull_request_number": "20",
+                "title": "PR 20 updated",
+                "state": "closed",
+                "draft": "False",
+                "merged": "True",
+                "author_login": "alice",
+                "created_at": "2026-03-31T22:00:00",
+                "updated_at": "2026-04-12T09:00:00",
+                "closed_at": "2026-04-12T09:00:00",
+                "merged_at": "2026-04-12T09:00:00",
+                "additions": "12",
+                "deletions": "4",
+                "changed_files": "3",
+                "commits": "2",
+                "html_url": "https://example.test/pr/20",
+            },
+        ]
+        assert (
+            self._read_csv_rows(
+                tmp_path / "raw" / "month" / "created_at" / "2026-04" / "pull_requests.csv"
+            )
+            == []
+        )
+
     def test_writes_empty_backfill_snapshots_for_requested_periods_without_rows(
         self,
         tmp_path,

@@ -12,3 +12,7 @@ class GitHubApiError(OrgpulseError):
 
 class OrgTargetingError(OrgpulseError):
     """Raised when the target organization is invalid or inaccessible."""
+
+
+class AnalysisInputError(OrgpulseError):
+    """Raised when local analysis inputs are missing or incompatible."""

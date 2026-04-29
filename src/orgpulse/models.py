@@ -30,6 +30,8 @@ RepoSlug = Annotated[
 
 
 class PeriodGrain(StrEnum):
+    """Enumerate supported reporting grains."""
+
     WEEK = "week"
     MONTH = "month"
 
@@ -67,12 +69,16 @@ class PeriodGrain(StrEnum):
 
 
 class RunMode(StrEnum):
+    """Enumerate supported collection strategies."""
+
     FULL = "full"
     INCREMENTAL = "incremental"
     BACKFILL = "backfill"
 
 
 class TimeAnchor(StrEnum):
+    """Enumerate pull request timestamps that can anchor reporting."""
+
     CREATED_AT = "created_at"
     UPDATED_AT = "updated_at"
     MERGED_AT = "merged_at"
@@ -102,17 +108,23 @@ class TimeAnchor(StrEnum):
 
 
 class RunScope(StrEnum):
+    """Enumerate effective collection scopes derived from run mode."""
+
     FULL_HISTORY = "full_history"
     OPEN_PERIOD = "open_period"
     BOUNDED_BACKFILL = "bounded_backfill"
 
 
 class AuthSource(StrEnum):
+    """Enumerate supported GitHub authentication sources."""
+
     GH_TOKEN = "GH_TOKEN"
     GH_CLI = "gh"
 
 
 class ReportingPeriod(BaseModel):
+    """Describe one reporting period and its closure state."""
+
     model_config = ConfigDict(frozen=True)
 
     grain: PeriodGrain
@@ -123,6 +135,8 @@ class ReportingPeriod(BaseModel):
 
 
 class PeriodRange(BaseModel):
+    """Describe a contiguous range of reporting periods."""
+
     model_config = ConfigDict(frozen=True)
 
     grain: PeriodGrain
@@ -132,6 +146,8 @@ class PeriodRange(BaseModel):
 
 
 class CollectionWindow(BaseModel):
+    """Describe the inclusive date window fetched by a run."""
+
     model_config = ConfigDict(frozen=True)
 
     scope: RunScope
@@ -140,6 +156,8 @@ class CollectionWindow(BaseModel):
 
 
 class RepositoryInventoryItem(BaseModel):
+    """Describe one repository discovered for collection."""
+
     model_config = ConfigDict(frozen=True)
 
     name: str
@@ -151,6 +169,8 @@ class RepositoryInventoryItem(BaseModel):
 
 
 class RepositoryInventory(BaseModel):
+    """Store the repository inventory for a target organization."""
+
     model_config = ConfigDict(frozen=True)
 
     organization_login: str
@@ -158,6 +178,8 @@ class RepositoryInventory(BaseModel):
 
 
 class RepositoryCollectionFailure(BaseModel):
+    """Describe one repository-level collection failure."""
+
     model_config = ConfigDict(frozen=True)
 
     repository_full_name: str
@@ -168,6 +190,8 @@ class RepositoryCollectionFailure(BaseModel):
 
 
 class PullRequestReviewRecord(BaseModel):
+    """Store one normalized pull request review record."""
+
     model_config = ConfigDict(frozen=True)
 
     review_id: int
@@ -178,6 +202,8 @@ class PullRequestReviewRecord(BaseModel):
 
 
 class PullRequestTimelineEventRecord(BaseModel):
+    """Store one normalized pull request timeline event record."""
+
     model_config = ConfigDict(frozen=True)
 
     event_id: int
@@ -189,6 +215,8 @@ class PullRequestTimelineEventRecord(BaseModel):
 
 
 class PullRequestRecord(BaseModel):
+    """Store one normalized pull request record."""
+
     model_config = ConfigDict(frozen=True)
 
     repository_full_name: str
@@ -212,6 +240,8 @@ class PullRequestRecord(BaseModel):
 
 
 class PullRequestCollection(BaseModel):
+    """Store a pull request collection window and its results."""
+
     model_config = ConfigDict(frozen=True)
 
     window: CollectionWindow
@@ -220,11 +250,14 @@ class PullRequestCollection(BaseModel):
 
 
 class RawSnapshotPeriod(BaseModel):
+    """Describe one persisted raw snapshot period on disk."""
+
     model_config = ConfigDict(frozen=True)
 
     key: str
     start_date: date
     end_date: date
+    closed: bool = False
     directory: Path
     pull_requests_path: Path
     pull_request_count: int
@@ -235,6 +268,8 @@ class RawSnapshotPeriod(BaseModel):
 
 
 class RawSnapshotWriteResult(BaseModel):
+    """Describe the filesystem layout produced by raw snapshot writing."""
+
     model_config = ConfigDict(frozen=True)
 
     root_dir: Path
@@ -242,6 +277,8 @@ class RawSnapshotWriteResult(BaseModel):
 
 
 class PullRequestMetricRecord(BaseModel):
+    """Store one derived pull request metric record."""
+
     model_config = ConfigDict(frozen=True)
 
     period_key: str
@@ -250,6 +287,7 @@ class PullRequestMetricRecord(BaseModel):
     author_login: str | None
     merged: bool
     created_at: datetime
+    updated_at: datetime
     review_ready_at: datetime | None
     review_requested_at: datetime | None
     review_started_at: datetime | None
@@ -265,6 +303,8 @@ class PullRequestMetricRecord(BaseModel):
 
 
 class PullRequestMetricPeriod(BaseModel):
+    """Store derived pull request metrics for one reporting period."""
+
     model_config = ConfigDict(frozen=True)
 
     key: str
@@ -275,12 +315,16 @@ class PullRequestMetricPeriod(BaseModel):
 
 
 class PullRequestMetricCollection(BaseModel):
+    """Store derived pull request metrics across periods."""
+
     model_config = ConfigDict(frozen=True)
 
     periods: tuple[PullRequestMetricPeriod, ...]
 
 
 class MetricValueSummary(BaseModel):
+    """Summarize a numeric metric distribution."""
+
     model_config = ConfigDict(frozen=True)
 
     count: int
@@ -290,6 +334,8 @@ class MetricValueSummary(BaseModel):
 
 
 class RepositoryMetricRollup(BaseModel):
+    """Store one repository-level metric rollup."""
+
     model_config = ConfigDict(frozen=True)
 
     repository_full_name: str
@@ -307,6 +353,8 @@ class RepositoryMetricRollup(BaseModel):
 
 
 class RepositoryMetricPeriod(BaseModel):
+    """Store repository rollups for one reporting period."""
+
     model_config = ConfigDict(frozen=True)
 
     key: str
@@ -317,6 +365,8 @@ class RepositoryMetricPeriod(BaseModel):
 
 
 class RepositoryMetricCollection(BaseModel):
+    """Store repository rollups across periods for one organization."""
+
     model_config = ConfigDict(frozen=True)
 
     target_org: str
@@ -324,6 +374,8 @@ class RepositoryMetricCollection(BaseModel):
 
 
 class OrganizationMetricRollup(BaseModel):
+    """Store one organization-level metric rollup."""
+
     model_config = ConfigDict(frozen=True)
 
     repository_count: int
@@ -341,6 +393,8 @@ class OrganizationMetricRollup(BaseModel):
 
 
 class OrganizationMetricPeriod(BaseModel):
+    """Store organization metrics for one reporting period."""
+
     model_config = ConfigDict(frozen=True)
 
     key: str
@@ -351,6 +405,8 @@ class OrganizationMetricPeriod(BaseModel):
 
 
 class OrganizationMetricCollection(BaseModel):
+    """Store organization metrics across periods."""
+
     model_config = ConfigDict(frozen=True)
 
     target_org: str
@@ -358,6 +414,8 @@ class OrganizationMetricCollection(BaseModel):
 
 
 class OrgSummaryPeriodWriteResult(BaseModel):
+    """Describe one written organization summary period artifact set."""
+
     model_config = ConfigDict(frozen=True)
 
     key: str
@@ -370,6 +428,8 @@ class OrgSummaryPeriodWriteResult(BaseModel):
 
 
 class OrgSummaryWriteResult(BaseModel):
+    """Describe all organization summary artifacts written for a run."""
+
     model_config = ConfigDict(frozen=True)
 
     target_org: str
@@ -383,7 +443,676 @@ class OrgSummaryWriteResult(BaseModel):
     periods: tuple[OrgSummaryPeriodWriteResult, ...]
 
 
+class AnalysisReportPeriodWriteResult(BaseModel):
+    """Describe one written analysis report period artifact set."""
+
+    model_config = ConfigDict(frozen=True)
+
+    key: str
+    start_date: date
+    end_date: date
+    closed: bool
+    directory: Path
+    html_path: Path
+    json_path: Path
+
+
+class AnalysisReportWriteResult(BaseModel):
+    """Describe all analysis report artifacts written for a run."""
+
+    model_config = ConfigDict(frozen=True)
+
+    target_org: str
+    root_dir: Path
+    contract_path: Path
+    index_path: Path
+    readme_path: Path
+    latest_directory: Path | None
+    latest_html_path: Path | None
+    latest_json_path: Path | None
+    periods: tuple[AnalysisReportPeriodWriteResult, ...]
+
+
+class DashboardOverviewPayload(BaseModel):
+    """Store high-level dashboard summary metrics."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    org: str
+    generated_at: str
+    since: str
+    until: str
+    time_anchor: str
+    open_pull_requests: int | None = None
+    repositories: int | None = None
+    authors: int | None = None
+    top_repository: str | None = None
+    top_author: str | None = None
+    unique_reviewers: int | None = None
+    pull_requests: int | None = None
+    merged_pull_requests: int | None = None
+    review_submissions: int | None = None
+    total_changed_lines: int | None = None
+    total_commits: int | None = None
+    median_first_review_hours: float | None = None
+    median_merge_hours: float | None = None
+    median_close_hours: float | None = None
+    average_reviews_per_pr: float | None = None
+    average_changed_lines_per_pr: float | None = None
+    review_coverage_pct: float | None = None
+    review_sla_24h_pct: float | None = None
+    stale_open_pull_requests: int | None = None
+    merge_rate_pct: float | None = None
+    distribution_percentile: int | None = None
+    average_active_authors_per_month: float | None = None
+    latest_active_authors: int | None = None
+    pull_requests_per_active_author: float | None = None
+    changed_lines_per_active_author: float | None = None
+    review_submissions_per_reviewer: float | None = None
+
+
+class DashboardReviewerPayload(BaseModel):
+    """Store reviewer leaderboard metrics for the dashboard."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    reviewer_login: str
+    review_submissions: int
+    pull_requests_reviewed: int
+    approvals: int
+    changes_requested: int
+    comments: int
+    authors_supported: int
+
+
+class DashboardPullRequestPayload(BaseModel):
+    """Store one dashboard-ready pull request row."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    repository_full_name: str
+    pull_request_number: int
+    title: str
+    author_login: str
+    state: str
+    created_at: str
+    updated_at: str
+    closed_at: str | None = None
+    merged_at: str | None = None
+    html_url: str
+    additions: int
+    deletions: int
+    changed_files: int
+    changed_lines: int
+    commits: int
+    review_count: int
+    approval_count: int
+    changes_requested_count: int
+    comment_review_count: int
+    reviewer_count: int
+    first_review_hours: float | None = None
+    merge_hours: float | None = None
+    close_hours: float | None = None
+    review_rounds: int
+    review_ready_at: str
+    review_requested_at: str | None = None
+    size_bucket: str
+
+
+class DashboardInsightPayload(BaseModel):
+    """Store one dashboard insight callout."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    title: str
+    body: str
+
+
+class DashboardTimeSeriesPointPayload(BaseModel):
+    """Store one time-series point for dashboard charts."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    date: str
+    count: int
+
+
+class DashboardAuthorPayload(BaseModel):
+    """Store author leaderboard metrics for the dashboard."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    author_login: str
+    pull_requests: int
+    merged_pull_requests: int
+    open_pull_requests: int
+    changed_lines: int
+    commits: int
+    review_submissions_received: int
+    average_reviews_per_pr: float | None = None
+    median_first_review_hours: float | None = None
+    median_merge_hours: float | None = None
+    median_changed_lines: float | None = None
+    share_of_prs_pct: float | None = None
+
+
+class DashboardRepositoryPayload(BaseModel):
+    """Store repository leaderboard metrics for the dashboard."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    repository_full_name: str
+    pull_requests: int
+    merged_pull_requests: int
+    open_pull_requests: int
+    authors: int
+    changed_lines: int
+    review_submissions: int
+    average_reviews_per_pr: float | None = None
+    median_first_review_hours: float | None = None
+    median_merge_hours: float | None = None
+    share_of_prs_pct: float | None = None
+
+
+class DashboardSizeBucketPayload(BaseModel):
+    """Store pull request size bucket diagnostics for the dashboard."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    bucket: str
+    pull_requests: int
+    median_changed_lines: float | None = None
+    median_first_review_hours: float | None = None
+    median_merge_hours: float | None = None
+    average_reviews_per_pr: float | None = None
+
+
+class DashboardReviewStatePayload(BaseModel):
+    """Store review state distribution metrics for the dashboard."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    state: str
+    count: int
+    share_pct: float | None = None
+
+
+class DashboardAuthorThroughputPointPayload(BaseModel):
+    """Store author throughput chart values for the dashboard."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    label: str
+    pull_requests: int
+    merged_pull_requests: int
+    changed_lines: int
+
+
+class DashboardReviewLatencyPointPayload(BaseModel):
+    """Store author review latency chart values for the dashboard."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    label: str
+    median_first_review_hours: float | None = None
+
+
+class DashboardRepositoryThroughputPointPayload(BaseModel):
+    """Store repository throughput chart values for the dashboard."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    label: str
+    pull_requests: int
+    merged_pull_requests: int
+
+
+class DashboardChartsPayload(BaseModel):
+    """Collect chart series used by the dashboard UI."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    created_series: list[DashboardTimeSeriesPointPayload] = Field(default_factory=list)
+    merged_series: list[DashboardTimeSeriesPointPayload] = Field(default_factory=list)
+    review_series: list[DashboardTimeSeriesPointPayload] = Field(default_factory=list)
+    author_throughput: list[DashboardAuthorThroughputPointPayload] = Field(
+        default_factory=list
+    )
+    review_latency_by_author: list[DashboardReviewLatencyPointPayload] = Field(
+        default_factory=list
+    )
+    repository_throughput: list[
+        DashboardRepositoryThroughputPointPayload
+    ] = Field(default_factory=list)
+    size_bucket_latency: list[DashboardSizeBucketPayload] = Field(default_factory=list)
+
+
+class DashboardTrendRowPayload(BaseModel):
+    """Store one period trend row used by the dashboard."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    period_key: str
+    pull_requests: int
+    merged_pull_requests: int
+    open_pull_requests: int
+    active_authors: int
+    changed_lines: int
+    review_submissions: int
+    pull_requests_per_active_author: float | None = None
+    changed_lines_per_active_author: float | None = None
+    average_reviews_per_pr: float | None = None
+    median_first_review_hours: float | None = None
+    median_merge_hours: float | None = None
+    pull_request_delta: int | None = None
+    changed_lines_delta: int | None = None
+
+
+class DashboardMethodologyPayload(BaseModel):
+    """Store methodology metadata shown by the dashboard."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    window: str
+    anchor: str
+    distribution_percentile: int
+    generated_at: str
+
+
+class DashboardReferenceSummaryPayload(BaseModel):
+    """Store reference-section coverage metadata for the dashboard."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    author_roster_coverage_pct: float | None = None
+    reviewers_top_coverage_pct: float | None = None
+    repositories_top_coverage_pct: float | None = None
+    top3_author_share_pct: float | None = None
+    top3_repository_share_pct: float | None = None
+    weekly_hidden_count: int
+    monthly_hidden_count: int
+    author_reference_count: int
+
+
+class DashboardSizeDiagnosticPayload(BaseModel):
+    """Store explanatory size-diagnostic copy for the dashboard."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    headline: str
+    supporting: str
+
+
+class DashboardSourcePayload(BaseModel):
+    """Store the typed source payload consumed by dashboard preparation."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    overview: DashboardOverviewPayload
+    insights: list[DashboardInsightPayload] = Field(default_factory=list)
+    charts: DashboardChartsPayload = Field(default_factory=DashboardChartsPayload)
+    authors: list[DashboardAuthorPayload] = Field(default_factory=list)
+    reviewers: list[DashboardReviewerPayload]
+    repositories: list[DashboardRepositoryPayload] = Field(default_factory=list)
+    size_buckets: list[DashboardSizeBucketPayload] = Field(default_factory=list)
+    review_state_rows: list[DashboardReviewStatePayload] = Field(default_factory=list)
+    pull_requests: list[DashboardPullRequestPayload]
+
+
+class DashboardPreparedPayload(BaseModel):
+    """Store template-ready dashboard presentation data."""
+
+    model_config = ConfigDict(extra="allow")
+
+    overview: dict[str, Any]
+    authors: list[dict[str, Any]]
+    authors_roster_top: list[dict[str, Any]]
+    authors_roster_rest: list[dict[str, Any]]
+    reviewers: list[dict[str, Any]]
+    reviewers_top: list[dict[str, Any]]
+    reviewers_rest: list[dict[str, Any]]
+    repositories: list[dict[str, Any]]
+    repositories_top: list[dict[str, Any]]
+    repositories_rest: list[dict[str, Any]]
+    size_buckets: list[dict[str, Any]]
+    review_state_rows: list[dict[str, Any]]
+    weekly_trends: list[dict[str, Any]]
+    monthly_trends: list[dict[str, Any]]
+    weekly_trends_recent: list[dict[str, Any]]
+    weekly_trends_older: list[dict[str, Any]]
+    monthly_trends_recent: list[dict[str, Any]]
+    monthly_trends_older: list[dict[str, Any]]
+    methodology: dict[str, Any]
+    reference_summary: dict[str, Any]
+    size_diagnostic: dict[str, Any]
+    default_author: str | None
+    author_details_json: str
+    distribution_percentile: int
+    pull_requests: list[DashboardPullRequestPayload]
+
+
+class AnalysisReportMetricDefinition(BaseModel):
+    """Describe one metric available in an analysis report view."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    key: str
+    label: str
+    format: str
+
+
+class AnalysisReportPeriodDescriptor(BaseModel):
+    """Describe one period label and boundary in an analysis report."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    key: str
+    label: str
+    start_date: str
+    end_date: str
+    closed: bool
+
+
+class AnalysisReportPeriodValues(BaseModel):
+    """Store one period's values for a specific analysis report view."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    key: str
+    label: str
+    start_date: str
+    end_date: str
+    closed: bool
+    values: dict[str, int | float | None]
+
+
+class AnalysisReportPeriodPayload(AnalysisReportPeriodDescriptor):
+    """Store one period section in the analysis report."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    summary: dict[str, int | float | None]
+    values: dict[str, int | float | None]
+    diagnostics: dict[str, Any]
+
+
+class AnalysisReportEntityPayload(BaseModel):
+    """Store one repository or author section in the analysis report."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    key: str
+    label: str
+    period_values: list[AnalysisReportPeriodValues]
+    totals: dict[str, int | float | None]
+
+
+class AnalysisReportPeriodViewPayload(BaseModel):
+    """Store the period-focused interactive analysis report view."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    default_metric: str
+    metrics: list[AnalysisReportMetricDefinition]
+    periods: list[AnalysisReportPeriodValues]
+
+
+class AnalysisReportEntityViewPayload(BaseModel):
+    """Store one entity-focused interactive analysis report view."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    default_metric: str
+    metrics: list[AnalysisReportMetricDefinition]
+    periods: list[AnalysisReportPeriodDescriptor]
+    entities: list[AnalysisReportEntityPayload]
+
+
+class AnalysisReportViewsPayload(BaseModel):
+    """Collect all interactive views exposed by an analysis report."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    period: AnalysisReportPeriodViewPayload
+    repository: AnalysisReportEntityViewPayload
+    author: AnalysisReportEntityViewPayload
+
+
+class AnalysisReportPayload(BaseModel):
+    """Store the complete HTML analysis report payload."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    target_org: str
+    grain: str
+    time_anchor: str
+    initial_view: str
+    default_top_n: int
+    since: str | None = None
+    until: str | None = None
+    distribution_percentile: int
+    matched_pull_request_count: int
+    default_period_key: str
+    periods: list[AnalysisReportPeriodPayload]
+    views: AnalysisReportViewsPayload
+
+
+class TimeAnchorContextPayload(BaseModel):
+    """Describe how a file's metrics are anchored in time."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    field: str
+    scope: str
+    description: str
+
+
+class PeriodStatePayload(BaseModel):
+    """Describe whether a persisted reporting period is open or closed."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    status: str
+    label: str
+    is_open: bool
+    is_closed: bool
+    is_partial: bool
+    observed_through_date: str
+
+
+class RepositorySummaryHistoryEntryPayload(BaseModel):
+    """Store one repository summary history entry."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    key: str
+    start_date: str
+    end_date: str
+    closed: bool
+    status: str
+    label: str
+    is_open: bool
+    is_closed: bool
+    is_partial: bool
+    observed_through_date: str
+    path: str
+
+
+class RepositorySummaryLatestPayload(RepositorySummaryHistoryEntryPayload):
+    """Store the latest repository summary pointer."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    source_path: str
+
+
+class RepositorySummaryContractPayload(BaseModel):
+    """Store the repository summary contract JSON payload."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    target_org: str
+    period_grain: str
+    time_anchor: str
+    time_anchor_context: TimeAnchorContextPayload
+    period_state_fields: list[str]
+    include_repos: list[str]
+    exclude_repos: list[str]
+
+
+class RepositorySummaryIndexPayload(BaseModel):
+    """Store the repository summary index JSON payload."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    target_org: str
+    period_grain: str
+    time_anchor: str
+    time_anchor_context: TimeAnchorContextPayload
+    include_repos: list[str]
+    exclude_repos: list[str]
+    latest: RepositorySummaryLatestPayload | None
+    history: list[RepositorySummaryHistoryEntryPayload]
+
+
+class OrgSummaryPeriodPayload(BaseModel):
+    """Store one organization summary period descriptor."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    key: str
+    start_date: str
+    end_date: str
+    closed: bool
+    status: str
+    label: str
+    is_open: bool
+    is_closed: bool
+    is_partial: bool
+    observed_through_date: str
+
+
+class OrgSummaryHistoryEntryPayload(OrgSummaryPeriodPayload):
+    """Store one organization summary history entry."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    markdown_path: str
+    json_path: str
+
+
+class OrgSummaryLatestPayload(OrgSummaryPeriodPayload):
+    """Store the latest organization summary pointer."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    markdown_path: str
+    json_path: str
+    source_markdown_path: str
+    source_json_path: str
+
+
+class OrgSummaryContractPayload(BaseModel):
+    """Store the organization summary contract JSON payload."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    target_org: str
+    period_grain: str
+    time_anchor: str
+    time_anchor_context: TimeAnchorContextPayload
+    include_repos: list[str]
+    exclude_repos: list[str]
+
+
+class OrgSummaryJsonPayload(BaseModel):
+    """Store the organization summary JSON document payload."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    target_org: str
+    period_grain: str
+    time_anchor: str
+    time_anchor_context: TimeAnchorContextPayload
+    include_repos: list[str]
+    exclude_repos: list[str]
+    period: OrgSummaryPeriodPayload
+    summary_labels: dict[str, str]
+    summary: dict[str, Any]
+
+
+class OrgSummaryIndexPayload(BaseModel):
+    """Store the organization summary index JSON payload."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    target_org: str
+    period_grain: str
+    time_anchor: str
+    time_anchor_context: TimeAnchorContextPayload
+    include_repos: list[str]
+    exclude_repos: list[str]
+    latest: OrgSummaryLatestPayload | None
+    history: list[OrgSummaryHistoryEntryPayload]
+
+
+class ManifestPeriodPayload(BaseModel):
+    """Store one manifest period descriptor."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    key: str
+    start_date: str
+    end_date: str
+    closed: bool
+    status: str
+    label: str
+    is_open: bool
+    is_closed: bool
+    is_partial: bool
+    observed_through_date: str
+
+
+class ManifestIndexLatestPayload(BaseModel):
+    """Store the latest manifest pointer in the manifest index."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    manifest_path: str
+    completed_at: str
+    as_of: str
+    mode: str
+    refresh_scope: str
+
+
+class ManifestHistoryPayload(BaseModel):
+    """Store manifest history pointers for refreshed and locked periods."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    refreshed_periods: list[ManifestPeriodPayload]
+    locked_periods: list[ManifestPeriodPayload]
+
+
+class ManifestIndexPayload(BaseModel):
+    """Store the manifest index JSON payload."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    target_org: str
+    period_grain: str
+    time_anchor: str
+    time_anchor_context: TimeAnchorContextPayload
+    include_repos: list[str]
+    exclude_repos: list[str]
+    latest: ManifestIndexLatestPayload
+    history: ManifestHistoryPayload
+    watermarks: dict[str, Any]
+
+
 class MetricValidationIssue(BaseModel):
+    """Store one metric validation issue."""
+
     model_config = ConfigDict(frozen=True)
 
     code: str
@@ -393,6 +1122,8 @@ class MetricValidationIssue(BaseModel):
 
 
 class RepositoryMetricValidationSummary(BaseModel):
+    """Summarize metric validation counts for one repository."""
+
     model_config = ConfigDict(frozen=True)
 
     repository_full_name: str
@@ -403,6 +1134,8 @@ class RepositoryMetricValidationSummary(BaseModel):
 
 
 class OrganizationMetricValidationSummary(BaseModel):
+    """Summarize metric validation counts for one organization period."""
+
     model_config = ConfigDict(frozen=True)
 
     repository_count: int
@@ -413,6 +1146,8 @@ class OrganizationMetricValidationSummary(BaseModel):
 
 
 class MetricValidationPeriod(BaseModel):
+    """Store metric validation results for one reporting period."""
+
     model_config = ConfigDict(frozen=True)
 
     key: str
@@ -429,6 +1164,8 @@ class MetricValidationPeriod(BaseModel):
 
 
 class MetricValidationCollection(BaseModel):
+    """Store metric validation results across periods."""
+
     model_config = ConfigDict(frozen=True)
 
     target_org: str
@@ -436,6 +1173,8 @@ class MetricValidationCollection(BaseModel):
 
 
 class ManifestWatermarks(BaseModel):
+    """Store watermark dates associated with a run manifest."""
+
     model_config = ConfigDict(frozen=True)
 
     collection_window_start_date: date | None
@@ -445,6 +1184,8 @@ class ManifestWatermarks(BaseModel):
 
 
 class LastSuccessfulRun(BaseModel):
+    """Store metadata about the latest successful run."""
+
     model_config = ConfigDict(frozen=True)
 
     completed_at: datetime
@@ -456,6 +1197,8 @@ class LastSuccessfulRun(BaseModel):
 
 
 class RunManifest(BaseModel):
+    """Store the canonical manifest for persisted raw outputs."""
+
     model_config = ConfigDict(frozen=True)
 
     target_org: str
@@ -471,6 +1214,8 @@ class RunManifest(BaseModel):
 
 
 class ManifestWriteResult(BaseModel):
+    """Describe manifest artifacts written for a run."""
+
     model_config = ConfigDict(frozen=True)
 
     path: Path
@@ -480,6 +1225,8 @@ class ManifestWriteResult(BaseModel):
 
 
 class RepositorySummaryCsvPeriod(BaseModel):
+    """Describe one written repository summary CSV period artifact."""
+
     model_config = ConfigDict(frozen=True)
 
     key: str
@@ -491,6 +1238,8 @@ class RepositorySummaryCsvPeriod(BaseModel):
 
 
 class RepositorySummaryCsvWriteResult(BaseModel):
+    """Describe repository summary CSV artifacts written for a run."""
+
     model_config = ConfigDict(frozen=True)
 
     root_dir: Path
@@ -502,6 +1251,8 @@ class RepositorySummaryCsvWriteResult(BaseModel):
 
 
 class CheckpointPolicy(BaseModel):
+    """Describe checkpoint behavior for a run configuration."""
+
     model_config = ConfigDict(frozen=True)
 
     resume_from_checkpoint: bool
@@ -510,6 +1261,8 @@ class CheckpointPolicy(BaseModel):
 
 
 class LockPolicy(BaseModel):
+    """Describe locked-period handling for a run configuration."""
+
     model_config = ConfigDict(frozen=True)
 
     skip_locked_periods: bool
@@ -518,6 +1271,8 @@ class LockPolicy(BaseModel):
 
 
 class RunConfig(BaseModel):
+    """Capture validated settings for a collection run."""
+
     model_config = ConfigDict(frozen=True)
 
     org: OrgSlug
@@ -780,6 +1535,16 @@ def _find_overlapping_repo_filters(
 
 
 def canonicalize_repo_filter(value: str, *, org: str | None = None) -> str:
+    """Normalize a repo filter into a canonical comparison form.
+
+    Args:
+        value: Repository filter supplied by a user or persisted contract.
+        org: Optional organization context for bare repository names.
+
+    Returns:
+        A lowercase normalized repository filter string.
+    """
+
     normalized = value.strip().lower()
     if "/" in normalized or org is None:
         return normalized
@@ -789,6 +1554,18 @@ def canonicalize_repo_filter(value: str, *, org: str | None = None) -> str:
 def repo_filter_matches(
     repo_filter: str, *, full_name: str, name: str, org: str
 ) -> bool:
+    """Check whether a filter matches a repository identity.
+
+    Args:
+        repo_filter: Repository filter to evaluate.
+        full_name: Full repository name including owner.
+        name: Bare repository name.
+        org: Organization used to resolve bare repository filters.
+
+    Returns:
+        Whether the filter matches the repository.
+    """
+
     canonical_filter = canonicalize_repo_filter(repo_filter, org=org)
     return canonical_filter in {
         canonicalize_repo_filter(full_name),
@@ -797,6 +1574,8 @@ def repo_filter_matches(
 
 
 class ResolvedToken(BaseModel):
+    """Store a resolved GitHub token and its provenance."""
+
     model_config = ConfigDict(frozen=True)
 
     source: AuthSource
@@ -804,6 +1583,8 @@ class ResolvedToken(BaseModel):
 
 
 class GitHubTargetContext(BaseModel):
+    """Store validated GitHub identity and organization targeting context."""
+
     model_config = ConfigDict(frozen=True)
 
     auth_source: AuthSource

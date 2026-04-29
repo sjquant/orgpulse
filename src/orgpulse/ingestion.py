@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import csv
 import hashlib
 import json
 import shutil
@@ -50,6 +51,11 @@ RAW_SNAPSHOT_DIRNAME = "raw"
 CHECKPOINT_DIRNAME = "checkpoints"
 CHECKPOINT_MANIFEST_FILENAME = "manifest.json"
 CHECKPOINT_REPOSITORY_DIRNAME = "repositories"
+CANONICAL_RAW_DIRNAME = "raw_inventory"
+CANONICAL_RAW_CONTRACT_FILENAME = "contract.json"
+CANONICAL_PULL_REQUEST_FILENAME = "pull_requests.csv"
+CANONICAL_PULL_REQUEST_REVIEW_FILENAME = "pull_request_reviews.csv"
+CANONICAL_PULL_REQUEST_TIMELINE_EVENT_FILENAME = "pull_request_timeline_events.csv"
 PULL_REQUEST_SNAPSHOT_FILENAME = "pull_requests.csv"
 PULL_REQUEST_REVIEW_SNAPSHOT_FILENAME = "pull_request_reviews.csv"
 PULL_REQUEST_TIMELINE_EVENT_SNAPSHOT_FILENAME = "pull_request_timeline_events.csv"
@@ -72,6 +78,7 @@ PULL_REQUEST_FIELDNAMES = (
     "commits",
     "html_url",
 )
+CANONICAL_PULL_REQUEST_FIELDNAMES = PULL_REQUEST_FIELDNAMES[1:]
 PULL_REQUEST_REVIEW_FIELDNAMES = (
     "period_key",
     "repository_full_name",
@@ -82,6 +89,7 @@ PULL_REQUEST_REVIEW_FIELDNAMES = (
     "submitted_at",
     "commit_id",
 )
+CANONICAL_PULL_REQUEST_REVIEW_FIELDNAMES = PULL_REQUEST_REVIEW_FIELDNAMES[1:]
 PULL_REQUEST_TIMELINE_EVENT_FIELDNAMES = (
     "period_key",
     "repository_full_name",
@@ -92,6 +100,9 @@ PULL_REQUEST_TIMELINE_EVENT_FIELDNAMES = (
     "created_at",
     "requested_reviewer_login",
     "requested_team_name",
+)
+CANONICAL_PULL_REQUEST_TIMELINE_EVENT_FIELDNAMES = (
+    PULL_REQUEST_TIMELINE_EVENT_FIELDNAMES[1:]
 )
 FIRST_REVIEW_TIMELINE_EVENTS = frozenset(
     {
@@ -238,6 +249,7 @@ class NormalizedRawSnapshotWriter:
             config.period.value,
             config.time_anchor.value,
         )
+        canonical_pull_requests = CanonicalRawInventoryStore().write(config, collection)
         snapshot_periods = self._build_snapshot_periods(config, collection)
         self._prune_stale_period_directories(
             config=config,
@@ -246,7 +258,11 @@ class NormalizedRawSnapshotWriter:
         )
         grouped_pull_requests = self._group_pull_requests_by_period(
             config,
-            collection.pull_requests,
+            self._pull_requests_for_snapshot_periods(
+                config,
+                canonical_pull_requests=canonical_pull_requests,
+                snapshot_periods=snapshot_periods,
+            ),
         )
         periods = tuple(
             self._write_period_snapshot(
@@ -414,6 +430,7 @@ class NormalizedRawSnapshotWriter:
             key=snapshot_period.key,
             start_date=snapshot_period.start_date,
             end_date=snapshot_period.end_date,
+            closed=snapshot_period.closed,
             directory=period_dir,
             pull_requests_path=pull_requests_path,
             pull_request_count=len(pull_request_rows),
@@ -430,6 +447,29 @@ class NormalizedRawSnapshotWriter:
         time_anchor: str,
     ) -> Path:
         return output_dir / RAW_SNAPSHOT_DIRNAME / period_grain / time_anchor
+
+    def _pull_requests_for_snapshot_periods(
+        self,
+        config: RunConfig,
+        *,
+        canonical_pull_requests: tuple[PullRequestRecord, ...],
+        snapshot_periods: tuple[ReportingPeriod, ...],
+    ) -> tuple[PullRequestRecord, ...]:
+        target_period_keys = self._target_period_keys(snapshot_periods)
+        return tuple(
+            pull_request
+            for pull_request in canonical_pull_requests
+            if (
+                anchor_at := self._anchor_datetime(config.time_anchor, pull_request)
+            ) is not None
+            and config.period.key_for(anchor_at.date()) in target_period_keys
+        )
+
+    def _target_period_keys(
+        self,
+        snapshot_periods: tuple[ReportingPeriod, ...],
+    ) -> set[str]:
+        return {snapshot_period.key for snapshot_period in snapshot_periods}
 
     def _group_pull_requests_by_period(
         self,
@@ -539,6 +579,467 @@ class NormalizedRawSnapshotWriter:
         if grain is PeriodGrain.MONTH:
             return (current.replace(day=28) + timedelta(days=4)).replace(day=1)
         return current + timedelta(days=7)
+
+
+@dataclass(frozen=True)
+class _CanonicalRawInventory:
+    root_dir: Path
+    contract_path: Path
+    pull_requests_path: Path
+    reviews_path: Path
+    timeline_events_path: Path
+
+
+class CanonicalRawInventoryStore:
+    """Persist and reload a period-independent raw pull request inventory."""
+
+    def write(
+        self,
+        config: RunConfig,
+        collection: PullRequestCollection,
+    ) -> tuple[PullRequestRecord, ...]:
+        inventory = self._inventory(config.output_dir)
+        contract = self._contract(config)
+        if self._stored_contract(inventory.contract_path) != contract:
+            self._clear_inventory(inventory)
+            existing_pull_requests: tuple[PullRequestRecord, ...] = ()
+        else:
+            existing_pull_requests = self._load_inventory_pull_requests(inventory) or ()
+        canonical_pull_requests = self._merge_pull_requests(
+            config,
+            existing_pull_requests=existing_pull_requests,
+            incoming_pull_requests=collection.pull_requests,
+        )
+        atomic_write_json(inventory.contract_path, contract)
+        self._write_pull_requests(inventory, canonical_pull_requests)
+        return canonical_pull_requests
+
+    def load(
+        self,
+        config: RunConfig,
+    ) -> tuple[PullRequestRecord, ...] | None:
+        inventory = self._inventory(config.output_dir)
+        if self._stored_contract(inventory.contract_path) != self._contract(config):
+            return None
+        return self._load_inventory_pull_requests(inventory)
+
+    def _inventory(self, output_dir: Path) -> _CanonicalRawInventory:
+        root_dir = output_dir / CANONICAL_RAW_DIRNAME
+        return _CanonicalRawInventory(
+            root_dir=root_dir,
+            contract_path=root_dir / CANONICAL_RAW_CONTRACT_FILENAME,
+            pull_requests_path=root_dir / CANONICAL_PULL_REQUEST_FILENAME,
+            reviews_path=root_dir / CANONICAL_PULL_REQUEST_REVIEW_FILENAME,
+            timeline_events_path=root_dir
+            / CANONICAL_PULL_REQUEST_TIMELINE_EVENT_FILENAME,
+        )
+
+    def _contract(self, config: RunConfig) -> dict[str, object]:
+        return {
+            "target_org": config.org.lower(),
+            "include_repos": self._canonical_repo_filters(
+                config.include_repos,
+                org=config.org,
+            ),
+            "exclude_repos": self._canonical_repo_filters(
+                config.exclude_repos,
+                org=config.org,
+            ),
+        }
+
+    def _canonical_repo_filters(
+        self,
+        repo_filters: tuple[str, ...],
+        *,
+        org: str,
+    ) -> list[str]:
+        return sorted(
+            canonicalize_repo_filter(repo_filter, org=org)
+            for repo_filter in repo_filters
+        )
+
+    def _stored_contract(self, contract_path: Path) -> dict[str, object] | None:
+        if not contract_path.exists():
+            return None
+        try:
+            payload = json.loads(contract_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return None
+        if not isinstance(payload, dict):
+            return None
+        return cast(dict[str, object], payload)
+
+    def _clear_inventory(self, inventory: _CanonicalRawInventory) -> None:
+        if inventory.root_dir.exists():
+            shutil.rmtree(inventory.root_dir)
+
+    def _merge_pull_requests(
+        self,
+        config: RunConfig,
+        *,
+        existing_pull_requests: tuple[PullRequestRecord, ...],
+        incoming_pull_requests: tuple[PullRequestRecord, ...],
+    ) -> tuple[PullRequestRecord, ...]:
+        authoritative_period_keys = self._authoritative_period_keys(
+            config,
+            existing_pull_requests=existing_pull_requests,
+            incoming_pull_requests=incoming_pull_requests,
+        )
+        incoming_pull_requests_by_key = {
+            self._pull_request_key(pull_request): pull_request
+            for pull_request in incoming_pull_requests
+        }
+        pull_requests_by_key = {
+            self._pull_request_key(pull_request): pull_request
+            for pull_request in existing_pull_requests
+            if not self._should_drop_existing_pull_request(
+                config,
+                pull_request,
+                incoming_pull_request_keys=set(incoming_pull_requests_by_key),
+                authoritative_period_keys=authoritative_period_keys,
+            )
+        }
+        pull_requests_by_key.update(incoming_pull_requests_by_key)
+        return self._sorted_pull_requests(tuple(pull_requests_by_key.values()))
+
+    def _authoritative_period_keys(
+        self,
+        config: RunConfig,
+        *,
+        existing_pull_requests: tuple[PullRequestRecord, ...],
+        incoming_pull_requests: tuple[PullRequestRecord, ...],
+    ) -> set[str]:
+        if config.mode is RunMode.INCREMENTAL:
+            return {config.active_period.key}
+        if config.mode is RunMode.BACKFILL:
+            assert config.backfill_start is not None
+            assert config.backfill_end is not None
+            return {
+                config.period.key_for(period_start)
+                for period_start in self._period_starts(
+                    config.period,
+                    start_date=config.backfill_start,
+                    end_date=config.backfill_end,
+                )
+            }
+        return {
+            period_key
+            for pull_request in (*existing_pull_requests, *incoming_pull_requests)
+            if (
+                period_key := self._period_key(
+                    config.time_anchor,
+                    config.period,
+                    pull_request,
+                )
+            )
+            is not None
+        }
+
+    def _period_starts(
+        self,
+        grain: PeriodGrain,
+        *,
+        start_date: date,
+        end_date: date,
+    ) -> tuple[date, ...]:
+        period_starts: list[date] = []
+        current = start_date
+        while current <= end_date:
+            period_starts.append(current)
+            current = self._next_period_start(grain, current)
+        return tuple(period_starts)
+
+    def _next_period_start(
+        self,
+        grain: PeriodGrain,
+        current: date,
+    ) -> date:
+        if grain is PeriodGrain.MONTH:
+            return (current.replace(day=28) + timedelta(days=4)).replace(day=1)
+        return current + timedelta(days=7)
+
+    def _should_drop_existing_pull_request(
+        self,
+        config: RunConfig,
+        pull_request: PullRequestRecord,
+        *,
+        incoming_pull_request_keys: set[tuple[str, int]],
+        authoritative_period_keys: set[str],
+    ) -> bool:
+        pull_request_key = self._pull_request_key(pull_request)
+        if pull_request_key in incoming_pull_request_keys:
+            return False
+        period_key = self._period_key(config.time_anchor, config.period, pull_request)
+        if period_key is None:
+            return False
+        return period_key in authoritative_period_keys
+
+    def _period_key(
+        self,
+        time_anchor: TimeAnchor,
+        grain: PeriodGrain,
+        pull_request: PullRequestRecord,
+    ) -> str | None:
+        anchor_at = time_anchor.pull_request_datetime(pull_request)
+        if anchor_at is None:
+            return None
+        return grain.key_for(anchor_at.date())
+
+    def _sorted_pull_requests(
+        self,
+        pull_requests: tuple[PullRequestRecord, ...],
+    ) -> tuple[PullRequestRecord, ...]:
+        return tuple(
+            sorted(
+                pull_requests,
+                key=lambda pull_request: (
+                    pull_request.repository_full_name,
+                    pull_request.number,
+                ),
+            )
+        )
+
+    def _write_pull_requests(
+        self,
+        inventory: _CanonicalRawInventory,
+        pull_requests: tuple[PullRequestRecord, ...],
+    ) -> None:
+        atomic_write_csv(
+            path=inventory.pull_requests_path,
+            fieldnames=CANONICAL_PULL_REQUEST_FIELDNAMES,
+            rows=[
+                self._pull_request_row(pull_request)
+                for pull_request in pull_requests
+            ],
+        )
+        atomic_write_csv(
+            path=inventory.reviews_path,
+            fieldnames=CANONICAL_PULL_REQUEST_REVIEW_FIELDNAMES,
+            rows=[
+                review_row
+                for pull_request in pull_requests
+                for review_row in self._review_rows_for_pull_request(pull_request)
+            ],
+        )
+        atomic_write_csv(
+            path=inventory.timeline_events_path,
+            fieldnames=CANONICAL_PULL_REQUEST_TIMELINE_EVENT_FIELDNAMES,
+            rows=[
+                timeline_event_row
+                for pull_request in pull_requests
+                for timeline_event_row in self._timeline_event_rows_for_pull_request(
+                    pull_request
+                )
+            ],
+        )
+
+    def _pull_request_row(self, pull_request: PullRequestRecord) -> SnapshotRow:
+        return {
+            "repository_full_name": pull_request.repository_full_name,
+            "pull_request_number": pull_request.number,
+            "title": pull_request.title,
+            "state": pull_request.state,
+            "draft": pull_request.draft,
+            "merged": pull_request.merged,
+            "author_login": pull_request.author_login,
+            "created_at": self._serialize_datetime(pull_request.created_at),
+            "updated_at": self._serialize_datetime(pull_request.updated_at),
+            "closed_at": self._serialize_datetime(pull_request.closed_at),
+            "merged_at": self._serialize_datetime(pull_request.merged_at),
+            "additions": pull_request.additions,
+            "deletions": pull_request.deletions,
+            "changed_files": pull_request.changed_files,
+            "commits": pull_request.commits,
+            "html_url": pull_request.html_url,
+        }
+
+    def _review_rows_for_pull_request(
+        self,
+        pull_request: PullRequestRecord,
+    ) -> tuple[SnapshotRow, ...]:
+        return tuple(
+            {
+                "repository_full_name": pull_request.repository_full_name,
+                "pull_request_number": pull_request.number,
+                "review_id": review.review_id,
+                "state": review.state,
+                "author_login": review.author_login,
+                "submitted_at": self._serialize_datetime(review.submitted_at),
+                "commit_id": review.commit_id,
+            }
+            for review in pull_request.reviews
+        )
+
+    def _timeline_event_rows_for_pull_request(
+        self,
+        pull_request: PullRequestRecord,
+    ) -> tuple[SnapshotRow, ...]:
+        return tuple(
+            {
+                "repository_full_name": pull_request.repository_full_name,
+                "pull_request_number": pull_request.number,
+                "event_id": timeline_event.event_id,
+                "event": timeline_event.event,
+                "actor_login": timeline_event.actor_login,
+                "created_at": self._serialize_datetime(timeline_event.created_at),
+                "requested_reviewer_login": timeline_event.requested_reviewer_login,
+                "requested_team_name": timeline_event.requested_team_name,
+            }
+            for timeline_event in pull_request.timeline_events
+        )
+
+    def _load_inventory_pull_requests(
+        self,
+        inventory: _CanonicalRawInventory,
+    ) -> tuple[PullRequestRecord, ...] | None:
+        if not inventory.pull_requests_path.exists():
+            return None
+        review_index = self._load_review_index(inventory.reviews_path)
+        timeline_event_index = self._load_timeline_event_index(
+            inventory.timeline_events_path
+        )
+        pull_requests = [
+            self._build_pull_request_record(
+                row,
+                review_index=review_index,
+                timeline_event_index=timeline_event_index,
+            )
+            for row in self._read_rows(inventory.pull_requests_path)
+        ]
+        return self._sorted_pull_requests(tuple(pull_requests))
+
+    def _load_review_index(
+        self,
+        path: Path,
+    ) -> dict[tuple[str, int], tuple[PullRequestReviewRecord, ...]]:
+        reviews_by_pull_request: dict[
+            tuple[str, int], list[PullRequestReviewRecord]
+        ] = {}
+        for row in self._read_rows(path):
+            pull_request_key = self._pull_request_key_from_row(row)
+            reviews_by_pull_request.setdefault(pull_request_key, []).append(
+                PullRequestReviewRecord(
+                    review_id=int(row["review_id"]),
+                    state=row["state"],
+                    author_login=self._optional_str(row["author_login"]),
+                    submitted_at=self._optional_datetime(row["submitted_at"]),
+                    commit_id=self._optional_str(row["commit_id"]),
+                )
+            )
+        return {
+            pull_request_key: tuple(
+                sorted(
+                    reviews,
+                    key=lambda review: (
+                        review.submitted_at.isoformat() if review.submitted_at else "",
+                        review.review_id,
+                    ),
+                )
+            )
+            for pull_request_key, reviews in reviews_by_pull_request.items()
+        }
+
+    def _load_timeline_event_index(
+        self,
+        path: Path,
+    ) -> dict[tuple[str, int], tuple[PullRequestTimelineEventRecord, ...]]:
+        timeline_events_by_pull_request: dict[
+            tuple[str, int], list[PullRequestTimelineEventRecord]
+        ] = {}
+        for row in self._read_rows(path):
+            pull_request_key = self._pull_request_key_from_row(row)
+            timeline_events_by_pull_request.setdefault(pull_request_key, []).append(
+                PullRequestTimelineEventRecord(
+                    event_id=int(row["event_id"]),
+                    event=row["event"],
+                    actor_login=self._optional_str(row["actor_login"]),
+                    created_at=self._optional_datetime(row["created_at"]),
+                    requested_reviewer_login=self._optional_str(
+                        row["requested_reviewer_login"]
+                    ),
+                    requested_team_name=self._optional_str(row["requested_team_name"]),
+                )
+            )
+        return {
+            pull_request_key: tuple(
+                sorted(
+                    timeline_events,
+                    key=lambda timeline_event: (
+                        timeline_event.created_at.isoformat()
+                        if timeline_event.created_at
+                        else "",
+                        timeline_event.event,
+                        timeline_event.event_id,
+                    ),
+                )
+            )
+            for pull_request_key, timeline_events in timeline_events_by_pull_request.items()
+        }
+
+    def _build_pull_request_record(
+        self,
+        row: dict[str, str],
+        *,
+        review_index: dict[tuple[str, int], tuple[PullRequestReviewRecord, ...]],
+        timeline_event_index: dict[
+            tuple[str, int], tuple[PullRequestTimelineEventRecord, ...]
+        ],
+    ) -> PullRequestRecord:
+        pull_request_key = self._pull_request_key_from_row(row)
+        return PullRequestRecord(
+            repository_full_name=row["repository_full_name"],
+            number=int(row["pull_request_number"]),
+            title=row["title"],
+            state=row["state"],
+            draft=self._parse_bool(row["draft"]),
+            merged=self._parse_bool(row["merged"]),
+            author_login=self._optional_str(row["author_login"]),
+            created_at=datetime.fromisoformat(row["created_at"]),
+            updated_at=datetime.fromisoformat(row["updated_at"]),
+            closed_at=self._optional_datetime(row["closed_at"]),
+            merged_at=self._optional_datetime(row["merged_at"]),
+            additions=int(row["additions"]),
+            deletions=int(row["deletions"]),
+            changed_files=int(row["changed_files"]),
+            commits=int(row["commits"]),
+            html_url=row["html_url"],
+            reviews=review_index.get(pull_request_key, ()),
+            timeline_events=timeline_event_index.get(pull_request_key, ()),
+        )
+
+    def _read_rows(self, path: Path) -> tuple[dict[str, str], ...]:
+        if not path.exists():
+            return ()
+        try:
+            with path.open(encoding="utf-8", newline="") as handle:
+                return tuple(cast(dict[str, str], row) for row in csv.DictReader(handle))
+        except OSError:
+            return ()
+
+    def _pull_request_key(
+        self,
+        pull_request: PullRequestRecord,
+    ) -> tuple[str, int]:
+        return pull_request.repository_full_name, pull_request.number
+
+    def _pull_request_key_from_row(self, row: dict[str, str]) -> tuple[str, int]:
+        return row["repository_full_name"], int(row["pull_request_number"])
+
+    def _optional_str(self, value: str) -> str | None:
+        return value or None
+
+    def _optional_datetime(self, value: str) -> datetime | None:
+        if not value:
+            return None
+        return datetime.fromisoformat(value)
+
+    def _parse_bool(self, value: str) -> bool:
+        return value.lower() == "true"
+
+    def _serialize_datetime(self, value: datetime | None) -> str:
+        if value is None:
+            return ""
+        return value.isoformat()
 
 
 class GitHubIngestionService:
@@ -1756,6 +2257,7 @@ class GitHubIngestionService:
 
 
 __all__ = [
+    "CanonicalRawInventoryStore",
     "GitHubIngestionService",
     "NormalizedRawSnapshotWriter",
     "PullRequestCollection",

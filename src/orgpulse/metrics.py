@@ -203,6 +203,7 @@ class PullRequestMetricCollectionBuilder:
             author_login=pull_request.author_login,
             merged=pull_request.merged,
             created_at=pull_request.created_at,
+            updated_at=pull_request.updated_at,
             review_ready_at=review_ready_at,
             review_requested_at=review_requested_at,
             review_started_at=review_started_at,

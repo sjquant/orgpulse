@@ -11,6 +11,8 @@ from orgpulse.models import OrgSlug, PeriodGrain, RunMode, TimeAnchor
 
 
 class AppSettings(BaseSettings):
+    """Represent environment-backed defaults for orgpulse commands."""
+
     model_config = SettingsConfigDict(
         env_prefix="ORGPULSE_",
         extra="ignore",

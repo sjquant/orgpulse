@@ -5,6 +5,7 @@ description = "GitHub organization metrics snapshots and rollups."
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
+  "Jinja2>=3.1,<4",
   "pydantic>=2.11,<3",
   "pydantic-settings>=2.11,<3",
   "PyGithub>=2.6,<3",

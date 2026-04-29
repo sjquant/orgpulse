@@ -2,8 +2,15 @@ from __future__ import annotations
 
 import csv
 import json
-from datetime import date, datetime
+import subprocess
+import sys
+from datetime import date, datetime, timedelta
+from pathlib import Path
+from typing import Any
 
+import pytest
+
+from orgpulse import dashboard as _dashboard_module
 from orgpulse.ingestion import (
     PULL_REQUEST_FIELDNAMES,
     PULL_REQUEST_REVIEW_FIELDNAMES,
@@ -33,11 +40,68 @@ from orgpulse.models import (
     RunMode,
     RunScope,
 )
-from orgpulse.output import (
+from orgpulse.reporting.analysis_report import (
+    build_organization_report_payload,
+    render_organization_report_html,
+)
+from orgpulse.reporting.dashboard_html import (
+    prepare_dashboard_payload,
+    render_dashboard_artifact,
+    render_dashboard_html,
+)
+from orgpulse.reporting.run_outputs import (
+    MANIFEST_FILENAME,
+    ORG_SUMMARY_DIRNAME,
+    REQUIRED_RAW_SNAPSHOT_HEADERS,
     OrgSummaryWriter,
     RepositorySummaryCsvWriter,
     RunManifestWriter,
 )
+
+from .support.dashboard_source import (
+    dashboard_pull_request_row as _manual_dashboard_pull_request_row,
+)
+from .support.dashboard_source import (
+    dashboard_review_row as _manual_dashboard_review_row,
+)
+from .support.dashboard_source import (
+    dashboard_timeline_event_row as _manual_dashboard_timeline_event_row,
+)
+from .support.dashboard_source import (
+    expected_period_state as _expected_period_state,
+)
+from .support.dashboard_source import (
+    expected_time_anchor_context as _expected_time_anchor_context,
+)
+from .support.dashboard_source import (
+    write_dashboard_source_manifest as _shared_write_dashboard_source_manifest,
+)
+from .support.dashboard_source import (
+    write_dashboard_source_period as _write_manual_dashboard_source_period,
+)
+
+build_dashboard_payload_from_local_outputs = _dashboard_module.build_dashboard_payload_from_local_outputs
+
+
+def _write_manual_dashboard_source_manifest(
+    *,
+    source_output_dir: Path,
+    refreshed_period_keys: tuple[str, ...],
+    locked_period_keys: tuple[str, ...],
+    as_of: str,
+) -> None:
+    _shared_write_dashboard_source_manifest(
+        source_output_dir=source_output_dir,
+        refreshed_period_keys=refreshed_period_keys,
+        locked_period_keys=locked_period_keys,
+        as_of=as_of,
+        collection_window_start_date="2026-04-01",
+        repository_count=2,
+        pull_request_count=2,
+        latest_refreshed_period_end_date="2026-04-30",
+        latest_locked_period_end_date="2026-03-31" if locked_period_keys else None,
+        count_snapshot_rows=True,
+    )
 
 
 class TestOrgSummaryWriter:
@@ -91,6 +155,7 @@ class TestOrgSummaryWriter:
             "include_repos": [],
             "period_grain": "month",
             "time_anchor": "created_at",
+            "time_anchor_context": _expected_time_anchor_context(),
             "target_org": "acme",
         }
         assert json.loads(result.index_path.read_text(encoding="utf-8")) == {
@@ -99,6 +164,10 @@ class TestOrgSummaryWriter:
                 {
                     "closed": False,
                     "end_date": "2026-04-30",
+                    **_expected_period_state(
+                        closed=False,
+                        observed_through_date="2026-04-18",
+                    ),
                     "json_path": "2026-04/summary.json",
                     "key": "2026-04",
                     "markdown_path": "2026-04/summary.md",
@@ -109,6 +178,10 @@ class TestOrgSummaryWriter:
             "latest": {
                 "closed": False,
                 "end_date": "2026-04-30",
+                **_expected_period_state(
+                    closed=False,
+                    observed_through_date="2026-04-18",
+                ),
                 "json_path": "latest/summary.json",
                 "key": "2026-04",
                 "markdown_path": "latest/summary.md",
@@ -118,6 +191,7 @@ class TestOrgSummaryWriter:
             },
             "period_grain": "month",
             "time_anchor": "created_at",
+            "time_anchor_context": _expected_time_anchor_context(),
             "target_org": "acme",
         }
         period_result = result.periods[0]
@@ -127,11 +201,27 @@ class TestOrgSummaryWriter:
             "period": {
                 "closed": False,
                 "end_date": "2026-04-30",
+                **_expected_period_state(
+                    closed=False,
+                    observed_through_date="2026-04-18",
+                ),
                 "key": "2026-04",
                 "start_date": "2026-04-01",
             },
             "period_grain": "month",
             "time_anchor": "created_at",
+            "time_anchor_context": _expected_time_anchor_context(),
+            "summary_labels": {
+                "merged_pull_request_count": (
+                    "Merged pull request count (pull_request.created_at)"
+                ),
+                "pull_request_count": (
+                    "Pull request count (pull_request.created_at)"
+                ),
+                "value_summaries": (
+                    "Value summaries grouped by pull_request.created_at"
+                ),
+            },
             "summary": {
                 "active_author_count": 2,
                 "additions": {
@@ -183,39 +273,18 @@ class TestOrgSummaryWriter:
             },
             "target_org": "acme",
         }
-        assert period_result.markdown_path.read_text(encoding="utf-8") == (
-            "# Organization Summary: acme 2026-04\n"
-            "\n"
-            "- Target org: acme\n"
-            "- Period grain: month\n"
-            "- Time anchor: created_at\n"
-            "- Period key: 2026-04\n"
-            "- Include repos: all\n"
-            "- Exclude repos: none\n"
-            "- Period start: 2026-04-01\n"
-            "- Period end: 2026-04-30\n"
-            "- Closed: false\n"
-            "\n"
-            "## Totals\n"
-            "\n"
-            "- Repository count: 2\n"
-            "- Pull request count: 3\n"
-            "- Merged pull request count: 2\n"
-            "- Active author count: 2\n"
-            "- Merged pull requests per active author: 1.00\n"
-            "\n"
-            "## Value Summaries\n"
-            "\n"
-            "| Metric | Count | Total | Average | Median |\n"
-            "| --- | ---: | ---: | ---: | ---: |\n"
-            "| Time to merge (seconds) | 2 | 180 | 90.00 | 90.00 |\n"
-            "| Time to first review (seconds) | 2 | 300 | 150.00 | 150.00 |\n"
-            "| Additions | 2 | 40 | 20.00 | 20.00 |\n"
-            "| Deletions | 2 | 10 | 5.00 | 5.00 |\n"
-            "| Changed lines | 2 | 50 | 25.00 | 25.00 |\n"
-            "| Changed files | 2 | 6 | 3.00 | 3.00 |\n"
-            "| Commits | 2 | 8 | 4.00 | 4.00 |\n"
-        )
+        markdown = period_result.markdown_path.read_text(encoding="utf-8")
+        assert "# Organization Summary: acme 2026-04 (pull_request.created_at)" in markdown
+        assert (
+            "- Summary scope: All counts and summaries in this file are grouped by "
+            "pull_request.created_at."
+        ) in markdown
+        assert "- Period status: open month" in markdown
+        assert "- Partial period: true" in markdown
+        assert "- Observed through: 2026-04-18" in markdown
+        assert "- Pull request count (pull_request.created_at): 3" in markdown
+        assert "- Merged pull request count (pull_request.created_at): 2" in markdown
+        assert "## Value Summaries (pull_request.created_at)" in markdown
         assert result.latest_json_path is not None
         assert result.latest_markdown_path is not None
         assert result.latest_json_path.read_text(encoding="utf-8") == period_result.json_path.read_text(
@@ -224,24 +293,18 @@ class TestOrgSummaryWriter:
         assert result.latest_markdown_path.read_text(
             encoding="utf-8"
         ) == period_result.markdown_path.read_text(encoding="utf-8")
-        assert result.readme_path.read_text(encoding="utf-8") == (
-            "# Organization Summary Index: acme month\n"
-            "\n"
-            "- Target org: acme\n"
-            "- Period grain: month\n"
-            "- Time anchor: created_at\n"
-            "- Include repos: all\n"
-            "- Exclude repos: none\n"
-            "- Latest period: 2026-04\n"
-            "- Latest JSON: latest/summary.json\n"
-            "- Latest Markdown: latest/summary.md\n"
-            "\n"
-            "## History\n"
-            "\n"
-            "| Period | Start | End | Closed | JSON | Markdown |\n"
-            "| --- | --- | --- | --- | --- | --- |\n"
-            "| 2026-04 | 2026-04-01 | 2026-04-30 | false | 2026-04/summary.json | 2026-04/summary.md |\n"
-        )
+        readme = result.readme_path.read_text(encoding="utf-8")
+        assert (
+            "- Summary scope: All counts and summaries in this file are grouped by "
+            "pull_request.created_at."
+        ) in readme
+        assert "- Latest period status: open month" in readme
+        assert "- Latest period partial: true" in readme
+        assert "- Latest period observed through: 2026-04-18" in readme
+        assert (
+            "| 2026-04 | 2026-04-01 | 2026-04-30 | open month | true | "
+            "2026-04-18 | 2026-04/summary.json | 2026-04/summary.md |"
+        ) in readme
 
     def test_prunes_stale_period_directories_on_full_runs(
         self,
@@ -355,6 +418,7 @@ class TestOrgSummaryWriter:
             "include_repos": ["acme/api"],
             "period_grain": "month",
             "time_anchor": "created_at",
+            "time_anchor_context": _expected_time_anchor_context(),
             "target_org": "acme",
         }
         assert json.loads(result.periods[0].json_path.read_text(encoding="utf-8"))[
@@ -442,6 +506,10 @@ class TestOrgSummaryWriter:
             {
                 "closed": True,
                 "end_date": "2026-03-31",
+                **_expected_period_state(
+                    closed=True,
+                    observed_through_date="2026-03-31",
+                ),
                 "json_path": "2026-03/summary.json",
                 "key": "2026-03",
                 "markdown_path": "2026-03/summary.md",
@@ -450,6 +518,10 @@ class TestOrgSummaryWriter:
             {
                 "closed": False,
                 "end_date": "2026-04-30",
+                **_expected_period_state(
+                    closed=False,
+                    observed_through_date="2026-04-18",
+                ),
                 "json_path": "2026-04/summary.json",
                 "key": "2026-04",
                 "markdown_path": "2026-04/summary.md",
@@ -459,6 +531,10 @@ class TestOrgSummaryWriter:
         assert json.loads(result.index_path.read_text(encoding="utf-8"))["latest"] == {
             "closed": False,
             "end_date": "2026-04-30",
+            **_expected_period_state(
+                closed=False,
+                observed_through_date="2026-04-18",
+            ),
             "json_path": "latest/summary.json",
             "key": "2026-04",
             "markdown_path": "latest/summary.md",
@@ -470,6 +546,85 @@ class TestOrgSummaryWriter:
         assert result.latest_json_path.read_text(encoding="utf-8") == result.periods[0].json_path.read_text(
             encoding="utf-8"
         )
+
+    def test_ignores_additive_history_metadata_from_existing_index_files(
+        self,
+        tmp_path,
+    ) -> None:
+        """Ignore extra fields in saved org-summary history entries when rebuilding incremental history."""
+        # Given
+        previous_config = RunConfig.model_validate(
+            {
+                "org": "acme",
+                "as_of": "2026-03-18",
+                "output_dir": tmp_path,
+            }
+        )
+        current_config = RunConfig.model_validate(
+            {
+                "org": "acme",
+                "as_of": "2026-04-18",
+                "output_dir": tmp_path,
+            }
+        )
+        writer = OrgSummaryWriter()
+        previous_metrics = OrganizationMetricCollection(
+            target_org="acme",
+            periods=(
+                OrganizationMetricPeriod(
+                    key="2026-03",
+                    start_date=date.fromisoformat("2026-03-01"),
+                    end_date=date.fromisoformat("2026-03-31"),
+                    closed=False,
+                    summary=self._build_rollup(),
+                ),
+            ),
+        )
+        current_metrics = OrganizationMetricCollection(
+            target_org="acme",
+            periods=(
+                OrganizationMetricPeriod(
+                    key="2026-03",
+                    start_date=date.fromisoformat("2026-03-01"),
+                    end_date=date.fromisoformat("2026-03-31"),
+                    closed=True,
+                    summary=self._build_rollup(),
+                ),
+                OrganizationMetricPeriod(
+                    key="2026-04",
+                    start_date=date.fromisoformat("2026-04-01"),
+                    end_date=date.fromisoformat("2026-04-30"),
+                    closed=False,
+                    summary=self._build_rollup(),
+                ),
+            ),
+        )
+        previous_result = writer.write(
+            previous_config,
+            previous_metrics,
+            refreshed_period_keys=("2026-03",),
+        )
+        previous_index_payload = json.loads(
+            previous_result.index_path.read_text(encoding="utf-8")
+        )
+        previous_index_payload["history"][0]["debug_note"] = "legacy"
+        previous_result.index_path.write_text(
+            json.dumps(previous_index_payload),
+            encoding="utf-8",
+        )
+
+        # When
+        result = writer.write(
+            current_config,
+            current_metrics,
+            refreshed_period_keys=("2026-04",),
+        )
+
+        # Then
+        assert [entry["key"] for entry in json.loads(result.index_path.read_text(encoding="utf-8"))["history"]] == [
+            "2026-03",
+            "2026-04",
+        ]
 
     def _build_rollup(self) -> OrganizationMetricRollup:
         """Build a representative org rollup payload for summary writer tests."""
@@ -814,6 +969,10 @@ class TestRunManifestWriter:
                     {
                         "closed": False,
                         "end_date": "2026-04-28",
+                        **_expected_period_state(
+                            closed=False,
+                            observed_through_date="2026-04-18",
+                        ),
                         "key": "2026-04",
                         "start_date": "2026-04-01",
                     }
@@ -829,6 +988,7 @@ class TestRunManifestWriter:
             },
             "period_grain": "month",
             "time_anchor": "created_at",
+            "time_anchor_context": _expected_time_anchor_context(),
             "target_org": "acme",
             "watermarks": {
                 "collection_window_end_date": "2026-04-18",
@@ -1103,6 +1263,15 @@ class TestRepositorySummaryCsvWriter:
             "include_repos": [],
             "period_grain": "month",
             "time_anchor": "created_at",
+            "time_anchor_context": _expected_time_anchor_context(),
+            "period_state_fields": [
+                "status",
+                "label",
+                "is_open",
+                "is_closed",
+                "is_partial",
+                "observed_through_date",
+            ],
             "target_org": "acme",
         }
         assert json.loads(result.index_path.read_text(encoding="utf-8")) == {
@@ -1111,6 +1280,10 @@ class TestRepositorySummaryCsvWriter:
                 {
                     "closed": False,
                     "end_date": "2026-04-30",
+                    **_expected_period_state(
+                        closed=False,
+                        observed_through_date="2026-04-18",
+                    ),
                     "key": "2026-04",
                     "path": "2026-04/repo_summary.csv",
                     "start_date": "2026-04-01",
@@ -1120,6 +1293,10 @@ class TestRepositorySummaryCsvWriter:
             "latest": {
                 "closed": False,
                 "end_date": "2026-04-30",
+                **_expected_period_state(
+                    closed=False,
+                    observed_through_date="2026-04-18",
+                ),
                 "key": "2026-04",
                 "path": "latest/repo_summary.csv",
                 "source_path": "2026-04/repo_summary.csv",
@@ -1127,6 +1304,7 @@ class TestRepositorySummaryCsvWriter:
             },
             "period_grain": "month",
             "time_anchor": "created_at",
+            "time_anchor_context": _expected_time_anchor_context(),
             "target_org": "acme",
         }
         rows = self._read_rows(result.periods[0].path)
@@ -1135,7 +1313,15 @@ class TestRepositorySummaryCsvWriter:
             "acme/web",
         ]
         assert rows[0]["period_key"] == "2026-04"
+        assert rows[0]["period_grain"] == "month"
+        assert rows[0]["time_anchor"] == "created_at"
+        assert rows[0]["time_anchor_scope"] == "pull_request.created_at"
+        assert rows[0]["period_status"] == "open"
+        assert rows[0]["period_label"] == "open month"
+        assert rows[0]["period_open"] == "true"
         assert rows[0]["period_closed"] == "false"
+        assert rows[0]["period_partial"] == "true"
+        assert rows[0]["period_observed_through_date"] == "2026-04-18"
         assert rows[0]["pull_request_count"] == "1"
         assert rows[0]["merged_pull_request_count"] == "1"
         assert rows[0]["active_author_count"] == "1"
@@ -1353,6 +1539,10 @@ class TestRepositorySummaryCsvWriter:
             {
                 "closed": True,
                 "end_date": "2026-03-31",
+                **_expected_period_state(
+                    closed=True,
+                    observed_through_date="2026-03-31",
+                ),
                 "key": "2026-03",
                 "path": "2026-03/repo_summary.csv",
                 "start_date": "2026-03-01",
@@ -1360,6 +1550,10 @@ class TestRepositorySummaryCsvWriter:
             {
                 "closed": False,
                 "end_date": "2026-04-30",
+                **_expected_period_state(
+                    closed=False,
+                    observed_through_date="2026-04-18",
+                ),
                 "key": "2026-04",
                 "path": "2026-04/repo_summary.csv",
                 "start_date": "2026-04-01",
@@ -1368,6 +1562,10 @@ class TestRepositorySummaryCsvWriter:
         assert json.loads(result.index_path.read_text(encoding="utf-8"))["latest"] == {
             "closed": False,
             "end_date": "2026-04-30",
+            **_expected_period_state(
+                closed=False,
+                observed_through_date="2026-04-18",
+            ),
             "key": "2026-04",
             "path": "latest/repo_summary.csv",
             "source_path": "2026-04/repo_summary.csv",
@@ -1377,6 +1575,114 @@ class TestRepositorySummaryCsvWriter:
         assert result.latest_path.read_text(encoding="utf-8") == result.periods[0].path.read_text(
             encoding="utf-8"
         )
+
+    def test_ignores_additive_history_metadata_from_existing_index_files(
+        self,
+        tmp_path,
+    ) -> None:
+        """Ignore extra fields in saved repo-summary history entries when rebuilding incremental history."""
+        # Given
+        previous_config = self._build_run_config(
+            as_of="2026-03-18",
+            output_dir=tmp_path,
+        )
+        current_config = self._build_run_config(
+            as_of="2026-04-18",
+            output_dir=tmp_path,
+        )
+        writer = RepositorySummaryCsvWriter()
+        previous_raw_snapshot = self._write_raw_snapshot(
+            previous_config,
+            pull_requests=(
+                PullRequestRecord(
+                    repository_full_name="acme/api",
+                    number=11,
+                    title="Close March work",
+                    state="closed",
+                    draft=False,
+                    merged=True,
+                    author_login="alice",
+                    created_at=datetime.fromisoformat("2026-03-10T09:00:00"),
+                    updated_at=datetime.fromisoformat("2026-03-14T12:00:00"),
+                    closed_at=datetime.fromisoformat("2026-03-14T12:00:00"),
+                    merged_at=datetime.fromisoformat("2026-03-14T12:00:00"),
+                    additions=12,
+                    deletions=3,
+                    changed_files=2,
+                    commits=2,
+                    html_url="https://example.test/pr/11",
+                ),
+            ),
+        )
+        previous_repository_metrics = RepositoryMetricCollectionBuilder().build(
+            previous_config,
+            PullRequestMetricCollectionBuilder().build(
+                previous_config,
+                previous_raw_snapshot,
+            ),
+        )
+        previous_result = writer.write(
+            previous_config,
+            previous_repository_metrics,
+            refreshed_period_keys=("2026-03",),
+        )
+        previous_index_payload = json.loads(
+            previous_result.index_path.read_text(encoding="utf-8")
+        )
+        previous_index_payload["history"][0]["debug_note"] = "legacy"
+        previous_result.index_path.write_text(
+            json.dumps(previous_index_payload),
+            encoding="utf-8",
+        )
+        current_raw_snapshot = self._write_raw_snapshot(
+            current_config,
+            pull_requests=(
+                PullRequestRecord(
+                    repository_full_name="acme/web",
+                    number=21,
+                    title="Open April work",
+                    state="closed",
+                    draft=False,
+                    merged=True,
+                    author_login="bob",
+                    created_at=datetime.fromisoformat("2026-04-09T10:00:00"),
+                    updated_at=datetime.fromisoformat("2026-04-12T11:00:00"),
+                    closed_at=datetime.fromisoformat("2026-04-12T11:00:00"),
+                    merged_at=datetime.fromisoformat("2026-04-12T11:00:00"),
+                    additions=18,
+                    deletions=4,
+                    changed_files=3,
+                    commits=3,
+                    html_url="https://example.test/pr/21",
+                ),
+            ),
+        )
+        repository_metrics = RepositoryMetricCollectionBuilder().build(
+            current_config,
+            PullRequestMetricCollectionBuilder().build(
+                current_config,
+                RawSnapshotWriteResult(
+                    root_dir=current_raw_snapshot.root_dir,
+                    periods=(
+                        previous_raw_snapshot.periods[0],
+                        current_raw_snapshot.periods[0],
+                    ),
+                ),
+            ),
+        )
+
+        # When
+        result = writer.write(
+            current_config,
+            repository_metrics,
+            refreshed_period_keys=("2026-04",),
+        )
+
+        # Then
+        assert [entry["key"] for entry in json.loads(result.index_path.read_text(encoding="utf-8"))["history"]] == [
+            "2026-03",
+            "2026-04",
+        ]
 
     def _build_run_config(self, **overrides: object) -> RunConfig:
         """Build the minimal run configuration needed for repo summary export tests."""
@@ -1402,3 +1708,1211 @@ class TestRepositorySummaryCsvWriter:
         """Read repo summary CSV rows into dictionaries for assertions."""
         with path.open(newline="", encoding="utf-8") as handle:
             return list(csv.DictReader(handle))
+
+
+class TestManualDashboardPayload:
+    def test_renders_theme_switch_with_tokenized_theme_bootstrap(self) -> None:
+        """Render a manual dashboard with a persisted light/dark theme switch and CSS tokens."""
+        # Given
+        payload = {
+            "overview": {
+                "org": "acme",
+                "generated_at": "2026-04-23T09:00:00+00:00",
+                "since": "2026-04-01",
+                "until": "2026-04-30",
+                "time_anchor": "created_at",
+                "top_repository": "acme/api",
+                "top_author": "alice",
+                "unique_reviewers": 1,
+            },
+            "reviewers": [
+                {
+                    "reviewer_login": "reviewer-1",
+                    "review_submissions": 1,
+                    "pull_requests_reviewed": 1,
+                    "approvals": 1,
+                    "changes_requested": 0,
+                    "comments": 0,
+                    "authors_supported": 1,
+                },
+            ],
+            "pull_requests": [
+                _manual_pull_request(
+                    repository_full_name="acme/api",
+                    pull_request_number=1,
+                    author_login="alice",
+                    created_at="2026-04-01T09:00:00+00:00",
+                    merged_at="2026-04-02T09:00:00+00:00",
+                    changed_lines=10,
+                    additions=8,
+                    deletions=2,
+                    first_review_hours=1.0,
+                    merge_hours=24.0,
+                    size_bucket="XS",
+                ),
+            ],
+        }
+
+        # When
+        prepared = prepare_dashboard_payload(payload)
+        prepared.review_state_rows = []
+        html = render_dashboard_html(prepared)
+
+        # Then
+        assert 'orgpulse-manual-dashboard-theme' in html
+        assert 'data-theme-option="dark"' in html
+        assert 'data-theme-option="light"' in html
+        assert 'aria-label="Dark theme"' in html
+        assert 'aria-label="Light theme"' in html
+        assert 'class="theme-switch-icon"' in html
+        assert 'class="theme-switch-indicator"' in html
+        assert 'data-active-theme' in html
+        assert "transform 180ms cubic-bezier(0.22, 1, 0.36, 1)" in html
+        assert "--bg-canvas" in html
+        assert "--panel-raised" in html
+        assert 'window.matchMedia("(prefers-color-scheme: dark)")' in html
+
+    def test_uses_shared_percentile_cutoff_across_overview_and_breakdowns(
+        self,
+    ) -> None:
+        """Apply one percentile cutoff across overview, trends, repositories, and author breakdowns."""
+        # Given
+        payload = {
+            "overview": {
+                "org": "acme",
+                "generated_at": "2026-04-24T00:00:00+00:00",
+                "since": "2026-04-01",
+                "until": "2026-04-30",
+                "time_anchor": "created_at",
+                "top_repository": "acme/api",
+                "top_author": "alice",
+                "unique_reviewers": 2,
+            },
+            "reviewers": [
+                {
+                    "reviewer_login": "alice",
+                    "review_submissions": 4,
+                    "pull_requests_reviewed": 2,
+                    "approvals": 2,
+                    "changes_requested": 0,
+                    "comments": 2,
+                    "authors_supported": 2,
+                },
+                {
+                    "reviewer_login": "bob",
+                    "review_submissions": 1,
+                    "pull_requests_reviewed": 1,
+                    "approvals": 1,
+                    "changes_requested": 0,
+                    "comments": 0,
+                    "authors_supported": 1,
+                },
+            ],
+            "pull_requests": [
+                _manual_pull_request(
+                    repository_full_name="acme/api",
+                    pull_request_number=1,
+                    author_login="alice",
+                    created_at="2026-04-01T09:00:00+00:00",
+                    merged_at="2026-04-02T09:00:00+00:00",
+                    changed_lines=10,
+                    additions=8,
+                    deletions=2,
+                    first_review_hours=1.0,
+                    merge_hours=24.0,
+                    size_bucket="XS",
+                ),
+                _manual_pull_request(
+                    repository_full_name="acme/api",
+                    pull_request_number=2,
+                    author_login="bob",
+                    created_at="2026-04-03T09:00:00+00:00",
+                    merged_at="2026-04-04T09:00:00+00:00",
+                    changed_lines=20,
+                    additions=16,
+                    deletions=4,
+                    first_review_hours=2.0,
+                    merge_hours=24.0,
+                    size_bucket="S",
+                ),
+                _manual_pull_request(
+                    repository_full_name="acme/web",
+                    pull_request_number=3,
+                    author_login="carol",
+                    created_at="2026-04-05T09:00:00+00:00",
+                    merged_at="2026-04-06T09:00:00+00:00",
+                    changed_lines=1000,
+                    additions=1000,
+                    deletions=0,
+                    first_review_hours=3.0,
+                    merge_hours=24.0,
+                    size_bucket="XL",
+                ),
+            ],
+        }
+
+        # When
+        prepared = prepare_dashboard_payload(
+            payload,
+            distribution_percentile=95,
+        )
+
+        # Then
+        assert prepared.overview["total_changed_lines"] == 30
+        assert sum(row["changed_lines"] for row in prepared.repositories) == 30
+        assert sum(row["changed_lines"] for row in prepared.monthly_trends) == 30
+        assert prepared.repositories == [
+            {
+                "repository_full_name": "acme/api",
+                "pull_requests": 2,
+                "merged_pull_requests": 2,
+                "open_pull_requests": 0,
+                "authors": 2,
+                "changed_lines": 30,
+                "review_submissions": 2,
+                "average_reviews_per_pr": 1.0,
+                "median_first_review_hours": 1.5,
+                "median_merge_hours": 24.0,
+                "share_of_prs_pct": 66.67,
+            },
+            {
+                "repository_full_name": "acme/web",
+                "pull_requests": 1,
+                "merged_pull_requests": 1,
+                "open_pull_requests": 0,
+                "authors": 1,
+                "changed_lines": 0,
+                "review_submissions": 1,
+                "average_reviews_per_pr": 1.0,
+                "median_first_review_hours": None,
+                "median_merge_hours": 24.0,
+                "share_of_prs_pct": 33.33,
+            },
+        ]
+        author_details = json.loads(prepared.author_details_json)
+        assert author_details["carol"]["size_mix"][-1] == {
+            "bucket": "XL",
+            "pull_requests": 1,
+            "changed_lines": 0,
+            "median_first_review_hours": None,
+            "median_merge_hours": 24.0,
+            "average_reviews_per_pr": 1.0,
+        }
+
+    def test_adds_team_normalized_author_metrics_to_overview_and_trends(self) -> None:
+        """Expose average active-author normalization in overview cards and trend rows."""
+        # Given
+        payload = {
+            "overview": {
+                "org": "acme",
+                "generated_at": "2026-04-24T00:00:00+00:00",
+                "since": "2026-01-01",
+                "until": "2026-02-28",
+                "time_anchor": "created_at",
+                "top_repository": "acme/api",
+                "top_author": "alice",
+                "unique_reviewers": 2,
+            },
+            "reviewers": [
+                {
+                    "reviewer_login": "reviewer-1",
+                    "review_submissions": 2,
+                    "pull_requests_reviewed": 2,
+                    "approvals": 2,
+                    "changes_requested": 0,
+                    "comments": 0,
+                    "authors_supported": 2,
+                },
+                {
+                    "reviewer_login": "reviewer-2",
+                    "review_submissions": 1,
+                    "pull_requests_reviewed": 1,
+                    "approvals": 1,
+                    "changes_requested": 0,
+                    "comments": 0,
+                    "authors_supported": 1,
+                },
+            ],
+            "pull_requests": [
+                _manual_pull_request(
+                    repository_full_name="acme/api",
+                    pull_request_number=1,
+                    author_login="alice",
+                    created_at="2026-01-03T09:00:00+00:00",
+                    merged_at="2026-01-04T09:00:00+00:00",
+                    changed_lines=10,
+                    additions=8,
+                    deletions=2,
+                    first_review_hours=1.0,
+                    merge_hours=24.0,
+                    size_bucket="XS",
+                ),
+                _manual_pull_request(
+                    repository_full_name="acme/web",
+                    pull_request_number=2,
+                    author_login="bob",
+                    created_at="2026-01-10T09:00:00+00:00",
+                    merged_at="2026-01-11T09:00:00+00:00",
+                    changed_lines=30,
+                    additions=24,
+                    deletions=6,
+                    first_review_hours=2.0,
+                    merge_hours=24.0,
+                    size_bucket="S",
+                ),
+                _manual_pull_request(
+                    repository_full_name="acme/api",
+                    pull_request_number=3,
+                    author_login="alice",
+                    created_at="2026-02-05T09:00:00+00:00",
+                    merged_at="2026-02-06T09:00:00+00:00",
+                    changed_lines=20,
+                    additions=14,
+                    deletions=6,
+                    first_review_hours=3.0,
+                    merge_hours=24.0,
+                    size_bucket="S",
+                ),
+            ],
+        }
+
+        # When
+        prepared = prepare_dashboard_payload(payload)
+        html = render_dashboard_html(prepared)
+
+        # Then
+        assert prepared.overview["average_active_authors_per_month"] == 1.5
+        assert prepared.overview["pull_requests_per_active_author"] == 2.0
+        assert prepared.overview["changed_lines_per_active_author"] == 40.0
+        assert prepared.overview["review_submissions_per_reviewer"] == 1.5
+        assert prepared.monthly_trends == [
+            {
+                "period_key": "2026-01",
+                "pull_requests": 2,
+                "merged_pull_requests": 2,
+                "open_pull_requests": 0,
+                "active_authors": 2,
+                "changed_lines": 40,
+                "review_submissions": 2,
+                "pull_requests_per_active_author": 1.0,
+                "changed_lines_per_active_author": 20.0,
+                "average_reviews_per_pr": 1.0,
+                "median_first_review_hours": 1.5,
+                "median_merge_hours": 24.0,
+                "pull_request_delta": None,
+                "changed_lines_delta": None,
+            },
+            {
+                "period_key": "2026-02",
+                "pull_requests": 1,
+                "merged_pull_requests": 1,
+                "open_pull_requests": 0,
+                "active_authors": 1,
+                "changed_lines": 20,
+                "review_submissions": 1,
+                "pull_requests_per_active_author": 1.0,
+                "changed_lines_per_active_author": 20.0,
+                "average_reviews_per_pr": 1.0,
+                "median_first_review_hours": 3.0,
+                "median_merge_hours": 24.0,
+                "pull_request_delta": -1,
+                "changed_lines_delta": -20,
+            },
+        ]
+        assert "PRs / active author" in html
+        assert "Lines / active author" in html
+        assert "avg active authors / month" in html
+        assert "normalized changed lines per active author" in html
+        assert 'data-label="Lines / active author"' in html
+
+    def test_tolerates_additive_and_stale_source_sections_when_preparing_payload(
+        self,
+    ) -> None:
+        """Prepare dashboard payloads from legacy JSON even when additive or stale source sections are present."""
+        # Given
+        payload = {
+            "overview": {
+                "org": "acme",
+                "generated_at": "2026-04-24T00:00:00+00:00",
+                "since": "2026-04-01",
+                "until": "2026-04-30",
+                "time_anchor": "created_at",
+                "top_repository": "acme/api",
+                "top_author": "alice",
+                "unique_reviewers": 1,
+                "debug_note": "legacy",
+            },
+            "reviewers": [
+                {
+                    "reviewer_login": "reviewer-1",
+                    "review_submissions": 2,
+                    "pull_requests_reviewed": 2,
+                    "approvals": 2,
+                    "changes_requested": 0,
+                    "comments": 0,
+                    "authors_supported": 1,
+                    "custom_field": "legacy",
+                },
+            ],
+            "authors": [
+                {
+                    "author_login": "stale-author",
+                },
+            ],
+            "charts": {
+                "custom_chart": [{"label": "ignored", "count": 1}],
+            },
+            "size_buckets": [
+                {
+                    "bucket": "XS",
+                },
+            ],
+            "review_state_rows": [
+                {
+                    "state": "APPROVED",
+                    "count": 1,
+                    "share_pct": 100.0,
+                    "custom_field": "legacy",
+                }
+            ],
+            "pull_requests": [
+                {
+                    **_manual_pull_request(
+                        repository_full_name="acme/api",
+                        pull_request_number=1,
+                        author_login="alice",
+                        created_at="2026-04-01T09:00:00+00:00",
+                        merged_at="2026-04-02T09:00:00+00:00",
+                        changed_lines=10,
+                        additions=8,
+                        deletions=2,
+                        first_review_hours=1.0,
+                        merge_hours=24.0,
+                        size_bucket="XS",
+                    ),
+                    "custom_field": "legacy",
+                },
+            ],
+        }
+
+        # When
+        prepared = prepare_dashboard_payload(payload)
+
+        # Then
+        assert prepared.overview["pull_requests"] == 1
+        assert prepared.authors[0]["author_login"] == "alice"
+        assert prepared.reviewers[0]["reviewer_login"] == "reviewer-1"
+        assert prepared.review_state_rows == [
+            {
+                "state": "APPROVED",
+                "count": 1,
+                "share_pct": 100.0,
+            }
+        ]
+
+    def test_renders_expansion_controls_below_long_tables_and_lists(self) -> None:
+        """Render overflow controls below long lists and tables so the dashboard scales vertically."""
+        # Given
+        payload = {
+            "overview": {
+                "org": "acme",
+                "generated_at": "2026-04-24T00:00:00+00:00",
+                "since": "2026-01-01",
+                "until": "2026-07-31",
+                "time_anchor": "created_at",
+                "top_repository": "acme/repo-1",
+                "top_author": "author-1",
+                "unique_reviewers": 11,
+            },
+            "reviewers": [
+                {
+                    "reviewer_login": f"reviewer-{index}",
+                    "review_submissions": 20 - index,
+                    "pull_requests_reviewed": 15 - index,
+                    "approvals": 10 - index,
+                    "changes_requested": index % 3,
+                    "comments": index,
+                    "authors_supported": 10 - index,
+                }
+                for index in range(11)
+            ],
+            "pull_requests": [
+                _manual_pull_request(
+                    repository_full_name=f"acme/repo-{index}",
+                    pull_request_number=index,
+                    author_login=f"author-{index}",
+                    created_at=(
+                        datetime.fromisoformat("2026-01-01T09:00:00+00:00")
+                        + timedelta(days=(index - 1) * 17)
+                    ).isoformat(),
+                    merged_at=(
+                        datetime.fromisoformat("2026-01-02T09:00:00+00:00")
+                        + timedelta(days=(index - 1) * 17)
+                    ).isoformat(),
+                    changed_lines=10 * index,
+                    additions=8 * index,
+                    deletions=2 * index,
+                    first_review_hours=float(index),
+                    merge_hours=24.0 + index,
+                    size_bucket=("XS", "S", "M", "L", "XL")[(index - 1) % 5],
+                )
+                for index in range(1, 14)
+            ],
+        }
+
+        # When
+        prepared = prepare_dashboard_payload(payload)
+        html = render_dashboard_html(prepared)
+
+        # Then
+        assert 'class="table-footer"' in html
+        assert html.index('id="author-roster-toggle"') > html.index('class="person-list"')
+        assert html.index('id="reviewer-toggle"') > html.index('id="reviewer-extra"')
+        assert html.index('id="repository-toggle"') > html.index('id="repository-extra"')
+        assert html.index('id="weekly-trend-toggle"') > html.index('id="weekly-trend-extra"')
+        assert html.index('id="monthly-trend-toggle"') > html.index('id="monthly-trend-extra"')
+
+    def test_reference_trend_tables_render_newest_periods_first(self) -> None:
+        """Render recent and older reference trend rows in newest-to-oldest order."""
+        # Given
+        payload = {
+            "overview": {
+                "org": "acme",
+                "generated_at": "2026-04-24T00:00:00+00:00",
+                "since": "2026-01-01",
+                "until": "2026-04-30",
+                "time_anchor": "created_at",
+                "top_repository": "acme/api",
+                "top_author": "alice",
+                "unique_reviewers": 1,
+            },
+            "reviewers": [
+                {
+                    "reviewer_login": "reviewer-1",
+                    "review_submissions": 8,
+                    "pull_requests_reviewed": 8,
+                    "approvals": 8,
+                    "changes_requested": 0,
+                    "comments": 0,
+                    "authors_supported": 1,
+                },
+            ],
+            "pull_requests": [
+                _manual_pull_request(
+                    repository_full_name="acme/api",
+                    pull_request_number=index,
+                    author_login="alice",
+                    created_at=(
+                        datetime.fromisoformat("2026-01-01T09:00:00+00:00")
+                        + timedelta(days=(index - 1) * 31)
+                    ).isoformat(),
+                    merged_at=(
+                        datetime.fromisoformat("2026-01-02T09:00:00+00:00")
+                        + timedelta(days=(index - 1) * 31)
+                    ).isoformat(),
+                    changed_lines=10 * index,
+                    additions=8 * index,
+                    deletions=2 * index,
+                    first_review_hours=float(index),
+                    merge_hours=24.0,
+                    size_bucket="S",
+                )
+                for index in range(1, 9)
+            ],
+        }
+
+        # When
+        prepared = prepare_dashboard_payload(payload)
+
+        # Then
+        assert [row["period_key"] for row in prepared.monthly_trends_recent] == [
+            "2026-08",
+            "2026-07",
+            "2026-06",
+            "2026-05",
+            "2026-04",
+            "2026-03",
+        ]
+        assert [row["period_key"] for row in prepared.monthly_trends_older] == [
+            "2026-02",
+            "2026-01",
+        ]
+
+    def test_renders_latency_quality_summary_and_chart_tooltip_wiring(self) -> None:
+        """Render latency-quality summary cards and explicit chart tooltip wiring in the dashboard shell."""
+        # Given
+        payload = {
+            "overview": {
+                "org": "acme",
+                "generated_at": "2026-04-24T00:00:00+00:00",
+                "since": "2026-04-01",
+                "until": "2026-04-30",
+                "time_anchor": "created_at",
+                "top_repository": "acme/api",
+                "top_author": "alice",
+                "unique_reviewers": 2,
+            },
+            "reviewers": [
+                {
+                    "reviewer_login": "reviewer-1",
+                    "review_submissions": 2,
+                    "pull_requests_reviewed": 2,
+                    "approvals": 2,
+                    "changes_requested": 0,
+                    "comments": 0,
+                    "authors_supported": 1,
+                },
+            ],
+            "pull_requests": [
+                _manual_pull_request(
+                    repository_full_name="acme/api",
+                    pull_request_number=1,
+                    author_login="alice",
+                    created_at="2026-04-01T09:00:00+00:00",
+                    merged_at="2026-04-02T09:00:00+00:00",
+                    changed_lines=10,
+                    additions=8,
+                    deletions=2,
+                    first_review_hours=1.0,
+                    merge_hours=24.0,
+                    size_bucket="XS",
+                ),
+                _manual_pull_request(
+                    repository_full_name="acme/web",
+                    pull_request_number=2,
+                    author_login="bob",
+                    created_at="2026-04-03T09:00:00+00:00",
+                    merged_at="2026-04-05T09:00:00+00:00",
+                    changed_lines=40,
+                    additions=30,
+                    deletions=10,
+                    first_review_hours=12.0,
+                    merge_hours=48.0,
+                    size_bucket="S",
+                ),
+            ],
+        }
+
+        # When
+        prepared = prepare_dashboard_payload(payload)
+        html = render_dashboard_html(prepared)
+
+        # Then
+        assert "Latency and quality" in html
+        assert "within 24h" in html
+        assert "chart-tooltip" in html
+        assert "data-point-label=" in html
+        assert "showChartTooltip" in html
+        assert "positionChartTooltip" in html
+
+    def test_right_aligns_profile_composition_value_column(self) -> None:
+        """Render right-aligned numeric/value columns inside the profile composition mini tables."""
+        # Given
+        payload = {
+            "overview": {
+                "org": "acme",
+                "generated_at": "2026-04-24T00:00:00+00:00",
+                "since": "2026-04-01",
+                "until": "2026-04-30",
+                "time_anchor": "created_at",
+                "top_repository": "acme/api",
+                "top_author": "alice",
+                "unique_reviewers": 1,
+            },
+            "reviewers": [
+                {
+                    "reviewer_login": "alice",
+                    "review_submissions": 3,
+                    "pull_requests_reviewed": 2,
+                    "approvals": 2,
+                    "changes_requested": 0,
+                    "comments": 1,
+                    "authors_supported": 1,
+                },
+            ],
+            "pull_requests": [
+                _manual_pull_request(
+                    repository_full_name="acme/api",
+                    pull_request_number=1,
+                    author_login="alice",
+                    created_at="2026-04-01T09:00:00+00:00",
+                    merged_at="2026-04-02T09:00:00+00:00",
+                    changed_lines=10,
+                    additions=8,
+                    deletions=2,
+                    first_review_hours=1.0,
+                    merge_hours=24.0,
+                    size_bucket="XS",
+                ),
+                _manual_pull_request(
+                    repository_full_name="acme/api",
+                    pull_request_number=2,
+                    author_login="alice",
+                    created_at="2026-04-03T09:00:00+00:00",
+                    merged_at="2026-04-04T09:00:00+00:00",
+                    changed_lines=20,
+                    additions=15,
+                    deletions=5,
+                    first_review_hours=2.0,
+                    merge_hours=24.0,
+                    size_bucket="S",
+                ),
+            ],
+        }
+
+        # When
+        prepared = prepare_dashboard_payload(payload)
+        html = render_dashboard_html(prepared)
+
+        # Then
+        assert '["Value", "value", true]' in html
+        assert 'const numericClass = isNumeric || typeof value === "number" ? ` class="num"` : "";' in html
+
+    def test_sorts_reviewer_leaderboard_by_reviewed_pull_requests_first(
+        self,
+    ) -> None:
+        """Sort the reviewer leaderboard by reviewed PR count before review submission count."""
+        # Given
+        payload = {
+            "overview": {
+                "org": "acme",
+                "generated_at": "2026-04-24T00:00:00+00:00",
+                "since": "2026-04-01",
+                "until": "2026-04-30",
+                "time_anchor": "created_at",
+                "top_repository": "acme/api",
+                "top_author": "alice",
+                "unique_reviewers": 2,
+            },
+            "reviewers": [
+                {
+                    "reviewer_login": "alice",
+                    "review_submissions": 6,
+                    "pull_requests_reviewed": 2,
+                    "approvals": 2,
+                    "changes_requested": 0,
+                    "comments": 4,
+                    "authors_supported": 2,
+                },
+                {
+                    "reviewer_login": "bob",
+                    "review_submissions": 3,
+                    "pull_requests_reviewed": 3,
+                    "approvals": 3,
+                    "changes_requested": 0,
+                    "comments": 0,
+                    "authors_supported": 3,
+                },
+            ],
+            "pull_requests": [
+                _manual_pull_request(
+                    repository_full_name="acme/api",
+                    pull_request_number=1,
+                    author_login="alice",
+                    created_at="2026-04-01T09:00:00+00:00",
+                    merged_at="2026-04-02T09:00:00+00:00",
+                    changed_lines=10,
+                    additions=8,
+                    deletions=2,
+                    first_review_hours=1.0,
+                    merge_hours=24.0,
+                    size_bucket="XS",
+                ),
+            ],
+        }
+
+        # When
+        prepared = prepare_dashboard_payload(payload)
+
+        # Then
+        assert [row["reviewer_login"] for row in prepared.reviewers] == [
+            "bob",
+            "alice",
+        ]
+
+
+class TestManualDashboardLocalSource:
+    def test_refresh_preserves_manifest_repo_filters(
+        self,
+        monkeypatch,
+        tmp_path,
+    ) -> None:
+        """Preserve include/exclude repo filters from the source manifest during refresh."""
+        # Given
+        source_output_dir = tmp_path
+        raw_root_dir = source_output_dir / "raw" / "month" / "created_at"
+        for period_key in ("2026-03", "2026-04"):
+            _write_manual_dashboard_source_period(
+                period_dir=raw_root_dir / period_key,
+                pull_request_rows=[],
+                review_rows=[],
+                timeline_rows=[],
+            )
+        _write_manual_dashboard_source_manifest(
+            source_output_dir=source_output_dir,
+            refreshed_period_keys=("2026-04",),
+            locked_period_keys=("2026-03",),
+            as_of="2026-04-27",
+        )
+        manifest_path = (
+            source_output_dir / "manifest" / "month" / "created_at" / "manifest.json"
+        )
+        manifest_payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest_payload["include_repos"] = ["acme/api"]
+        manifest_payload["exclude_repos"] = ["acme/legacy"]
+        manifest_path.write_text(
+            json.dumps(manifest_payload),
+            encoding="utf-8",
+        )
+        source_manifest = _dashboard_module._load_source_manifest(
+            org="acme",
+            source_output_dir=source_output_dir,
+        )
+        captured: dict[str, object] = {}
+
+        def fake_build_run_config(**kwargs: object) -> RunConfig:
+            captured.update(kwargs)
+            return RunConfig.model_validate({})
+
+        monkeypatch.setattr(
+            _dashboard_module,
+            "build_run_config",
+            fake_build_run_config,
+        )
+
+        # When
+        with pytest.raises(RuntimeError, match="invalid run configuration"):
+            _dashboard_module._refresh_local_source_outputs(
+                org="acme",
+                as_of=date.fromisoformat("2026-04-27"),
+                source_output_dir=source_output_dir,
+                source_manifest=source_manifest,
+            )
+
+        # Then
+        assert captured["include_repos"] == ["acme/api"]
+        assert captured["exclude_repos"] == ["acme/legacy"]
+
+    def test_generate_report_refreshes_using_today_instead_of_historical_until(
+        self,
+        monkeypatch,
+        tmp_path,
+    ) -> None:
+        """Refresh the shared source output using today's open period rather than the report's historical until date."""
+        # Given
+        captured: dict[str, object] = {}
+
+        def fake_try_load_source_manifest(
+            *,
+            org: str,
+            source_output_dir: Path,
+        ) -> None:
+            captured["manifest_org"] = org
+            captured["manifest_source_output_dir"] = source_output_dir
+            return None
+
+        def fake_refresh_local_source_outputs(
+            *,
+            org: str,
+            as_of: date,
+            source_output_dir: Path,
+            source_manifest: object,
+        ) -> None:
+            captured["refresh_org"] = org
+            captured["refresh_as_of"] = as_of
+            captured["refresh_source_output_dir"] = source_output_dir
+            captured["refresh_source_manifest"] = source_manifest
+
+        def fake_build_dashboard_payload_from_local_outputs(
+            *,
+            org: str,
+            since: date,
+            until: date,
+            source_output_dir: Path,
+        ) -> dict[str, Any]:
+            captured["payload_org"] = org
+            captured["payload_since"] = since
+            captured["payload_until"] = until
+            captured["payload_source_output_dir"] = source_output_dir
+            return {"pull_requests": []}
+
+        def fake_write_outputs(
+            *,
+            output_dir: Path,
+            base_name: str,
+            payload: dict[str, Any],
+            distribution_percentile: int,
+        ) -> dict[str, object]:
+            captured["output_dir"] = output_dir
+            captured["base_name"] = base_name
+            captured["payload"] = payload
+            captured["distribution_percentile"] = distribution_percentile
+            return {"html_path": "report.html"}
+
+        monkeypatch.setattr(
+            _dashboard_module,
+            "_try_load_source_manifest",
+            fake_try_load_source_manifest,
+        )
+        monkeypatch.setattr(
+            _dashboard_module,
+            "_refresh_local_source_outputs",
+            fake_refresh_local_source_outputs,
+        )
+        monkeypatch.setattr(
+            _dashboard_module,
+            "build_dashboard_payload_from_local_outputs",
+            fake_build_dashboard_payload_from_local_outputs,
+        )
+        monkeypatch.setattr(
+            _dashboard_module,
+            "_write_outputs",
+            fake_write_outputs,
+        )
+
+        # When
+        _dashboard_module.generate_dashboard_report(
+            org="acme",
+            since=date.fromisoformat("2026-01-01"),
+            until=date.fromisoformat("2026-03-31"),
+            source_output_dir=tmp_path / "source",
+            output_dir=tmp_path / "dashboard",
+            base_name="acme-created-at-since-2026-01-01",
+            refresh=True,
+            distribution_percentile=99,
+        )
+
+        # Then
+        assert captured["refresh_as_of"] == date.today()
+        assert captured["payload_until"] == date.fromisoformat("2026-03-31")
+        assert captured["distribution_percentile"] == 99
+
+    def test_builds_dashboard_payload_from_locked_and_refreshed_local_periods(
+        self,
+        tmp_path,
+    ) -> None:
+        """Build the manual dashboard payload from local manifest-backed raw snapshots across locked and refreshed periods."""
+        # Given
+        source_output_dir = tmp_path
+        raw_root_dir = source_output_dir / "raw" / "month" / "created_at"
+        _write_manual_dashboard_source_period(
+            period_dir=raw_root_dir / "2026-03",
+            pull_request_rows=[
+                _manual_dashboard_pull_request_row(
+                    period_key="2026-03",
+                    repository_full_name="acme/api",
+                    pull_request_number=1,
+                    author_login="alice",
+                    created_at="2026-03-20T09:00:00+00:00",
+                    updated_at="2026-03-20T12:00:00+00:00",
+                    closed_at="2026-03-20T12:00:00+00:00",
+                    merged_at="2026-03-20T12:00:00+00:00",
+                    additions=30,
+                    deletions=10,
+                    changed_files=3,
+                    commits=2,
+                ),
+            ],
+            review_rows=[
+                _manual_dashboard_review_row(
+                    period_key="2026-03",
+                    repository_full_name="acme/api",
+                    pull_request_number=1,
+                    review_id=101,
+                    author_login="reviewer-1",
+                    submitted_at="2026-03-20T10:00:00+00:00",
+                ),
+            ],
+            timeline_rows=[],
+        )
+        _write_manual_dashboard_source_period(
+            period_dir=raw_root_dir / "2026-04",
+            pull_request_rows=[
+                _manual_dashboard_pull_request_row(
+                    period_key="2026-04",
+                    repository_full_name="acme/web",
+                    pull_request_number=2,
+                    author_login="bob",
+                    created_at="2026-04-03T09:00:00+00:00",
+                    updated_at="2026-04-03T15:00:00+00:00",
+                    closed_at="2026-04-03T15:00:00+00:00",
+                    merged_at="2026-04-03T15:00:00+00:00",
+                    additions=20,
+                    deletions=10,
+                    changed_files=2,
+                    commits=1,
+                ),
+            ],
+            review_rows=[
+                _manual_dashboard_review_row(
+                    period_key="2026-04",
+                    repository_full_name="acme/web",
+                    pull_request_number=2,
+                    review_id=201,
+                    author_login="reviewer-2",
+                    submitted_at="2026-04-03T12:00:00+00:00",
+                ),
+            ],
+            timeline_rows=[
+                _manual_dashboard_timeline_event_row(
+                    period_key="2026-04",
+                    repository_full_name="acme/web",
+                    pull_request_number=2,
+                    event_id=301,
+                    event="review_requested",
+                    created_at="2026-04-03T10:00:00+00:00",
+                    requested_reviewer_login="reviewer-2",
+                ),
+            ],
+        )
+        _write_manual_dashboard_source_manifest(
+            source_output_dir=source_output_dir,
+            refreshed_period_keys=("2026-04",),
+            locked_period_keys=("2026-03",),
+            as_of="2026-04-18",
+        )
+
+        # When
+        payload = build_dashboard_payload_from_local_outputs(
+            org="acme",
+            since=date.fromisoformat("2026-03-01"),
+            until=date.fromisoformat("2026-04-18"),
+            source_output_dir=source_output_dir,
+        )
+
+        # Then
+        assert payload.overview.pull_requests == 2
+        assert payload.overview.merged_pull_requests == 2
+        assert payload.overview.review_submissions == 2
+        assert payload.overview.top_author == "alice"
+        assert payload.overview.top_repository == "acme/api"
+        assert payload.overview.median_first_review_hours == 1.5
+        assert [row.repository_full_name for row in payload.pull_requests] == [
+            "acme/api",
+            "acme/web",
+        ]
+
+    def test_rejects_manual_dashboard_window_when_local_manifest_has_gaps(
+        self,
+        tmp_path,
+    ) -> None:
+        """Reject manual dashboard rendering when the requested window extends into an uncovered locked period."""
+        # Given
+        source_output_dir = tmp_path
+        raw_root_dir = source_output_dir / "raw" / "month" / "created_at"
+        _write_manual_dashboard_source_period(
+            period_dir=raw_root_dir / "2026-04",
+            pull_request_rows=[
+                _manual_dashboard_pull_request_row(
+                    period_key="2026-04",
+                    repository_full_name="acme/web",
+                    pull_request_number=2,
+                    author_login="bob",
+                    created_at="2026-04-03T09:00:00+00:00",
+                    updated_at="2026-04-03T15:00:00+00:00",
+                    closed_at="2026-04-03T15:00:00+00:00",
+                    merged_at="2026-04-03T15:00:00+00:00",
+                    additions=20,
+                    deletions=10,
+                    changed_files=2,
+                    commits=1,
+                ),
+            ],
+            review_rows=[],
+            timeline_rows=[],
+        )
+        _write_manual_dashboard_source_manifest(
+            source_output_dir=source_output_dir,
+            refreshed_period_keys=("2026-04",),
+            locked_period_keys=(),
+            as_of="2026-04-18",
+        )
+
+        # When
+        error_message = ""
+        try:
+            build_dashboard_payload_from_local_outputs(
+                org="acme",
+                since=date.fromisoformat("2026-03-01"),
+                until=date.fromisoformat("2026-04-18"),
+                source_output_dir=source_output_dir,
+            )
+        except RuntimeError as exc:
+            error_message = str(exc)
+
+        # Then
+        assert "Missing periods: 2026-03" in error_message
+
+
+class TestReportingModules:
+    def test_exposes_reporting_module_constants(self) -> None:
+        """Expose reporting constants from the run outputs module."""
+        # Given
+
+        # When
+
+        # Then
+        assert MANIFEST_FILENAME == "manifest.json"
+        assert ORG_SUMMARY_DIRNAME == "org_summary"
+        assert "pull_requests.csv" in REQUIRED_RAW_SNAPSHOT_HEADERS
+
+    def test_exposes_analysis_report_renderers(self) -> None:
+        """Expose organization report helpers from the analysis report module."""
+        # Given
+
+        # When
+
+        # Then
+        assert callable(build_organization_report_payload)
+        assert callable(render_organization_report_html)
+
+    def test_renders_dashboard_html_through_public_artifact_function(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """Render HTML through the reporting helper without relying on a module entrypoint."""
+        # Given
+        payload = {
+            "overview": {
+                "org": "acme",
+                "generated_at": "2026-04-23T09:00:00+00:00",
+                "since": "2026-04-01",
+                "until": "2026-04-30",
+                "time_anchor": "created_at",
+                "top_repository": "acme/api",
+                "top_author": "alice",
+                "unique_reviewers": 1,
+            },
+            "reviewers": [
+                {
+                    "reviewer_login": "reviewer-1",
+                    "review_submissions": 1,
+                    "pull_requests_reviewed": 1,
+                    "approvals": 1,
+                    "changes_requested": 0,
+                    "comments": 0,
+                    "authors_supported": 1,
+                },
+            ],
+            "pull_requests": [
+                _manual_pull_request(
+                    repository_full_name="acme/api",
+                    pull_request_number=1,
+                    author_login="alice",
+                    created_at="2026-04-01T09:00:00+00:00",
+                    merged_at="2026-04-02T09:00:00+00:00",
+                    changed_lines=10,
+                    additions=8,
+                    deletions=2,
+                    first_review_hours=1.0,
+                    merge_hours=24.0,
+                    size_bucket="XS",
+                ),
+            ],
+        }
+        input_json = tmp_path / "payload.json"
+        output_html = tmp_path / "payload.html"
+        input_json.write_text(json.dumps(payload), encoding="utf-8")
+
+        # When
+        result = render_dashboard_artifact(
+            input_json=input_json,
+            output_html=output_html,
+            distribution_percentile=99,
+        )
+
+        # Then
+        assert result["distribution_percentile"] == 99
+        assert output_html.exists()
+        assert "Lines / Active Author" in output_html.read_text(encoding="utf-8")
+
+    def test_dashboard_module_fails_with_cli_guidance(self) -> None:
+        """Fail loudly with CLI guidance when the dashboard module is executed directly."""
+        # Given
+        command = [
+            sys.executable,
+            "-m",
+            "orgpulse.dashboard",
+        ]
+
+        # When
+        result = subprocess.run(
+            command,
+            check=False,
+            capture_output=True,
+            text=True,
+            cwd=str(Path(__file__).resolve().parents[1]),
+        )
+
+        # Then
+        assert result.returncode != 0
+        assert "Use `orgpulse dashboard`." in result.stderr
+
+    def test_dashboard_html_module_fails_with_cli_guidance(self) -> None:
+        """Fail loudly with CLI guidance when the HTML reporting module is executed directly."""
+        # Given
+        command = [
+            sys.executable,
+            "-m",
+            "orgpulse.reporting.dashboard_html",
+        ]
+
+        # When
+        result = subprocess.run(
+            command,
+            check=False,
+            capture_output=True,
+            text=True,
+            cwd=str(Path(__file__).resolve().parents[1]),
+        )
+
+        # Then
+        assert result.returncode != 0
+        assert "Use `orgpulse dashboard-render`." in result.stderr
+
+
+def _manual_pull_request(
+    *,
+    repository_full_name: str,
+    pull_request_number: int,
+    author_login: str,
+    created_at: str,
+    merged_at: str | None,
+    changed_lines: int,
+    additions: int,
+    deletions: int,
+    first_review_hours: float | None,
+    merge_hours: float | None,
+    size_bucket: str,
+) -> dict[str, object]:
+    """Build a normalized manual dashboard pull request payload for tests."""
+    closed_at = merged_at
+    return {
+        "repository_full_name": repository_full_name,
+        "pull_request_number": pull_request_number,
+        "title": f"PR {pull_request_number}",
+        "author_login": author_login,
+        "state": "closed" if merged_at else "open",
+        "created_at": created_at,
+        "updated_at": merged_at or created_at,
+        "closed_at": closed_at,
+        "merged_at": merged_at,
+        "html_url": f"https://example.test/pr/{pull_request_number}",
+        "additions": additions,
+        "deletions": deletions,
+        "changed_files": 1,
+        "changed_lines": changed_lines,
+        "commits": 1,
+        "review_count": 1,
+        "approval_count": 1,
+        "changes_requested_count": 0,
+        "comment_review_count": 0,
+        "reviewer_count": 1,
+        "first_review_hours": first_review_hours,
+        "merge_hours": merge_hours,
+        "close_hours": merge_hours,
+        "review_rounds": 1,
+        "review_ready_at": created_at,
+        "review_requested_at": created_at,
+        "size_bucket": size_bucket,
+    }

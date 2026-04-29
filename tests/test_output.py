@@ -540,6 +540,85 @@ class TestOrgSummaryWriter:
             encoding="utf-8"
         )
 
+    def test_ignores_additive_history_metadata_from_existing_index_files(
+        self,
+        tmp_path,
+    ) -> None:
+        """Ignore extra fields in saved org-summary history entries when rebuilding incremental history."""
+        # Given
+        previous_config = RunConfig.model_validate(
+            {
+                "org": "acme",
+                "as_of": "2026-03-18",
+                "output_dir": tmp_path,
+            }
+        )
+        current_config = RunConfig.model_validate(
+            {
+                "org": "acme",
+                "as_of": "2026-04-18",
+                "output_dir": tmp_path,
+            }
+        )
+        writer = OrgSummaryWriter()
+        previous_metrics = OrganizationMetricCollection(
+            target_org="acme",
+            periods=(
+                OrganizationMetricPeriod(
+                    key="2026-03",
+                    start_date=date.fromisoformat("2026-03-01"),
+                    end_date=date.fromisoformat("2026-03-31"),
+                    closed=False,
+                    summary=self._build_rollup(),
+                ),
+            ),
+        )
+        current_metrics = OrganizationMetricCollection(
+            target_org="acme",
+            periods=(
+                OrganizationMetricPeriod(
+                    key="2026-03",
+                    start_date=date.fromisoformat("2026-03-01"),
+                    end_date=date.fromisoformat("2026-03-31"),
+                    closed=True,
+                    summary=self._build_rollup(),
+                ),
+                OrganizationMetricPeriod(
+                    key="2026-04",
+                    start_date=date.fromisoformat("2026-04-01"),
+                    end_date=date.fromisoformat("2026-04-30"),
+                    closed=False,
+                    summary=self._build_rollup(),
+                ),
+            ),
+        )
+        previous_result = writer.write(
+            previous_config,
+            previous_metrics,
+            refreshed_period_keys=("2026-03",),
+        )
+        previous_index_payload = json.loads(
+            previous_result.index_path.read_text(encoding="utf-8")
+        )
+        previous_index_payload["history"][0]["debug_note"] = "legacy"
+        previous_result.index_path.write_text(
+            json.dumps(previous_index_payload),
+            encoding="utf-8",
+        )
+
+        # When
+        result = writer.write(
+            current_config,
+            current_metrics,
+            refreshed_period_keys=("2026-04",),
+        )
+
+        # Then
+        assert [entry["key"] for entry in json.loads(result.index_path.read_text(encoding="utf-8"))["history"]] == [
+            "2026-03",
+            "2026-04",
+        ]
+
     def _build_rollup(self) -> OrganizationMetricRollup:
         """Build a representative org rollup payload for summary writer tests."""
         return OrganizationMetricRollup(
@@ -1489,6 +1568,114 @@ class TestRepositorySummaryCsvWriter:
         assert result.latest_path.read_text(encoding="utf-8") == result.periods[0].path.read_text(
             encoding="utf-8"
         )
+
+    def test_ignores_additive_history_metadata_from_existing_index_files(
+        self,
+        tmp_path,
+    ) -> None:
+        """Ignore extra fields in saved repo-summary history entries when rebuilding incremental history."""
+        # Given
+        previous_config = self._build_run_config(
+            as_of="2026-03-18",
+            output_dir=tmp_path,
+        )
+        current_config = self._build_run_config(
+            as_of="2026-04-18",
+            output_dir=tmp_path,
+        )
+        writer = RepositorySummaryCsvWriter()
+        previous_raw_snapshot = self._write_raw_snapshot(
+            previous_config,
+            pull_requests=(
+                PullRequestRecord(
+                    repository_full_name="acme/api",
+                    number=11,
+                    title="Close March work",
+                    state="closed",
+                    draft=False,
+                    merged=True,
+                    author_login="alice",
+                    created_at=datetime.fromisoformat("2026-03-10T09:00:00"),
+                    updated_at=datetime.fromisoformat("2026-03-14T12:00:00"),
+                    closed_at=datetime.fromisoformat("2026-03-14T12:00:00"),
+                    merged_at=datetime.fromisoformat("2026-03-14T12:00:00"),
+                    additions=12,
+                    deletions=3,
+                    changed_files=2,
+                    commits=2,
+                    html_url="https://example.test/pr/11",
+                ),
+            ),
+        )
+        previous_repository_metrics = RepositoryMetricCollectionBuilder().build(
+            previous_config,
+            PullRequestMetricCollectionBuilder().build(
+                previous_config,
+                previous_raw_snapshot,
+            ),
+        )
+        previous_result = writer.write(
+            previous_config,
+            previous_repository_metrics,
+            refreshed_period_keys=("2026-03",),
+        )
+        previous_index_payload = json.loads(
+            previous_result.index_path.read_text(encoding="utf-8")
+        )
+        previous_index_payload["history"][0]["debug_note"] = "legacy"
+        previous_result.index_path.write_text(
+            json.dumps(previous_index_payload),
+            encoding="utf-8",
+        )
+        current_raw_snapshot = self._write_raw_snapshot(
+            current_config,
+            pull_requests=(
+                PullRequestRecord(
+                    repository_full_name="acme/web",
+                    number=21,
+                    title="Open April work",
+                    state="closed",
+                    draft=False,
+                    merged=True,
+                    author_login="bob",
+                    created_at=datetime.fromisoformat("2026-04-09T10:00:00"),
+                    updated_at=datetime.fromisoformat("2026-04-12T11:00:00"),
+                    closed_at=datetime.fromisoformat("2026-04-12T11:00:00"),
+                    merged_at=datetime.fromisoformat("2026-04-12T11:00:00"),
+                    additions=18,
+                    deletions=4,
+                    changed_files=3,
+                    commits=3,
+                    html_url="https://example.test/pr/21",
+                ),
+            ),
+        )
+        repository_metrics = RepositoryMetricCollectionBuilder().build(
+            current_config,
+            PullRequestMetricCollectionBuilder().build(
+                current_config,
+                RawSnapshotWriteResult(
+                    root_dir=current_raw_snapshot.root_dir,
+                    periods=(
+                        previous_raw_snapshot.periods[0],
+                        current_raw_snapshot.periods[0],
+                    ),
+                ),
+            ),
+        )
+
+        # When
+        result = writer.write(
+            current_config,
+            repository_metrics,
+            refreshed_period_keys=("2026-04",),
+        )
+
+        # Then
+        assert [entry["key"] for entry in json.loads(result.index_path.read_text(encoding="utf-8"))["history"]] == [
+            "2026-03",
+            "2026-04",
+        ]
 
     def _build_run_config(self, **overrides: object) -> RunConfig:
         """Build the minimal run configuration needed for repo summary export tests."""

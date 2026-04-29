@@ -608,6 +608,187 @@ class AnalysisReportPayload(BaseModel):
     views: AnalysisReportViewsPayload
 
 
+class TimeAnchorContextPayload(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    field: str
+    scope: str
+    description: str
+
+
+class PeriodStatePayload(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    status: str
+    label: str
+    is_open: bool
+    is_closed: bool
+    is_partial: bool
+    observed_through_date: str
+
+
+class RepositorySummaryHistoryEntryPayload(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    key: str
+    start_date: str
+    end_date: str
+    closed: bool
+    status: str
+    label: str
+    is_open: bool
+    is_closed: bool
+    is_partial: bool
+    observed_through_date: str
+    path: str
+
+
+class RepositorySummaryLatestPayload(RepositorySummaryHistoryEntryPayload):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    source_path: str
+
+
+class RepositorySummaryContractPayload(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    target_org: str
+    period_grain: str
+    time_anchor: str
+    time_anchor_context: TimeAnchorContextPayload
+    period_state_fields: list[str]
+    include_repos: list[str]
+    exclude_repos: list[str]
+
+
+class RepositorySummaryIndexPayload(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    target_org: str
+    period_grain: str
+    time_anchor: str
+    time_anchor_context: TimeAnchorContextPayload
+    include_repos: list[str]
+    exclude_repos: list[str]
+    latest: RepositorySummaryLatestPayload | None
+    history: list[RepositorySummaryHistoryEntryPayload]
+
+
+class OrgSummaryPeriodPayload(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    key: str
+    start_date: str
+    end_date: str
+    closed: bool
+    status: str
+    label: str
+    is_open: bool
+    is_closed: bool
+    is_partial: bool
+    observed_through_date: str
+
+
+class OrgSummaryHistoryEntryPayload(OrgSummaryPeriodPayload):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    markdown_path: str
+    json_path: str
+
+
+class OrgSummaryLatestPayload(OrgSummaryPeriodPayload):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    markdown_path: str
+    json_path: str
+    source_markdown_path: str
+    source_json_path: str
+
+
+class OrgSummaryContractPayload(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    target_org: str
+    period_grain: str
+    time_anchor: str
+    time_anchor_context: TimeAnchorContextPayload
+    include_repos: list[str]
+    exclude_repos: list[str]
+
+
+class OrgSummaryJsonPayload(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    target_org: str
+    period_grain: str
+    time_anchor: str
+    time_anchor_context: TimeAnchorContextPayload
+    include_repos: list[str]
+    exclude_repos: list[str]
+    period: OrgSummaryPeriodPayload
+    summary_labels: dict[str, str]
+    summary: dict[str, Any]
+
+
+class OrgSummaryIndexPayload(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    target_org: str
+    period_grain: str
+    time_anchor: str
+    time_anchor_context: TimeAnchorContextPayload
+    include_repos: list[str]
+    exclude_repos: list[str]
+    latest: OrgSummaryLatestPayload | None
+    history: list[OrgSummaryHistoryEntryPayload]
+
+
+class ManifestPeriodPayload(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    key: str
+    start_date: str
+    end_date: str
+    closed: bool
+    status: str
+    label: str
+    is_open: bool
+    is_closed: bool
+    is_partial: bool
+    observed_through_date: str
+
+
+class ManifestIndexLatestPayload(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    manifest_path: str
+    completed_at: str
+    as_of: str
+    mode: str
+    refresh_scope: str
+
+
+class ManifestHistoryPayload(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    refreshed_periods: list[ManifestPeriodPayload]
+    locked_periods: list[ManifestPeriodPayload]
+
+
+class ManifestIndexPayload(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    target_org: str
+    period_grain: str
+    time_anchor: str
+    time_anchor_context: TimeAnchorContextPayload
+    include_repos: list[str]
+    exclude_repos: list[str]
+    latest: ManifestIndexLatestPayload
+    history: ManifestHistoryPayload
+    watermarks: dict[str, Any]
+
+
 class MetricValidationIssue(BaseModel):
     model_config = ConfigDict(frozen=True)
 

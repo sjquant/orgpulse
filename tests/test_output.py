@@ -1560,8 +1560,8 @@ class TestManualDashboardPayload:
         }
 
         # When
-        prepared = prepare_dashboard_payload(payload).model_dump(mode="json")
-        prepared["review_state_rows"] = []
+        prepared = prepare_dashboard_payload(payload)
+        prepared.review_state_rows = []
         html = render_dashboard_html(prepared)
 
         # Then
@@ -1661,13 +1661,13 @@ class TestManualDashboardPayload:
         prepared = prepare_dashboard_payload(
             payload,
             distribution_percentile=95,
-        ).model_dump(mode="json")
+        )
 
         # Then
-        assert prepared["overview"]["total_changed_lines"] == 30
-        assert sum(row["changed_lines"] for row in prepared["repositories"]) == 30
-        assert sum(row["changed_lines"] for row in prepared["monthly_trends"]) == 30
-        assert prepared["repositories"] == [
+        assert prepared.overview["total_changed_lines"] == 30
+        assert sum(row["changed_lines"] for row in prepared.repositories) == 30
+        assert sum(row["changed_lines"] for row in prepared.monthly_trends) == 30
+        assert prepared.repositories == [
             {
                 "repository_full_name": "acme/api",
                 "pull_requests": 2,
@@ -1695,7 +1695,7 @@ class TestManualDashboardPayload:
                 "share_of_prs_pct": 33.33,
             },
         ]
-        author_details = json.loads(prepared["author_details_json"])
+        author_details = json.loads(prepared.author_details_json)
         assert author_details["carol"]["size_mix"][-1] == {
             "bucket": "XL",
             "pull_requests": 1,
@@ -1783,15 +1783,15 @@ class TestManualDashboardPayload:
         }
 
         # When
-        prepared = prepare_dashboard_payload(payload).model_dump(mode="json")
+        prepared = prepare_dashboard_payload(payload)
         html = render_dashboard_html(prepared)
 
         # Then
-        assert prepared["overview"]["average_active_authors_per_month"] == 1.5
-        assert prepared["overview"]["pull_requests_per_active_author"] == 2.0
-        assert prepared["overview"]["changed_lines_per_active_author"] == 40.0
-        assert prepared["overview"]["review_submissions_per_reviewer"] == 1.5
-        assert prepared["monthly_trends"] == [
+        assert prepared.overview["average_active_authors_per_month"] == 1.5
+        assert prepared.overview["pull_requests_per_active_author"] == 2.0
+        assert prepared.overview["changed_lines_per_active_author"] == 40.0
+        assert prepared.overview["review_submissions_per_reviewer"] == 1.5
+        assert prepared.monthly_trends == [
             {
                 "period_key": "2026-01",
                 "pull_requests": 2,
@@ -1882,7 +1882,7 @@ class TestManualDashboardPayload:
         }
 
         # When
-        prepared = prepare_dashboard_payload(payload).model_dump(mode="json")
+        prepared = prepare_dashboard_payload(payload)
         html = render_dashboard_html(prepared)
 
         # Then
@@ -1943,10 +1943,10 @@ class TestManualDashboardPayload:
         }
 
         # When
-        prepared = prepare_dashboard_payload(payload).model_dump(mode="json")
+        prepared = prepare_dashboard_payload(payload)
 
         # Then
-        assert [row["period_key"] for row in prepared["monthly_trends_recent"]] == [
+        assert [row["period_key"] for row in prepared.monthly_trends_recent] == [
             "2026-08",
             "2026-07",
             "2026-06",
@@ -1954,7 +1954,7 @@ class TestManualDashboardPayload:
             "2026-04",
             "2026-03",
         ]
-        assert [row["period_key"] for row in prepared["monthly_trends_older"]] == [
+        assert [row["period_key"] for row in prepared.monthly_trends_older] == [
             "2026-02",
             "2026-01",
         ]
@@ -2015,7 +2015,7 @@ class TestManualDashboardPayload:
         }
 
         # When
-        prepared = prepare_dashboard_payload(payload).model_dump(mode="json")
+        prepared = prepare_dashboard_payload(payload)
         html = render_dashboard_html(prepared)
 
         # Then
@@ -2082,7 +2082,7 @@ class TestManualDashboardPayload:
         }
 
         # When
-        prepared = prepare_dashboard_payload(payload).model_dump(mode="json")
+        prepared = prepare_dashboard_payload(payload)
         html = render_dashboard_html(prepared)
 
         # Then
@@ -2143,10 +2143,10 @@ class TestManualDashboardPayload:
         }
 
         # When
-        prepared = prepare_dashboard_payload(payload).model_dump(mode="json")
+        prepared = prepare_dashboard_payload(payload)
 
         # Then
-        assert [row["reviewer_login"] for row in prepared["reviewers"]] == [
+        assert [row["reviewer_login"] for row in prepared.reviewers] == [
             "bob",
             "alice",
         ]
@@ -2399,16 +2399,16 @@ class TestManualDashboardLocalSource:
             since=date.fromisoformat("2026-03-01"),
             until=date.fromisoformat("2026-04-18"),
             source_output_dir=source_output_dir,
-        ).model_dump(mode="json")
+        )
 
         # Then
-        assert payload["overview"]["pull_requests"] == 2
-        assert payload["overview"]["merged_pull_requests"] == 2
-        assert payload["overview"]["review_submissions"] == 2
-        assert payload["overview"]["top_author"] == "alice"
-        assert payload["overview"]["top_repository"] == "acme/api"
-        assert payload["overview"]["median_first_review_hours"] == 1.5
-        assert [row["repository_full_name"] for row in payload["pull_requests"]] == [
+        assert payload.overview.pull_requests == 2
+        assert payload.overview.merged_pull_requests == 2
+        assert payload.overview.review_submissions == 2
+        assert payload.overview.top_author == "alice"
+        assert payload.overview.top_repository == "acme/api"
+        assert payload.overview.median_first_review_hours == 1.5
+        assert [row.repository_full_name for row in payload.pull_requests] == [
             "acme/api",
             "acme/web",
         ]

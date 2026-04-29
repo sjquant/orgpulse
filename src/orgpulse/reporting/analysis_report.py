@@ -14,6 +14,7 @@ from jinja2 import Environment, FileSystemLoader, Template, select_autoescape
 
 from orgpulse.distribution import trim_upper_tail
 from orgpulse.models import (
+    AnalysisReportPayload,
     OrganizationMetricCollection,
     PullRequestMetricCollection,
     PullRequestMetricRecord,
@@ -86,7 +87,7 @@ def build_analysis_report_payload(
     matched_pull_request_count: int,
     filtered_metrics: tuple[PullRequestMetricRecord, ...],
     raw_snapshot: RawSnapshotWriteResult,
-) -> dict[str, object]:
+) -> AnalysisReportPayload:
     raw_periods = _load_filtered_raw_periods(raw_snapshot, filtered_metrics)
     period_catalog = _period_catalog(raw_snapshot, filtered_metrics)
     metrics_by_period = _metrics_by_period(filtered_metrics)
@@ -116,7 +117,7 @@ def build_analysis_report_payload(
         identity_builder=lambda metric: _author_identity(metric.author_login),
         distribution_percentile=distribution_percentile,
     )
-    return {
+    return AnalysisReportPayload.model_validate({
         "target_org": target_org,
         "grain": grain,
         "time_anchor": time_anchor,
@@ -149,7 +150,7 @@ def build_analysis_report_payload(
             "repository": repository_view,
             "author": author_view,
         },
-    }
+    })
 
 
 def build_organization_report_payload(
@@ -180,7 +181,7 @@ def build_organization_report_payload(
             for metric in period.pull_request_metrics
         ),
         raw_snapshot=raw_snapshot,
-    )
+    ).model_dump(mode="json")
 
 
 def _load_filtered_raw_periods(
@@ -632,9 +633,13 @@ def _hours_from_seconds(value: float | None) -> float | None:
 
 
 def render_analysis_report_html(
-    report_payload: dict[str, object],
+    report_payload: AnalysisReportPayload | dict[str, object],
 ) -> str:
-    serialized_payload = json.dumps(report_payload, sort_keys=True).replace(
+    normalized_payload = _validate_analysis_report_payload(report_payload)
+    serialized_payload = json.dumps(
+        normalized_payload.model_dump(mode="json"),
+        sort_keys=True,
+    ).replace(
         "</script>",
         "<\\/script>",
     )
@@ -644,10 +649,18 @@ def render_analysis_report_html(
 
 
 def render_organization_report_html(
-    report_payload: dict[str, object],
+    report_payload: AnalysisReportPayload | dict[str, object],
 ) -> str:
     """Render the legacy organization report HTML wrapper."""
     return render_analysis_report_html(report_payload)
+
+
+def _validate_analysis_report_payload(
+    report_payload: AnalysisReportPayload | dict[str, object],
+) -> AnalysisReportPayload:
+    if isinstance(report_payload, AnalysisReportPayload):
+        return report_payload
+    return AnalysisReportPayload.model_validate(report_payload)
 
 
 @lru_cache(maxsize=1)

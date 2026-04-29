@@ -13,6 +13,7 @@ from orgpulse.distribution import trim_upper_tail, validate_distribution_percent
 from orgpulse.errors import AnalysisInputError
 from orgpulse.metrics import PullRequestMetricCollectionBuilder
 from orgpulse.models import (
+    AnalysisReportPayload,
     MetricValueSummary,
     OrgSlug,
     PeriodGrain,
@@ -130,7 +131,7 @@ class AnalysisResult(BaseModel):
     matched_pull_request_count: int
     rows: tuple[AnalysisRow, ...]
     export_format: AnalysisExportFormat
-    report_payload: dict[str, object] | None = Field(default=None, exclude=True)
+    report_payload: AnalysisReportPayload | None = Field(default=None, exclude=True)
 
 
 class AnalysisService:
@@ -279,7 +280,7 @@ class AnalysisService:
         manifest: RunManifest,
         raw_snapshot: RawSnapshotWriteResult,
         filtered_metrics: tuple[PullRequestMetricRecord, ...],
-    ) -> dict[str, object]:
+    ) -> AnalysisReportPayload:
         return build_analysis_report_payload(
             target_org=manifest.target_org,
             grain=config.grain.value,

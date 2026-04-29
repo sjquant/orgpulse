@@ -419,6 +419,17 @@ class DashboardOverviewPayload(BaseModel):
     since: str
     until: str
     time_anchor: str
+    top_repository: str | None = None
+    top_author: str | None = None
+    unique_reviewers: int | None = None
+    pull_requests: int | None = None
+    merged_pull_requests: int | None = None
+    review_submissions: int | None = None
+    median_first_review_hours: float | None = None
+    average_active_authors_per_month: float | None = None
+    pull_requests_per_active_author: float | None = None
+    changed_lines_per_active_author: float | None = None
+    review_submissions_per_reviewer: float | None = None
 
 
 class DashboardReviewerPayload(BaseModel):
@@ -489,9 +500,11 @@ class DashboardPreparedPayload(BaseModel):
     reviewers: list[dict[str, Any]]
     reviewers_top: list[dict[str, Any]]
     reviewers_rest: list[dict[str, Any]]
+    repositories: list[dict[str, Any]]
     repositories_top: list[dict[str, Any]]
     repositories_rest: list[dict[str, Any]]
     size_buckets: list[dict[str, Any]]
+    review_state_rows: list[dict[str, Any]]
     weekly_trends: list[dict[str, Any]]
     monthly_trends: list[dict[str, Any]]
     weekly_trends_recent: list[dict[str, Any]]
@@ -505,6 +518,94 @@ class DashboardPreparedPayload(BaseModel):
     author_details_json: str
     distribution_percentile: int
     pull_requests: list[DashboardPullRequestPayload]
+
+
+class AnalysisReportMetricDefinition(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    key: str
+    label: str
+    format: str
+
+
+class AnalysisReportPeriodDescriptor(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    key: str
+    label: str
+    start_date: str
+    end_date: str
+    closed: bool
+
+
+class AnalysisReportPeriodValues(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    key: str
+    label: str
+    start_date: str
+    end_date: str
+    closed: bool
+    values: dict[str, int | float | None]
+
+
+class AnalysisReportPeriodPayload(AnalysisReportPeriodDescriptor):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    summary: dict[str, int | float | None]
+    values: dict[str, int | float | None]
+    diagnostics: dict[str, Any]
+
+
+class AnalysisReportEntityPayload(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    key: str
+    label: str
+    period_values: list[AnalysisReportPeriodValues]
+    totals: dict[str, int | float | None]
+
+
+class AnalysisReportPeriodViewPayload(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    default_metric: str
+    metrics: list[AnalysisReportMetricDefinition]
+    periods: list[AnalysisReportPeriodValues]
+
+
+class AnalysisReportEntityViewPayload(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    default_metric: str
+    metrics: list[AnalysisReportMetricDefinition]
+    periods: list[AnalysisReportPeriodDescriptor]
+    entities: list[AnalysisReportEntityPayload]
+
+
+class AnalysisReportViewsPayload(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    period: AnalysisReportPeriodViewPayload
+    repository: AnalysisReportEntityViewPayload
+    author: AnalysisReportEntityViewPayload
+
+
+class AnalysisReportPayload(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    target_org: str
+    grain: str
+    time_anchor: str
+    initial_view: str
+    default_top_n: int
+    since: str | None = None
+    until: str | None = None
+    distribution_percentile: int
+    matched_pull_request_count: int
+    default_period_key: str
+    periods: list[AnalysisReportPeriodPayload]
+    views: AnalysisReportViewsPayload
 
 
 class MetricValidationIssue(BaseModel):

@@ -1271,6 +1271,8 @@ class TestRepositorySummaryCsvWriter:
                 "is_closed",
                 "is_partial",
                 "observed_through_date",
+                "open_week",
+                "open_month",
             ],
             "target_org": "acme",
         }
@@ -1319,6 +1321,8 @@ class TestRepositorySummaryCsvWriter:
         assert rows[0]["period_status"] == "open"
         assert rows[0]["period_label"] == "open month"
         assert rows[0]["period_open"] == "true"
+        assert rows[0]["period_open_week"] == "false"
+        assert rows[0]["period_open_month"] == "true"
         assert rows[0]["period_closed"] == "false"
         assert rows[0]["period_partial"] == "true"
         assert rows[0]["period_observed_through_date"] == "2026-04-18"
@@ -1580,7 +1584,7 @@ class TestRepositorySummaryCsvWriter:
         self,
         tmp_path,
     ) -> None:
-        """Ignore extra fields in saved repo-summary history entries when rebuilding incremental history."""
+        """Carry saved repo-summary history when older index entries lack newer fields."""
         # Given
         previous_config = self._build_run_config(
             as_of="2026-03-18",
@@ -1630,8 +1634,19 @@ class TestRepositorySummaryCsvWriter:
             previous_result.index_path.read_text(encoding="utf-8")
         )
         previous_index_payload["history"][0]["debug_note"] = "legacy"
+        previous_index_payload["history"][0].pop("open_week")
+        previous_index_payload["history"][0].pop("open_month")
         previous_result.index_path.write_text(
             json.dumps(previous_index_payload),
+            encoding="utf-8",
+        )
+        previous_contract_payload = json.loads(
+            previous_result.contract_path.read_text(encoding="utf-8")
+        )
+        previous_contract_payload["period_state_fields"].remove("open_week")
+        previous_contract_payload["period_state_fields"].remove("open_month")
+        previous_result.contract_path.write_text(
+            json.dumps(previous_contract_payload),
             encoding="utf-8",
         )
         current_raw_snapshot = self._write_raw_snapshot(
@@ -1679,10 +1694,13 @@ class TestRepositorySummaryCsvWriter:
         )
 
         # Then
-        assert [entry["key"] for entry in json.loads(result.index_path.read_text(encoding="utf-8"))["history"]] == [
+        history = json.loads(result.index_path.read_text(encoding="utf-8"))["history"]
+        assert [entry["key"] for entry in history] == [
             "2026-03",
             "2026-04",
         ]
+        assert history[0]["open_week"] is False
+        assert history[0]["open_month"] is False
 
     def _build_run_config(self, **overrides: object) -> RunConfig:
         """Build the minimal run configuration needed for repo summary export tests."""
@@ -1711,6 +1729,124 @@ class TestRepositorySummaryCsvWriter:
 
 
 class TestManualDashboardPayload:
+    def test_marks_open_week_and_open_month_in_dashboard_data_and_html(self) -> None:
+        """Render partial-period dashboard trends with explicit open week and month state."""
+        # Given
+        payload = {
+            "overview": {
+                "org": "acme",
+                "generated_at": "2026-04-18T00:00:00+00:00",
+                "since": "2026-04-01",
+                "until": "2026-04-18",
+                "time_anchor": "created_at",
+                "top_repository": "acme/api",
+                "top_author": "alice",
+                "unique_reviewers": 1,
+            },
+            "reviewers": [
+                {
+                    "reviewer_login": "reviewer-1",
+                    "review_submissions": 1,
+                    "pull_requests_reviewed": 1,
+                    "approvals": 1,
+                    "changes_requested": 0,
+                    "comments": 0,
+                    "authors_supported": 1,
+                },
+            ],
+            "pull_requests": [
+                _manual_pull_request(
+                    repository_full_name="acme/api",
+                    pull_request_number=1,
+                    author_login="alice",
+                    created_at="2026-04-17T09:00:00+00:00",
+                    merged_at=None,
+                    changed_lines=12,
+                    additions=9,
+                    deletions=3,
+                    first_review_hours=2.0,
+                    merge_hours=None,
+                    size_bucket="XS",
+                ),
+            ],
+        }
+
+        # When
+        prepared = prepare_dashboard_payload(payload)
+        html = render_dashboard_html(prepared)
+
+        # Then
+        assert prepared.overview["open_week"] is True
+        assert prepared.overview["open_week_key"] == "2026-W16"
+        assert prepared.overview["open_month"] is True
+        assert prepared.overview["open_month_key"] == "2026-04"
+        assert prepared.overview["time_anchor_context"] == (
+            _expected_time_anchor_context()
+        )
+        assert prepared.weekly_trends[0]["open_week"] is True
+        assert prepared.weekly_trends[0]["label"] == "open week"
+        assert prepared.monthly_trends[0]["open_month"] is True
+        assert prepared.monthly_trends[0]["label"] == "open month"
+        assert "2026-04 open month" in html
+        assert "chart-partial-band" in html
+        assert "partial-period-row" in html
+        assert "period-state-pill open" in html
+
+    def test_labels_closed_truncated_dashboard_periods_as_partial(self) -> None:
+        """Label a closed dashboard period as partial when the window starts inside it."""
+        # Given
+        payload = {
+            "overview": {
+                "org": "acme",
+                "generated_at": "2026-04-30T00:00:00+00:00",
+                "since": "2026-04-01",
+                "until": "2026-04-18",
+                "source_as_of": "2026-04-30",
+                "time_anchor": "created_at",
+                "top_repository": "acme/api",
+                "top_author": "alice",
+                "unique_reviewers": 1,
+            },
+            "reviewers": [
+                {
+                    "reviewer_login": "reviewer-1",
+                    "review_submissions": 1,
+                    "pull_requests_reviewed": 1,
+                    "approvals": 1,
+                    "changes_requested": 0,
+                    "comments": 0,
+                    "authors_supported": 1,
+                },
+            ],
+            "pull_requests": [
+                _manual_pull_request(
+                    repository_full_name="acme/api",
+                    pull_request_number=2,
+                    author_login="alice",
+                    created_at="2026-04-10T09:00:00+00:00",
+                    merged_at="2026-04-11T09:00:00+00:00",
+                    changed_lines=10,
+                    additions=8,
+                    deletions=2,
+                    first_review_hours=1.0,
+                    merge_hours=24.0,
+                    size_bucket="XS",
+                ),
+            ],
+        }
+
+        # When
+        prepared = prepare_dashboard_payload(payload)
+        html = render_dashboard_html(prepared)
+
+        # Then
+        assert prepared.monthly_trends[0]["status"] == "closed"
+        assert prepared.monthly_trends[0]["label"] == "partial month"
+        assert prepared.monthly_trends[0]["is_partial"] is True
+        assert prepared.monthly_trends[0]["open_month"] is False
+        assert "partial month" in html
+        assert "period-state-pill partial" in html
+
     def test_renders_theme_switch_with_tokenized_theme_bootstrap(self) -> None:
         """Render a manual dashboard with a persisted light/dark theme switch and CSS tokens."""
         # Given
@@ -2001,6 +2137,16 @@ class TestManualDashboardPayload:
                 "median_merge_hours": 24.0,
                 "pull_request_delta": None,
                 "changed_lines_delta": None,
+                "period_start_date": "2026-01-01",
+                "period_end_date": "2026-01-31",
+                "status": "closed",
+                "label": "closed month",
+                "is_open": False,
+                "is_closed": True,
+                "is_partial": False,
+                "observed_through_date": "2026-01-31",
+                "open_week": False,
+                "open_month": False,
             },
             {
                 "period_key": "2026-02",
@@ -2017,6 +2163,16 @@ class TestManualDashboardPayload:
                 "median_merge_hours": 24.0,
                 "pull_request_delta": -1,
                 "changed_lines_delta": -20,
+                "period_start_date": "2026-02-01",
+                "period_end_date": "2026-02-28",
+                "status": "closed",
+                "label": "closed month",
+                "is_open": False,
+                "is_closed": True,
+                "is_partial": False,
+                "observed_through_date": "2026-02-28",
+                "open_week": False,
+                "open_month": False,
             },
         ]
         assert "PRs / active author" in html

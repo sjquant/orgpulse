@@ -54,6 +54,18 @@ from orgpulse.models import (
     TimeAnchorContextPayload,
     canonicalize_repo_filter,
 )
+from orgpulse.reporting.contracts import (
+    build_anchored_metric_label as _shared_anchored_metric_label,
+)
+from orgpulse.reporting.contracts import (
+    build_period_state_payload as _shared_period_state_payload,
+)
+from orgpulse.reporting.contracts import (
+    build_time_anchor_context as _shared_time_anchor_context,
+)
+from orgpulse.reporting.contracts import (
+    time_anchor_scope as _shared_time_anchor_scope,
+)
 
 HistoryEntryPayload = (
     RepositorySummaryHistoryEntryPayload
@@ -90,6 +102,8 @@ REPOSITORY_SUMMARY_CSV_FIELDNAMES = (
     "period_status",
     "period_label",
     "period_open",
+    "period_open_week",
+    "period_open_month",
     "period_closed",
     "period_partial",
     "period_observed_through_date",
@@ -255,6 +269,8 @@ class RepositorySummaryCsvWriter:
             "period_status": period_state.status,
             "period_label": period_state.label,
             "period_open": str(period_state.is_open).lower(),
+            "period_open_week": str(period_state.open_week).lower(),
+            "period_open_month": str(period_state.open_month).lower(),
             "period_closed": str(metric_period.closed).lower(),
             "period_partial": str(period_state.is_partial).lower(),
             "period_observed_through_date": period_state.observed_through_date,
@@ -380,6 +396,8 @@ class RepositorySummaryCsvWriter:
                 is_closed=latest_entry.is_closed,
                 is_partial=latest_entry.is_partial,
                 observed_through_date=latest_entry.observed_through_date,
+                open_week=latest_entry.open_week,
+                open_month=latest_entry.open_month,
                 path=_relative_path(
                     root_dir,
                     root_dir / LATEST_DIRNAME / REPOSITORY_SUMMARY_CSV_FILENAME,
@@ -485,6 +503,8 @@ class RepositorySummaryCsvWriter:
                 "is_closed",
                 "is_partial",
                 "observed_through_date",
+                "open_week",
+                "open_month",
             ],
             include_repos=list(
                 _canonical_repo_filters(config.include_repos, org=config.org)
@@ -841,6 +861,8 @@ class OrgSummaryWriter:
                 is_closed=latest_entry.is_closed,
                 is_partial=latest_entry.is_partial,
                 observed_through_date=latest_entry.observed_through_date,
+                open_week=latest_entry.open_week,
+                open_month=latest_entry.open_month,
                 markdown_path=_relative_path(root_dir, latest_markdown_path),
                 json_path=_relative_path(root_dir, latest_json_path),
                 source_markdown_path=latest_entry.markdown_path,
@@ -1383,7 +1405,11 @@ def _prune_output_entries_for_contract_change(
     contract_path: Path,
     contract: object,
 ) -> None:
-    if _load_json_payload(contract_path) == _json_ready_payload(contract):
+    saved_contract = _load_json_payload(contract_path)
+    current_contract = _json_ready_payload(contract)
+    if saved_contract == current_contract:
+        return
+    if _contract_change_preserves_existing_outputs(saved_contract, current_contract):
         return
     if not root_dir.exists():
         return
@@ -1394,6 +1420,28 @@ def _prune_output_entries_for_contract_change(
             shutil.rmtree(child)
             continue
         child.unlink(missing_ok=True)
+
+
+def _contract_change_preserves_existing_outputs(
+    saved_contract: dict[str, object] | None,
+    current_contract: dict[str, object],
+) -> bool:
+    if saved_contract is None:
+        return False
+    saved_fields = saved_contract.get("period_state_fields")
+    current_fields = current_contract.get("period_state_fields")
+    if not isinstance(saved_fields, list) or not isinstance(current_fields, list):
+        return False
+    added_fields = ["open_week", "open_month"]
+    if [*saved_fields, *added_fields] != current_fields:
+        return False
+    saved_without_fields = {
+        key: value for key, value in saved_contract.items() if key != "period_state_fields"
+    }
+    current_without_fields = {
+        key: value for key, value in current_contract.items() if key != "period_state_fields"
+    }
+    return saved_without_fields == current_without_fields
 
 
 def _load_json_payload(path: Path) -> dict[str, object] | None:
@@ -1570,28 +1618,20 @@ def _bool_text(
 def _time_anchor_context(
     time_anchor: str,
 ) -> TimeAnchorContextPayload:
-    scope = _time_anchor_scope(time_anchor)
-    return TimeAnchorContextPayload(
-        field=time_anchor,
-        scope=scope,
-        description=(
-            "All counts and summaries in this file are grouped by "
-            f"{scope}."
-        ),
-    )
+    return _shared_time_anchor_context(time_anchor)
 
 
 def _time_anchor_scope(
     time_anchor: str,
 ) -> str:
-    return f"pull_request.{time_anchor}"
+    return _shared_time_anchor_scope(time_anchor)
 
 
 def _anchored_metric_label(
     label: str,
     time_anchor: str,
 ) -> str:
-    return f"{label} ({_time_anchor_scope(time_anchor)})"
+    return _shared_anchored_metric_label(label, time_anchor)
 
 
 def _period_state_payload(
@@ -1602,43 +1642,13 @@ def _period_state_payload(
     closed: bool,
     as_of: date,
 ) -> PeriodStatePayload:
-    observed_through_date = _period_observed_through_date(
+    return _shared_period_state_payload(
+        period_grain=period_grain,
         start_date=start_date,
         end_date=end_date,
         closed=closed,
         as_of=as_of,
     )
-    status = _period_status(closed)
-    return PeriodStatePayload(
-        status=status,
-        label=f"{status} {period_grain}",
-        is_open=not closed,
-        is_closed=closed,
-        is_partial=not closed,
-        observed_through_date=observed_through_date.isoformat(),
-    )
-
-
-def _period_observed_through_date(
-    *,
-    start_date: date,
-    end_date: date,
-    closed: bool,
-    as_of: date,
-) -> date:
-    if closed:
-        return end_date
-    if as_of < start_date:
-        return start_date
-    if as_of > end_date:
-        return end_date
-    return as_of
-
-
-def _period_status(
-    closed: bool,
-) -> str:
-    return "closed" if closed else "open"
 
 
 def _repo_filters_text(

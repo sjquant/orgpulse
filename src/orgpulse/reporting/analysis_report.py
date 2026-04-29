@@ -23,54 +23,10 @@ from orgpulse.models import (
     RunConfig,
 )
 from orgpulse.raw_snapshot_source import pull_request_row_key, read_snapshot_csv_rows
-
-_PERIOD_METRIC_DEFINITIONS = (
-    {"key": "pull_request_count", "label": "Pull requests", "format": "int"},
-    {
-        "key": "merged_pull_request_count",
-        "label": "Merged pull requests",
-        "format": "int",
-    },
-    {"key": "active_author_count", "label": "Active authors", "format": "int"},
-    {
-        "key": "merged_pull_requests_per_active_author",
-        "label": "Merged PRs / active author",
-        "format": "float",
-    },
-    {
-        "key": "time_to_merge_median_hours",
-        "label": "Median time to merge (hours)",
-        "format": "float",
-    },
-    {
-        "key": "time_to_first_review_median_hours",
-        "label": "Median time to first review (hours)",
-        "format": "float",
-    },
-)
-
-_ENTITY_METRIC_DEFINITIONS = (
-    {"key": "pull_request_count", "label": "Pull requests", "format": "int"},
-    {
-        "key": "merged_pull_request_count",
-        "label": "Merged pull requests",
-        "format": "int",
-    },
-    {
-        "key": "total_changed_lines",
-        "label": "Changed lines",
-        "format": "int",
-    },
-    {
-        "key": "median_time_to_merge_hours",
-        "label": "Median time to merge (hours)",
-        "format": "float",
-    },
-    {
-        "key": "median_time_to_first_review_hours",
-        "label": "Median time to first review (hours)",
-        "format": "float",
-    },
+from orgpulse.reporting.contracts import (
+    build_anchored_metric_label,
+    build_period_state_payload,
+    build_time_anchor_context,
 )
 
 
@@ -81,6 +37,7 @@ def build_analysis_report_payload(
     time_anchor: str,
     initial_view: str,
     default_top_n: int,
+    as_of: date,
     since: date | None,
     until: date | None,
     distribution_percentile: int,
@@ -96,6 +53,7 @@ def build_analysis_report_payload(
         time_anchor: Active time anchor label.
         initial_view: Default visualization view key.
         default_top_n: Default entity cutoff for interactive views.
+        as_of: Date through which open-period source data is observed.
         since: Optional lower date bound.
         until: Optional upper date bound.
         distribution_percentile: Percentile cutoff applied to latency metrics.
@@ -108,7 +66,14 @@ def build_analysis_report_payload(
     """
 
     raw_periods = _load_filtered_raw_periods(raw_snapshot, filtered_metrics)
-    period_catalog = _period_catalog(raw_snapshot, filtered_metrics)
+    period_catalog = _period_catalog(
+        raw_snapshot,
+        filtered_metrics,
+        grain=grain,
+        as_of=as_of,
+        since=since,
+        until=until,
+    )
     metrics_by_period = _metrics_by_period(filtered_metrics)
     period_reports = []
     for period_descriptor in period_catalog:
@@ -124,6 +89,7 @@ def build_analysis_report_payload(
     repository_view = _build_entity_view(
         period_catalog=period_catalog,
         filtered_metrics=filtered_metrics,
+        time_anchor=time_anchor,
         identity_builder=lambda metric: (
             metric.repository_full_name,
             metric.repository_full_name,
@@ -133,6 +99,7 @@ def build_analysis_report_payload(
     author_view = _build_entity_view(
         period_catalog=period_catalog,
         filtered_metrics=filtered_metrics,
+        time_anchor=time_anchor,
         identity_builder=lambda metric: _author_identity(metric.author_login),
         distribution_percentile=distribution_percentile,
     )
@@ -140,6 +107,9 @@ def build_analysis_report_payload(
         "target_org": target_org,
         "grain": grain,
         "time_anchor": time_anchor,
+        "time_anchor_context": build_time_anchor_context(
+            time_anchor
+        ).model_dump(mode="json"),
         "initial_view": initial_view,
         "default_top_n": default_top_n,
         "since": None if since is None else since.isoformat(),
@@ -153,7 +123,7 @@ def build_analysis_report_payload(
         "views": {
             "period": {
                 "default_metric": "pull_request_count",
-                "metrics": list(_PERIOD_METRIC_DEFINITIONS),
+                "metrics": _period_metric_definitions(time_anchor),
                 "periods": [
                     {
                         "key": period_report["key"],
@@ -161,6 +131,15 @@ def build_analysis_report_payload(
                         "start_date": period_report["start_date"],
                         "end_date": period_report["end_date"],
                         "closed": period_report["closed"],
+                        "status": period_report["status"],
+                        "is_open": period_report["is_open"],
+                        "is_closed": period_report["is_closed"],
+                        "is_partial": period_report["is_partial"],
+                        "observed_through_date": period_report[
+                            "observed_through_date"
+                        ],
+                        "open_week": period_report["open_week"],
+                        "open_month": period_report["open_month"],
                         "values": period_report["values"],
                     }
                     for period_report in period_reports
@@ -187,6 +166,7 @@ def build_organization_report_payload(
         time_anchor=config.time_anchor.value,
         initial_view="period",
         default_top_n=8,
+        as_of=config.as_of,
         since=None,
         until=None,
         distribution_percentile=100,
@@ -245,18 +225,134 @@ def _load_filtered_raw_period(
     }
 
 
+def _period_metric_definitions(
+    time_anchor: str,
+) -> list[dict[str, str]]:
+    return [
+        {
+            "key": "pull_request_count",
+            "label": build_anchored_metric_label(
+                "Pull requests",
+                time_anchor,
+            ),
+            "format": "int",
+        },
+        {
+            "key": "merged_pull_request_count",
+            "label": build_anchored_metric_label(
+                "Merged pull requests",
+                time_anchor,
+            ),
+            "format": "int",
+        },
+        {
+            "key": "active_author_count",
+            "label": build_anchored_metric_label(
+                "Active authors",
+                time_anchor,
+            ),
+            "format": "int",
+        },
+        {
+            "key": "merged_pull_requests_per_active_author",
+            "label": build_anchored_metric_label(
+                "Merged PRs / active author",
+                time_anchor,
+            ),
+            "format": "float",
+        },
+        {
+            "key": "time_to_merge_median_hours",
+            "label": build_anchored_metric_label(
+                "Median time to merge (hours)",
+                time_anchor,
+            ),
+            "format": "float",
+        },
+        {
+            "key": "time_to_first_review_median_hours",
+            "label": build_anchored_metric_label(
+                "Median time to first review (hours)",
+                time_anchor,
+            ),
+            "format": "float",
+        },
+    ]
+
+
+def _entity_metric_definitions(
+    time_anchor: str,
+) -> list[dict[str, str]]:
+    return [
+        {
+            "key": "pull_request_count",
+            "label": build_anchored_metric_label(
+                "Pull requests",
+                time_anchor,
+            ),
+            "format": "int",
+        },
+        {
+            "key": "merged_pull_request_count",
+            "label": build_anchored_metric_label(
+                "Merged pull requests",
+                time_anchor,
+            ),
+            "format": "int",
+        },
+        {
+            "key": "total_changed_lines",
+            "label": build_anchored_metric_label(
+                "Changed lines",
+                time_anchor,
+            ),
+            "format": "int",
+        },
+        {
+            "key": "median_time_to_merge_hours",
+            "label": build_anchored_metric_label(
+                "Median time to merge (hours)",
+                time_anchor,
+            ),
+            "format": "float",
+        },
+        {
+            "key": "median_time_to_first_review_hours",
+            "label": build_anchored_metric_label(
+                "Median time to first review (hours)",
+                time_anchor,
+            ),
+            "format": "float",
+        },
+    ]
+
+
 def _period_catalog(
     raw_snapshot: RawSnapshotWriteResult,
     filtered_metrics: tuple[PullRequestMetricRecord, ...],
+    *,
+    grain: str,
+    as_of: date,
+    since: date | None,
+    until: date | None,
 ) -> list[dict[str, object]]:
     included_periods = set(metric.period_key for metric in filtered_metrics)
     return [
         {
             "key": period.key,
-            "label": period.key,
             "start_date": period.start_date.isoformat(),
             "end_date": period.end_date.isoformat(),
             "closed": period.closed,
+            **build_period_state_payload(
+                period_grain=grain,
+                start_date=period.start_date,
+                end_date=period.end_date,
+                closed=period.closed,
+                as_of=as_of,
+                since=since,
+                until=until,
+            ).model_dump(mode="json"),
+            "label": period.key,
         }
         for period in raw_snapshot.periods
         if period.key in included_periods
@@ -405,6 +501,12 @@ def _build_period_diagnostics(
         )[:5]
     ]
     return {
+        "period_status": period_descriptor["status"],
+        "period_state_label": _period_state_label(period_descriptor),
+        "period_partial": period_descriptor["is_partial"],
+        "period_observed_through_date": period_descriptor["observed_through_date"],
+        "open_week": period_descriptor["open_week"],
+        "open_month": period_descriptor["open_month"],
         "same_period_created_count": same_period_created_count,
         "same_period_created_ratio": _safe_ratio(
             same_period_created_count,
@@ -474,6 +576,7 @@ def _build_entity_view(
     *,
     period_catalog: Sequence[dict[str, object]],
     filtered_metrics: tuple[PullRequestMetricRecord, ...],
+    time_anchor: str,
     identity_builder,
     distribution_percentile: int,
 ) -> dict[str, object]:
@@ -489,7 +592,7 @@ def _build_entity_view(
         entities_by_period[metric.period_key][entity_key].append(metric)
     return {
         "default_metric": "pull_request_count",
-        "metrics": list(_ENTITY_METRIC_DEFINITIONS),
+        "metrics": _entity_metric_definitions(time_anchor),
         "periods": list(period_catalog),
         "entities": [
             _build_entity_report(
@@ -614,6 +717,17 @@ def _author_identity(author_login: str | None) -> tuple[str, str]:
     if author_login is None or not author_login.strip():
         return "unknown", "Unknown author"
     return author_login.lower(), author_login
+
+
+def _period_state_label(period_descriptor: dict[str, object]) -> str:
+    grain = "week" if "-W" in cast(str, period_descriptor["key"]) else "month"
+    if period_descriptor["open_week"]:
+        return "open week"
+    if period_descriptor["open_month"]:
+        return "open month"
+    if period_descriptor["is_partial"]:
+        return f"partial {grain}"
+    return f"closed {grain}"
 
 
 def _safe_ratio(numerator: int, denominator: int) -> float | None:

@@ -48,8 +48,10 @@
             <span class="meta-value">{{ overview.review_sla_24h_pct | numfmt }}% within 24h</span>
           </div>
           <div class="meta-box">
-            <span class="meta-label">Concentration risk</span>
-            <span class="meta-value">Top 3 authors: {{ reference_summary.top3_author_share_pct | numfmt }}%</span>
+            <span class="meta-label">Open period</span>
+            <span class="meta-value">
+              {% if overview.open_month %}{{ overview.open_month_key }} open month{% elif overview.open_week %}{{ overview.open_week_key }} open week{% else %}closed window{% endif %}
+            </span>
           </div>
         </div>
       </div>
@@ -499,6 +501,7 @@
                   <thead>
                     <tr>
                       <th>Week</th>
+                      <th>State</th>
                       <th class="num">PRs</th>
                       <th class="num">Merged</th>
                       <th class="num tablet-hide">Open</th>
@@ -510,11 +513,12 @@
                   </thead>
                   <tbody>
                     {% for row in weekly_trends_recent %}
-                    <tr>
+                    <tr class="{% if row.is_partial %}partial-period-row{% endif %}">
                       <td class="leader" data-label="Week">
                         <strong>{{ row.period_key }}</strong>
                         <span>created_at basis</span>
                       </td>
+                      <td data-label="State"><span class="period-state-pill {% if row.is_open %}open{% elif row.is_partial %}partial{% endif %}">{{ row.label }}</span></td>
                       <td class="num" data-label="PRs">{{ row.pull_requests | intfmt }}</td>
                       <td class="num" data-label="Merged">{{ row.merged_pull_requests | intfmt }}</td>
                       <td class="num tablet-hide" data-label="Open">{{ row.open_pull_requests | intfmt }}</td>
@@ -528,11 +532,12 @@
                   {% if weekly_trends_older %}
                   <tbody id="weekly-trend-extra" class="hidden">
                     {% for row in weekly_trends_older %}
-                    <tr>
+                    <tr class="{% if row.is_partial %}partial-period-row{% endif %}">
                       <td class="leader" data-label="Week">
                         <strong>{{ row.period_key }}</strong>
                         <span>created_at basis</span>
                       </td>
+                      <td data-label="State"><span class="period-state-pill {% if row.is_open %}open{% elif row.is_partial %}partial{% endif %}">{{ row.label }}</span></td>
                       <td class="num" data-label="PRs">{{ row.pull_requests | intfmt }}</td>
                       <td class="num" data-label="Merged">{{ row.merged_pull_requests | intfmt }}</td>
                       <td class="num tablet-hide" data-label="Open">{{ row.open_pull_requests | intfmt }}</td>
@@ -564,6 +569,7 @@
                   <thead>
                     <tr>
                       <th>Month</th>
+                      <th>State</th>
                       <th class="num">PRs</th>
                       <th class="num">Merged</th>
                       <th class="num tablet-hide">Open</th>
@@ -575,11 +581,12 @@
                   </thead>
                   <tbody>
                     {% for row in monthly_trends_recent %}
-                    <tr>
+                    <tr class="{% if row.is_partial %}partial-period-row{% endif %}">
                       <td class="leader" data-label="Month">
                         <strong>{{ row.period_key }}</strong>
                         <span>created_at basis</span>
                       </td>
+                      <td data-label="State"><span class="period-state-pill {% if row.is_open %}open{% elif row.is_partial %}partial{% endif %}">{{ row.label }}</span></td>
                       <td class="num" data-label="PRs">{{ row.pull_requests | intfmt }}</td>
                       <td class="num" data-label="Merged">{{ row.merged_pull_requests | intfmt }}</td>
                       <td class="num tablet-hide" data-label="Open">{{ row.open_pull_requests | intfmt }}</td>
@@ -593,11 +600,12 @@
                   {% if monthly_trends_older %}
                   <tbody id="monthly-trend-extra" class="hidden">
                     {% for row in monthly_trends_older %}
-                    <tr>
+                    <tr class="{% if row.is_partial %}partial-period-row{% endif %}">
                       <td class="leader" data-label="Month">
                         <strong>{{ row.period_key }}</strong>
                         <span>created_at basis</span>
                       </td>
+                      <td data-label="State"><span class="period-state-pill {% if row.is_open %}open{% elif row.is_partial %}partial{% endif %}">{{ row.label }}</span></td>
                       <td class="num" data-label="PRs">{{ row.pull_requests | intfmt }}</td>
                       <td class="num" data-label="Merged">{{ row.merged_pull_requests | intfmt }}</td>
                       <td class="num tablet-hide" data-label="Open">{{ row.open_pull_requests | intfmt }}</td>

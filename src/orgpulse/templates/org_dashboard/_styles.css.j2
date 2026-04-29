@@ -540,6 +540,34 @@
       border-radius: var(--radius-pill);
     }
 
+    .period-state-pill {
+      display: inline-flex;
+      align-items: center;
+      border: 1px solid var(--line-strong);
+      border-radius: var(--radius-pill);
+      padding: 4px 8px;
+      color: var(--muted);
+      background: var(--panel-subtle);
+      font-size: 0.78rem;
+      font-weight: 700;
+    }
+
+    .period-state-pill.open,
+    .period-state-pill.partial {
+      color: var(--accent-3);
+      border-color: color-mix(in srgb, var(--accent-3) 44%, transparent);
+      background: color-mix(in srgb, var(--accent-3) 13%, transparent);
+    }
+
+    .chart-partial-band {
+      fill: color-mix(in srgb, var(--accent-3) 15%, transparent);
+    }
+
+    .chart-node.partial-period circle {
+      stroke: var(--accent-3);
+      stroke-width: 3;
+    }
+
     .table-wrap {
       width: 100%;
       max-width: 100%;
@@ -595,6 +623,10 @@
       text-align: right;
       font-variant-numeric: tabular-nums;
       font-family: var(--font-mono);
+    }
+
+    tr.partial-period-row {
+      background: color-mix(in srgb, var(--accent-3) 8%, transparent);
     }
 
     .rank {

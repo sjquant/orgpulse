@@ -24,6 +24,7 @@ from orgpulse.errors import AuthResolutionError, GitHubApiError, OrgTargetingErr
 from orgpulse.github_auth import GitHubAuthService, resolve_auth_token
 from orgpulse.ingestion import GitHubIngestionService
 from orgpulse.models import (
+    DashboardSourcePayload,
     PeriodGrain,
     RawSnapshotPeriod,
     ReportingPeriod,
@@ -143,18 +144,21 @@ def generate_dashboard_report(
             )
     except (AuthResolutionError, GitHubApiError, OrgTargetingError) as exc:
         raise RuntimeError(f"failed to refresh local source outputs: {exc}") from exc
-    payload = build_dashboard_payload_from_local_outputs(
-        org=org,
-        since=since,
-        until=until,
-        source_output_dir=source_output_dir,
-    )
-    return _write_outputs(
-        output_dir=output_dir,
-        base_name=base_name,
-        payload=payload,
-        distribution_percentile=distribution_percentile,
-    )
+    try:
+        payload = build_dashboard_payload_from_local_outputs(
+            org=org,
+            since=since,
+            until=until,
+            source_output_dir=source_output_dir,
+        )
+        return _write_outputs(
+            output_dir=output_dir,
+            base_name=base_name,
+            payload=payload,
+            distribution_percentile=distribution_percentile,
+        )
+    except ValidationError as exc:
+        raise RuntimeError(f"dashboard payload validation failed: {exc}") from exc
 
 
 def _refresh_local_source_outputs(
@@ -231,7 +235,7 @@ def build_dashboard_payload_from_local_outputs(
     since: date,
     until: date,
     source_output_dir: Path,
-) -> dict[str, Any]:
+) -> DashboardSourcePayload:
     manifest = _load_source_manifest(
         org=org,
         source_output_dir=source_output_dir,
@@ -607,7 +611,7 @@ def _build_dashboard_payload(
     since: date,
     until: date,
     snapshots: list[PullRequestSnapshot],
-) -> dict[str, Any]:
+) -> DashboardSourcePayload:
     total_pull_requests = len(snapshots)
     created_series = _time_series(
         snapshots=snapshots,
@@ -643,7 +647,7 @@ def _build_dashboard_payload(
         reviewer_rows=reviewer_rows,
         repository_rows=repository_rows,
     )
-    return {
+    return DashboardSourcePayload.model_validate({
         "overview": overview,
         "insights": _insights(
             overview=overview,
@@ -689,26 +693,27 @@ def _build_dashboard_payload(
         "size_buckets": size_bucket_rows,
         "review_state_rows": review_state_rows,
         "pull_requests": [_snapshot_row(snapshot) for snapshot in snapshots],
-    }
+    })
 
 
 def _write_outputs(
     *,
     output_dir: Path,
     base_name: str,
-    payload: dict[str, Any],
+    payload: DashboardSourcePayload,
     distribution_percentile: int,
 ) -> dict[str, Any]:
+    payload_data = payload.model_dump(mode="json")
     output_dir.mkdir(parents=True, exist_ok=True)
     json_path = output_dir / f"{base_name}.json"
     csv_path = output_dir / f"{base_name}-prs.csv"
     html_path = output_dir / f"{base_name}.html"
     json_path.write_text(
-        json.dumps(payload, indent=2, ensure_ascii=False),
+        json.dumps(payload_data, indent=2, ensure_ascii=False),
         encoding="utf-8",
     )
     with csv_path.open("w", encoding="utf-8", newline="") as handle:
-        rows = payload["pull_requests"]
+        rows = payload_data["pull_requests"]
         writer = csv.DictWriter(handle, fieldnames=DASHBOARD_PULL_REQUEST_FIELDNAMES)
         writer.writeheader()
         writer.writerows(rows)
@@ -725,7 +730,7 @@ def _write_outputs(
         "json_path": str(json_path),
         "csv_path": str(csv_path),
         "html_path": str(html_path),
-        "pull_requests": payload["overview"]["pull_requests"],
+        "pull_requests": payload_data["overview"]["pull_requests"],
         "distribution_percentile": distribution_percentile,
     }
 

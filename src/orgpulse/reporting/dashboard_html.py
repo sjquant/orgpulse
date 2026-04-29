@@ -15,6 +15,10 @@ from orgpulse.distribution import (
     upper_percentile_threshold,
     validate_distribution_percentile,
 )
+from orgpulse.models import (
+    DashboardPreparedPayload,
+    DashboardSourcePayload,
+)
 
 AUTHOR_ROSTER_LIMIT = 12
 LEADERBOARD_LIMIT = 10
@@ -45,83 +49,105 @@ def _load_payload(
     path: Path,
     *,
     distribution_percentile: int,
-) -> dict[str, Any]:
+) -> DashboardPreparedPayload:
     return prepare_dashboard_payload(
-        json.loads(path.read_text(encoding="utf-8")),
+        DashboardSourcePayload.model_validate(
+            json.loads(path.read_text(encoding="utf-8"))
+        ),
         distribution_percentile=distribution_percentile,
     )
 
 
-def render_dashboard_html(payload: dict[str, Any]) -> str:
+def render_dashboard_html(
+    payload: DashboardPreparedPayload | dict[str, Any],
+) -> str:
+    prepared_payload = _validate_prepared_payload(payload)
     template = _template_environment().get_template("org_dashboard.html.j2")
     return template.render(
-        overview=payload["overview"],
-        authors=payload["authors"],
-        authors_roster_top=payload["authors_roster_top"],
-        authors_roster_rest=payload["authors_roster_rest"],
-        reviewers=payload["reviewers"],
-        reviewers_top=payload["reviewers_top"],
-        reviewers_rest=payload["reviewers_rest"],
-        repositories_top=payload["repositories_top"],
-        repositories_rest=payload["repositories_rest"],
-        size_buckets=payload["size_buckets"],
-        weekly_trends=payload["weekly_trends"],
-        monthly_trends=payload["monthly_trends"],
-        weekly_trends_recent=payload["weekly_trends_recent"],
-        weekly_trends_older=payload["weekly_trends_older"],
-        monthly_trends_recent=payload["monthly_trends_recent"],
-        monthly_trends_older=payload["monthly_trends_older"],
-        methodology=payload["methodology"],
-        reference_summary=payload["reference_summary"],
-        size_diagnostic=payload["size_diagnostic"],
-        default_author=payload["default_author"],
-        author_details_json=Markup(payload["author_details_json"]),
+        overview=prepared_payload.overview,
+        authors=prepared_payload.authors,
+        authors_roster_top=prepared_payload.authors_roster_top,
+        authors_roster_rest=prepared_payload.authors_roster_rest,
+        reviewers=prepared_payload.reviewers,
+        reviewers_top=prepared_payload.reviewers_top,
+        reviewers_rest=prepared_payload.reviewers_rest,
+        repositories_top=prepared_payload.repositories_top,
+        repositories_rest=prepared_payload.repositories_rest,
+        size_buckets=prepared_payload.size_buckets,
+        weekly_trends=prepared_payload.weekly_trends,
+        monthly_trends=prepared_payload.monthly_trends,
+        weekly_trends_recent=prepared_payload.weekly_trends_recent,
+        weekly_trends_older=prepared_payload.weekly_trends_older,
+        monthly_trends_recent=prepared_payload.monthly_trends_recent,
+        monthly_trends_older=prepared_payload.monthly_trends_older,
+        methodology=prepared_payload.methodology,
+        reference_summary=prepared_payload.reference_summary,
+        size_diagnostic=prepared_payload.size_diagnostic,
+        default_author=prepared_payload.default_author,
+        author_details_json=Markup(prepared_payload.author_details_json),
     )
 
 
-def _render_html(payload: dict[str, Any]) -> str:
+def _render_html(payload: DashboardPreparedPayload) -> str:
     return render_dashboard_html(payload)
 
 
 def prepare_dashboard_payload(
-    payload: dict[str, Any],
+    payload: DashboardSourcePayload | dict[str, Any],
     *,
     distribution_percentile: int = 100,
-) -> dict[str, Any]:
+) -> DashboardPreparedPayload:
     validate_distribution_percentile(distribution_percentile)
-    pull_requests = payload["pull_requests"]
+    normalized_payload = _validate_source_payload(payload).model_dump(mode="json")
+    pull_requests = normalized_payload["pull_requests"]
     distribution_thresholds = _build_distribution_thresholds(
         pull_requests,
         distribution_percentile=distribution_percentile,
     )
-    payload.update(
+    normalized_payload.update(
         _build_dashboard_sections(
-            payload,
+            normalized_payload,
             pull_requests=pull_requests,
             distribution_percentile=distribution_percentile,
             distribution_thresholds=distribution_thresholds,
         )
     )
-    payload["distribution_percentile"] = distribution_percentile
-    payload["overview"] = _build_team_normalized_overview(
-        payload["overview"],
-        monthly_trends=payload["monthly_trends"],
+    normalized_payload["distribution_percentile"] = distribution_percentile
+    normalized_payload["overview"] = _build_team_normalized_overview(
+        normalized_payload["overview"],
+        monthly_trends=normalized_payload["monthly_trends"],
     )
-    _attach_dashboard_slices(payload)
-    payload["methodology"] = _build_methodology(payload)
-    payload["reference_summary"] = _build_reference_summary(payload)
-    payload["size_diagnostic"] = _build_size_diagnostic(payload["size_buckets"])
-    payload["default_author"] = (
-        payload["authors"][0]["author_login"] if payload["authors"] else None
+    _attach_dashboard_slices(normalized_payload)
+    normalized_payload["methodology"] = _build_methodology(normalized_payload)
+    normalized_payload["reference_summary"] = _build_reference_summary(normalized_payload)
+    normalized_payload["size_diagnostic"] = _build_size_diagnostic(normalized_payload["size_buckets"])
+    normalized_payload["default_author"] = (
+        normalized_payload["authors"][0]["author_login"] if normalized_payload["authors"] else None
     )
-    payload["author_details_json"] = _build_author_details_json(
-        authors=payload["authors"],
-        reviewers=payload["reviewers"],
+    normalized_payload["author_details_json"] = _build_author_details_json(
+        authors=normalized_payload["authors"],
+        reviewers=normalized_payload["reviewers"],
         pull_requests=pull_requests,
         distribution_percentile=distribution_percentile,
         distribution_thresholds=distribution_thresholds,
     )
-    return payload
+    return DashboardPreparedPayload.model_validate(normalized_payload)
+
+
+def _validate_source_payload(
+    payload: DashboardSourcePayload | dict[str, Any],
+) -> DashboardSourcePayload:
+    if isinstance(payload, DashboardSourcePayload):
+        return payload
+    return DashboardSourcePayload.model_validate(payload)
+
+
+def _validate_prepared_payload(
+    payload: DashboardPreparedPayload | dict[str, Any],
+) -> DashboardPreparedPayload:
+    if isinstance(payload, DashboardPreparedPayload):
+        return payload
+    return DashboardPreparedPayload.model_validate(payload)
 
 
 def _build_dashboard_sections(

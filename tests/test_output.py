@@ -1560,7 +1560,7 @@ class TestManualDashboardPayload:
         }
 
         # When
-        prepared = prepare_dashboard_payload(payload)
+        prepared = prepare_dashboard_payload(payload).model_dump(mode="json")
         prepared["review_state_rows"] = []
         html = render_dashboard_html(prepared)
 
@@ -1661,7 +1661,7 @@ class TestManualDashboardPayload:
         prepared = prepare_dashboard_payload(
             payload,
             distribution_percentile=95,
-        )
+        ).model_dump(mode="json")
 
         # Then
         assert prepared["overview"]["total_changed_lines"] == 30
@@ -1783,7 +1783,7 @@ class TestManualDashboardPayload:
         }
 
         # When
-        prepared = prepare_dashboard_payload(payload)
+        prepared = prepare_dashboard_payload(payload).model_dump(mode="json")
         html = render_dashboard_html(prepared)
 
         # Then
@@ -1882,7 +1882,7 @@ class TestManualDashboardPayload:
         }
 
         # When
-        prepared = prepare_dashboard_payload(payload)
+        prepared = prepare_dashboard_payload(payload).model_dump(mode="json")
         html = render_dashboard_html(prepared)
 
         # Then
@@ -1943,7 +1943,7 @@ class TestManualDashboardPayload:
         }
 
         # When
-        prepared = prepare_dashboard_payload(payload)
+        prepared = prepare_dashboard_payload(payload).model_dump(mode="json")
 
         # Then
         assert [row["period_key"] for row in prepared["monthly_trends_recent"]] == [
@@ -2015,7 +2015,7 @@ class TestManualDashboardPayload:
         }
 
         # When
-        prepared = prepare_dashboard_payload(payload)
+        prepared = prepare_dashboard_payload(payload).model_dump(mode="json")
         html = render_dashboard_html(prepared)
 
         # Then
@@ -2082,7 +2082,7 @@ class TestManualDashboardPayload:
         }
 
         # When
-        prepared = prepare_dashboard_payload(payload)
+        prepared = prepare_dashboard_payload(payload).model_dump(mode="json")
         html = render_dashboard_html(prepared)
 
         # Then
@@ -2143,7 +2143,7 @@ class TestManualDashboardPayload:
         }
 
         # When
-        prepared = prepare_dashboard_payload(payload)
+        prepared = prepare_dashboard_payload(payload).model_dump(mode="json")
 
         # Then
         assert [row["reviewer_login"] for row in prepared["reviewers"]] == [
@@ -2399,7 +2399,7 @@ class TestManualDashboardLocalSource:
             since=date.fromisoformat("2026-03-01"),
             until=date.fromisoformat("2026-04-18"),
             source_output_dir=source_output_dir,
-        )
+        ).model_dump(mode="json")
 
         # Then
         assert payload["overview"]["pull_requests"] == 2

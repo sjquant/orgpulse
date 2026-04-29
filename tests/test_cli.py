@@ -13,6 +13,7 @@ import pytest
 from pydantic import ValidationError
 from typer.testing import CliRunner
 
+from orgpulse import dashboard as dashboard_module
 from orgpulse.cli import app, build_run_config
 from orgpulse.errors import AuthResolutionError, GitHubApiError
 from orgpulse.github_auth import GitHubAuthService
@@ -4527,6 +4528,47 @@ class TestDashboardCommand:
         assert result.exit_code == 1
         assert "orgpulse: dashboard generation failed" in result.stderr
         assert "Missing periods: 2026-03" in result.stderr
+
+    def test_fails_with_user_facing_error_when_dashboard_generation_raises_runtime_error(
+        self,
+        runner: CliRunner,
+        monkeypatch,
+        tmp_path,
+    ) -> None:
+        """Report dashboard payload validation failures through the normal CLI error flow."""
+        # Given
+        def fake_generate_dashboard_report(**_: object) -> dict[str, object]:
+            raise RuntimeError("dashboard payload validation failed: bad payload")
+
+        monkeypatch.setattr(
+            dashboard_module,
+            "generate_dashboard_report",
+            fake_generate_dashboard_report,
+        )
+
+        # When
+        result = runner.invoke(
+            app,
+            [
+                "dashboard",
+                "--org",
+                "acme",
+                "--since",
+                "2026-03-01",
+                "--until",
+                "2026-03-31",
+                "--source-output-dir",
+                str(tmp_path / "source"),
+                "--output-dir",
+                str(tmp_path / "report"),
+                "--no-refresh",
+            ],
+        )
+
+        # Then
+        assert result.exit_code == 1
+        assert "orgpulse: dashboard generation failed" in result.stderr
+        assert "dashboard payload validation failed" in result.stderr
 
     def test_fails_for_unsupported_weekly_dashboard_source_outputs(
         self,

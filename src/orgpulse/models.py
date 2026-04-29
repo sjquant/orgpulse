@@ -411,6 +411,102 @@ class AnalysisReportWriteResult(BaseModel):
     periods: tuple[AnalysisReportPeriodWriteResult, ...]
 
 
+class DashboardOverviewPayload(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    org: str
+    generated_at: str
+    since: str
+    until: str
+    time_anchor: str
+
+
+class DashboardReviewerPayload(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    reviewer_login: str
+    review_submissions: int
+    pull_requests_reviewed: int
+    approvals: int
+    changes_requested: int
+    comments: int
+    authors_supported: int
+
+
+class DashboardPullRequestPayload(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    repository_full_name: str
+    pull_request_number: int
+    title: str
+    author_login: str
+    state: str
+    created_at: str
+    updated_at: str
+    closed_at: str | None = None
+    merged_at: str | None = None
+    html_url: str
+    additions: int
+    deletions: int
+    changed_files: int
+    changed_lines: int
+    commits: int
+    review_count: int
+    approval_count: int
+    changes_requested_count: int
+    comment_review_count: int
+    reviewer_count: int
+    first_review_hours: float | None = None
+    merge_hours: float | None = None
+    close_hours: float | None = None
+    review_rounds: int
+    review_ready_at: str
+    review_requested_at: str | None = None
+    size_bucket: str
+
+
+class DashboardSourcePayload(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    overview: DashboardOverviewPayload
+    insights: list[dict[str, Any]] = Field(default_factory=list)
+    charts: dict[str, Any] = Field(default_factory=dict)
+    authors: list[dict[str, Any]] = Field(default_factory=list)
+    reviewers: list[DashboardReviewerPayload]
+    repositories: list[dict[str, Any]] = Field(default_factory=list)
+    size_buckets: list[dict[str, Any]] = Field(default_factory=list)
+    review_state_rows: list[dict[str, Any]] = Field(default_factory=list)
+    pull_requests: list[DashboardPullRequestPayload]
+
+
+class DashboardPreparedPayload(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    overview: dict[str, Any]
+    authors: list[dict[str, Any]]
+    authors_roster_top: list[dict[str, Any]]
+    authors_roster_rest: list[dict[str, Any]]
+    reviewers: list[dict[str, Any]]
+    reviewers_top: list[dict[str, Any]]
+    reviewers_rest: list[dict[str, Any]]
+    repositories_top: list[dict[str, Any]]
+    repositories_rest: list[dict[str, Any]]
+    size_buckets: list[dict[str, Any]]
+    weekly_trends: list[dict[str, Any]]
+    monthly_trends: list[dict[str, Any]]
+    weekly_trends_recent: list[dict[str, Any]]
+    weekly_trends_older: list[dict[str, Any]]
+    monthly_trends_recent: list[dict[str, Any]]
+    monthly_trends_older: list[dict[str, Any]]
+    methodology: dict[str, Any]
+    reference_summary: dict[str, Any]
+    size_diagnostic: dict[str, Any]
+    default_author: str | None
+    author_details_json: str
+    distribution_percentile: int
+    pull_requests: list[DashboardPullRequestPayload]
+
+
 class MetricValidationIssue(BaseModel):
     model_config = ConfigDict(frozen=True)
 

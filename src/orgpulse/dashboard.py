@@ -45,6 +45,7 @@ from orgpulse.models import (
     RunMode,
     TimeAnchor,
 )
+from orgpulse.raw_snapshot_source import read_snapshot_csv_rows
 from orgpulse.reporting.dashboard_html import (
     prepare_dashboard_payload,
     render_dashboard_html,
@@ -450,9 +451,9 @@ def _period_snapshots(
     since: date,
     until: date,
 ) -> list[PullRequestSnapshot]:
-    pull_request_rows = _read_csv_rows(period.pull_requests_path)
-    review_rows = _read_csv_rows(period.reviews_path)
-    timeline_rows = _read_csv_rows(period.timeline_events_path)
+    pull_request_rows = read_snapshot_csv_rows(period.pull_requests_path)
+    review_rows = read_snapshot_csv_rows(period.reviews_path)
+    timeline_rows = read_snapshot_csv_rows(period.timeline_events_path)
     reviews_by_pull_request = _reviews_by_pull_request(review_rows)
     timeline_events_by_pull_request = _timeline_events_by_pull_request(timeline_rows)
     snapshots: list[PullRequestSnapshot] = []
@@ -477,15 +478,8 @@ def _period_snapshots(
     return snapshots
 
 
-def _read_csv_rows(path: Path) -> list[dict[str, str]]:
-    if not path.exists():
-        raise RuntimeError(f"local source snapshot file is missing: {path}")
-    with path.open("r", encoding="utf-8", newline="") as handle:
-        return list(csv.DictReader(handle))
-
-
 def _reviews_by_pull_request(
-    review_rows: list[dict[str, str]],
+    review_rows: tuple[dict[str, str], ...],
 ) -> dict[tuple[str, int], list[PullRequestReview]]:
     grouped: dict[tuple[str, int], list[PullRequestReview]] = defaultdict(list)
     for review_row in review_rows:
@@ -510,7 +504,7 @@ def _reviews_by_pull_request(
 
 
 def _timeline_events_by_pull_request(
-    timeline_rows: list[dict[str, str]],
+    timeline_rows: tuple[dict[str, str], ...],
 ) -> dict[tuple[str, int], list[PullRequestTimelineEvent]]:
     grouped: dict[tuple[str, int], list[PullRequestTimelineEvent]] = defaultdict(list)
     for timeline_row in timeline_rows:

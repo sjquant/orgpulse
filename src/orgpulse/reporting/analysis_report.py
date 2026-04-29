@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import csv
 import json
 from collections import Counter, defaultdict
 from collections.abc import Sequence
@@ -23,6 +22,7 @@ from orgpulse.models import (
     RepositoryMetricCollection,
     RunConfig,
 )
+from orgpulse.raw_snapshot_source import pull_request_row_key, read_snapshot_csv_rows
 
 _PERIOD_METRIC_DEFINITIONS = (
     {"key": "pull_request_count", "label": "Pull requests", "format": "int"},
@@ -212,29 +212,18 @@ def _load_filtered_raw_period(
 ) -> dict[str, tuple[dict[str, str], ...]]:
     pull_request_rows = tuple(
         row
-        for row in _read_csv_rows(period.pull_requests_path)
-        if _raw_pull_request_key(row) in pull_request_keys
+        for row in read_snapshot_csv_rows(period.pull_requests_path, missing="empty")
+        if pull_request_row_key(row) in pull_request_keys
     )
     timeline_rows = tuple(
         row
-        for row in _read_csv_rows(period.timeline_events_path)
-        if _raw_pull_request_key(row) in pull_request_keys
+        for row in read_snapshot_csv_rows(period.timeline_events_path, missing="empty")
+        if pull_request_row_key(row) in pull_request_keys
     )
     return {
         "pull_requests": pull_request_rows,
         "timeline_events": timeline_rows,
     }
-
-
-def _read_csv_rows(path: Path) -> tuple[dict[str, str], ...]:
-    if not path.exists():
-        return ()
-    with path.open(encoding="utf-8", newline="") as handle:
-        return tuple(csv.DictReader(handle))
-
-
-def _raw_pull_request_key(row: dict[str, str]) -> tuple[str, str]:
-    return row["repository_full_name"], row["pull_request_number"]
 
 
 def _period_catalog(
@@ -445,7 +434,7 @@ def _timeline_event_breakdown(
     event_counts = Counter(row["event"] for row in raw_period["timeline_events"])
     pull_request_counts: dict[str, set[tuple[str, str]]] = defaultdict(set)
     for row in raw_period["timeline_events"]:
-        pull_request_counts[row["event"]].add(_raw_pull_request_key(row))
+        pull_request_counts[row["event"]].add(pull_request_row_key(row))
     total_events = sum(event_counts.values())
     return [
         {

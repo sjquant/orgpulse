@@ -29,7 +29,6 @@ from orgpulse.models import (
     OrganizationMetricCollection,
     OrganizationMetricPeriod,
     OrganizationMetricRollup,
-    PeriodGrain,
     PullRequestCollection,
     PullRequestRecord,
     PullRequestReviewRecord,
@@ -40,7 +39,6 @@ from orgpulse.models import (
     RunManifest,
     RunMode,
     RunScope,
-    TimeAnchor,
 )
 from orgpulse.reporting.analysis_report import (
     build_organization_report_payload,
@@ -60,39 +58,50 @@ from orgpulse.reporting.run_outputs import (
     RunManifestWriter,
 )
 
-build_dashboard_payload_from_local_outputs = (
-    _dashboard_module.build_dashboard_payload_from_local_outputs
+from .support.dashboard_source import (
+    dashboard_pull_request_row as _manual_dashboard_pull_request_row,
+)
+from .support.dashboard_source import (
+    dashboard_review_row as _manual_dashboard_review_row,
+)
+from .support.dashboard_source import (
+    dashboard_timeline_event_row as _manual_dashboard_timeline_event_row,
+)
+from .support.dashboard_source import (
+    expected_period_state as _expected_period_state,
+)
+from .support.dashboard_source import (
+    expected_time_anchor_context as _expected_time_anchor_context,
+)
+from .support.dashboard_source import (
+    write_dashboard_source_manifest as _shared_write_dashboard_source_manifest,
+)
+from .support.dashboard_source import (
+    write_dashboard_source_period as _write_manual_dashboard_source_period,
 )
 
-
-def _expected_time_anchor_context(
-    time_anchor: str = "created_at",
-) -> dict[str, str]:
-    return {
-        "field": time_anchor,
-        "scope": f"pull_request.{time_anchor}",
-        "description": (
-            "All counts and summaries in this file are grouped by "
-            f"pull_request.{time_anchor}."
-        ),
-    }
+build_dashboard_payload_from_local_outputs = _dashboard_module.build_dashboard_payload_from_local_outputs
 
 
-def _expected_period_state(
+def _write_manual_dashboard_source_manifest(
     *,
-    grain: str = "month",
-    closed: bool,
-    observed_through_date: str,
-) -> dict[str, object]:
-    status = "closed" if closed else "open"
-    return {
-        "status": status,
-        "label": f"{status} {grain}",
-        "is_open": not closed,
-        "is_closed": closed,
-        "is_partial": not closed,
-        "observed_through_date": observed_through_date,
-    }
+    source_output_dir: Path,
+    refreshed_period_keys: tuple[str, ...],
+    locked_period_keys: tuple[str, ...],
+    as_of: str,
+) -> None:
+    _shared_write_dashboard_source_manifest(
+        source_output_dir=source_output_dir,
+        refreshed_period_keys=refreshed_period_keys,
+        locked_period_keys=locked_period_keys,
+        as_of=as_of,
+        collection_window_start_date="2026-04-01",
+        repository_count=2,
+        pull_request_count=2,
+        latest_refreshed_period_end_date="2026-04-30",
+        latest_locked_period_end_date="2026-03-31" if locked_period_keys else None,
+        count_snapshot_rows=True,
+    )
 
 
 class TestOrgSummaryWriter:
@@ -2906,218 +2915,4 @@ def _manual_pull_request(
         "review_ready_at": created_at,
         "review_requested_at": created_at,
         "size_bucket": size_bucket,
-    }
-
-
-def _write_manual_dashboard_source_manifest(
-    *,
-    source_output_dir: Path,
-    refreshed_period_keys: tuple[str, ...],
-    locked_period_keys: tuple[str, ...],
-    as_of: str,
-) -> None:
-    raw_root_dir = source_output_dir / "raw" / "month" / "created_at"
-    manifest = RunManifest(
-        target_org="acme",
-        period_grain=PeriodGrain.MONTH,
-        time_anchor=TimeAnchor.CREATED_AT,
-        include_repos=(),
-        exclude_repos=(),
-        raw_snapshot_root_dir=raw_root_dir,
-        refreshed_periods=tuple(
-            _manual_dashboard_snapshot_period(raw_root_dir, period_key)
-            for period_key in refreshed_period_keys
-        ),
-        locked_periods=tuple(
-            _manual_dashboard_reporting_period(period_key)
-            for period_key in locked_period_keys
-        ),
-        watermarks=ManifestWatermarks(
-            collection_window_start_date=date.fromisoformat("2026-04-01"),
-            collection_window_end_date=date.fromisoformat(as_of),
-            latest_refreshed_period_end_date=date.fromisoformat("2026-04-30"),
-            latest_locked_period_end_date=(
-                date.fromisoformat("2026-03-31") if locked_period_keys else None
-            ),
-        ),
-        last_successful_run=LastSuccessfulRun(
-            completed_at=datetime.fromisoformat(f"{as_of}T12:00:00+00:00"),
-            as_of=date.fromisoformat(as_of),
-            mode=RunMode.INCREMENTAL,
-            refresh_scope=RunScope.OPEN_PERIOD,
-            repository_count=2,
-            pull_request_count=2,
-        ),
-    )
-    manifest_path = (
-        source_output_dir / "manifest" / "month" / "created_at" / "manifest.json"
-    )
-    manifest_path.parent.mkdir(parents=True, exist_ok=True)
-    manifest_path.write_text(
-        json.dumps(manifest.model_dump(mode="json")),
-        encoding="utf-8",
-    )
-
-
-def _manual_dashboard_snapshot_period(
-    raw_root_dir: Path,
-    period_key: str,
-) -> RawSnapshotPeriod:
-    start_date, end_date = _manual_dashboard_period_dates(period_key)
-    period_dir = raw_root_dir / period_key
-    return RawSnapshotPeriod(
-        key=period_key,
-        start_date=start_date,
-        end_date=end_date,
-        closed=False,
-        directory=period_dir,
-        pull_requests_path=period_dir / "pull_requests.csv",
-        pull_request_count=_csv_row_count(period_dir / "pull_requests.csv"),
-        reviews_path=period_dir / "pull_request_reviews.csv",
-        review_count=_csv_row_count(period_dir / "pull_request_reviews.csv"),
-        timeline_events_path=period_dir / "pull_request_timeline_events.csv",
-        timeline_event_count=_csv_row_count(
-            period_dir / "pull_request_timeline_events.csv"
-        ),
-    )
-
-
-def _manual_dashboard_reporting_period(period_key: str) -> ReportingPeriod:
-    start_date, end_date = _manual_dashboard_period_dates(period_key)
-    return ReportingPeriod(
-        grain=PeriodGrain.MONTH,
-        start_date=start_date,
-        end_date=end_date,
-        key=period_key,
-        closed=True,
-    )
-
-
-def _manual_dashboard_period_dates(period_key: str) -> tuple[date, date]:
-    period_start = date.fromisoformat(f"{period_key}-01")
-    next_month_start = (period_start.replace(day=28) + date.resolution * 4).replace(
-        day=1
-    )
-    return period_start, next_month_start - date.resolution
-
-
-def _write_manual_dashboard_source_period(
-    *,
-    period_dir: Path,
-    pull_request_rows: list[dict[str, str]],
-    review_rows: list[dict[str, str]],
-    timeline_rows: list[dict[str, str]],
-) -> None:
-    period_dir.mkdir(parents=True, exist_ok=True)
-    _write_manual_dashboard_csv(
-        path=period_dir / "pull_requests.csv",
-        fieldnames=PULL_REQUEST_FIELDNAMES,
-        rows=pull_request_rows,
-    )
-    _write_manual_dashboard_csv(
-        path=period_dir / "pull_request_reviews.csv",
-        fieldnames=PULL_REQUEST_REVIEW_FIELDNAMES,
-        rows=review_rows,
-    )
-    _write_manual_dashboard_csv(
-        path=period_dir / "pull_request_timeline_events.csv",
-        fieldnames=PULL_REQUEST_TIMELINE_EVENT_FIELDNAMES,
-        rows=timeline_rows,
-    )
-
-
-def _write_manual_dashboard_csv(
-    *,
-    path: Path,
-    fieldnames: tuple[str, ...],
-    rows: list[dict[str, str]],
-) -> None:
-    with path.open("w", encoding="utf-8", newline="") as handle:
-        writer = csv.DictWriter(handle, fieldnames=fieldnames)
-        writer.writeheader()
-        writer.writerows(rows)
-
-
-def _csv_row_count(path: Path) -> int:
-    with path.open("r", encoding="utf-8", newline="") as handle:
-        return sum(1 for _ in csv.DictReader(handle))
-
-
-def _manual_dashboard_pull_request_row(
-    *,
-    period_key: str,
-    repository_full_name: str,
-    pull_request_number: int,
-    author_login: str,
-    created_at: str,
-    updated_at: str,
-    closed_at: str,
-    merged_at: str,
-    additions: int,
-    deletions: int,
-    changed_files: int,
-    commits: int,
-) -> dict[str, str]:
-    return {
-        "period_key": period_key,
-        "repository_full_name": repository_full_name,
-        "pull_request_number": str(pull_request_number),
-        "title": f"PR {pull_request_number}",
-        "state": "closed",
-        "draft": "False",
-        "merged": "True",
-        "author_login": author_login,
-        "created_at": created_at,
-        "updated_at": updated_at,
-        "closed_at": closed_at,
-        "merged_at": merged_at,
-        "additions": str(additions),
-        "deletions": str(deletions),
-        "changed_files": str(changed_files),
-        "commits": str(commits),
-        "html_url": f"https://example.test/pr/{pull_request_number}",
-    }
-
-
-def _manual_dashboard_review_row(
-    *,
-    period_key: str,
-    repository_full_name: str,
-    pull_request_number: int,
-    review_id: int,
-    author_login: str,
-    submitted_at: str,
-) -> dict[str, str]:
-    return {
-        "period_key": period_key,
-        "repository_full_name": repository_full_name,
-        "pull_request_number": str(pull_request_number),
-        "review_id": str(review_id),
-        "state": "APPROVED",
-        "author_login": author_login,
-        "submitted_at": submitted_at,
-        "commit_id": "",
-    }
-
-
-def _manual_dashboard_timeline_event_row(
-    *,
-    period_key: str,
-    repository_full_name: str,
-    pull_request_number: int,
-    event_id: int,
-    event: str,
-    created_at: str,
-    requested_reviewer_login: str,
-) -> dict[str, str]:
-    return {
-        "period_key": period_key,
-        "repository_full_name": repository_full_name,
-        "pull_request_number": str(pull_request_number),
-        "event_id": str(event_id),
-        "event": event,
-        "actor_login": "maintainer",
-        "created_at": created_at,
-        "requested_reviewer_login": requested_reviewer_login,
-        "requested_team_name": "",
     }

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 # ruff: noqa: F403,F405
-from .helpers.cli import *
+from ..helpers.cli import *
 
 
 class TestAnalyzeCommand:
@@ -937,4 +937,3 @@ class TestAnalyzeCommand:
         assert result.exit_code == 1
         assert "orgpulse: analysis input failed" in result.stderr
         assert "Run `orgpulse run`" in result.stderr
-

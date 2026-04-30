@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 # ruff: noqa: F403,F405
-from .helpers.cli import *
+from ..helpers.cli import *
 
 
 class TestRunConfigParsing:
@@ -455,4 +455,3 @@ class TestRunConfigParsing:
         assert result.exit_code == 1
         assert "orgpulse: GitHub API request failed" in result.stderr
         assert "GitHub authentication failed" not in result.stderr
-

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from collections import Counter, defaultdict
-from datetime import datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from statistics import median
 from typing import Any, TypeVar
@@ -28,6 +28,10 @@ from orgpulse.models import (
     DashboardSizeDiagnosticPayload,
     DashboardSourcePayload,
     DashboardTrendRowPayload,
+)
+from orgpulse.reporting.contracts import (
+    build_period_state_payload,
+    build_time_anchor_context,
 )
 
 AUTHOR_ROSTER_LIMIT = 12
@@ -141,6 +145,9 @@ def prepare_dashboard_payload(
 
     validate_distribution_percentile(distribution_percentile)
     normalized_payload = _validate_source_payload(payload).model_dump(mode="json")
+    normalized_payload["overview"] = _normalized_overview_contract(
+        normalized_payload["overview"]
+    )
     pull_requests = normalized_payload["pull_requests"]
     distribution_thresholds = _build_distribution_thresholds(
         pull_requests,
@@ -176,10 +183,24 @@ def prepare_dashboard_payload(
         authors=normalized_payload["authors"],
         reviewers=normalized_payload["reviewers"],
         pull_requests=pull_requests,
+        since=date.fromisoformat(normalized_payload["overview"]["since"]),
+        until=date.fromisoformat(normalized_payload["overview"]["until"]),
+        source_as_of=_dashboard_source_as_of(normalized_payload["overview"]),
         distribution_percentile=distribution_percentile,
         distribution_thresholds=distribution_thresholds,
     )
     return DashboardPreparedPayload.model_validate(normalized_payload)
+
+
+def _normalized_overview_contract(
+    overview: dict[str, Any],
+) -> dict[str, Any]:
+    normalized_overview = dict(overview)
+    if normalized_overview.get("time_anchor_context") is None:
+        normalized_overview["time_anchor_context"] = build_time_anchor_context(
+            str(normalized_overview["time_anchor"])
+        ).model_dump(mode="json")
+    return normalized_overview
 
 
 def _validate_source_payload(
@@ -278,6 +299,9 @@ def _build_dashboard_sections(
             for row in _build_trend_rows(
                 pull_requests,
                 grain="week",
+                since=date.fromisoformat(payload["overview"]["since"]),
+                until=date.fromisoformat(payload["overview"]["until"]),
+                source_as_of=_dashboard_source_as_of(payload["overview"]),
                 distribution_percentile=distribution_percentile,
                 distribution_thresholds=distribution_thresholds,
             )
@@ -287,6 +311,9 @@ def _build_dashboard_sections(
             for row in _build_trend_rows(
                 pull_requests,
                 grain="month",
+                since=date.fromisoformat(payload["overview"]["since"]),
+                until=date.fromisoformat(payload["overview"]["until"]),
+                source_as_of=_dashboard_source_as_of(payload["overview"]),
                 distribution_percentile=distribution_percentile,
                 distribution_thresholds=distribution_thresholds,
             )
@@ -316,6 +343,9 @@ def _build_author_details_json(
     authors: list[dict[str, Any]],
     reviewers: list[dict[str, Any]],
     pull_requests: list[dict[str, Any]],
+    since: date,
+    until: date,
+    source_as_of: date,
     distribution_percentile: int,
     distribution_thresholds: dict[str, float | None],
 ) -> str:
@@ -323,6 +353,9 @@ def _build_author_details_json(
         authors=authors,
         reviewers=reviewers,
         pull_requests=pull_requests,
+        since=since,
+        until=until,
+        source_as_of=source_as_of,
         distribution_percentile=distribution_percentile,
         distribution_thresholds=distribution_thresholds,
     )
@@ -351,6 +384,8 @@ def _build_overview(
     distribution_thresholds: dict[str, float | None],
 ) -> dict[str, Any]:
     source_overview = payload["overview"]
+    until = date.fromisoformat(source_overview["until"])
+    source_as_of = _dashboard_source_as_of(source_overview)
     changed_lines = _trimmed_summary(
         pull_requests,
         "changed_lines",
@@ -434,6 +469,10 @@ def _build_overview(
             if pull_requests
             else None
         ),
+        "open_week": source_as_of < _week_end(until),
+        "open_week_key": _week_key(until) if source_as_of < _week_end(until) else None,
+        "open_month": source_as_of < _month_end(until),
+        "open_month_key": until.strftime("%Y-%m") if source_as_of < _month_end(until) else None,
         "distribution_percentile": distribution_percentile,
     }
 
@@ -636,6 +675,9 @@ def _build_trend_rows(
     pull_requests: list[dict[str, Any]],
     *,
     grain: str,
+    since: date,
+    until: date,
+    source_as_of: date,
     distribution_percentile: int,
     distribution_thresholds: dict[str, float | None],
 ) -> list[DashboardTrendRowPayload]:
@@ -644,6 +686,16 @@ def _build_trend_rows(
     previous_pull_requests: int | None = None
     previous_changed_lines: int | None = None
     for period_key in sorted(grouped):
+        period_start_date, period_end_date = _period_dates(period_key, grain=grain)
+        period_state = build_period_state_payload(
+            period_grain=grain,
+            start_date=period_start_date,
+            end_date=period_end_date,
+            closed=source_as_of >= period_end_date,
+            as_of=source_as_of,
+            since=since,
+            until=until,
+        ).model_dump(mode="json")
         period_rows = grouped[period_key]
         pull_request_count = len(period_rows)
         changed_lines = _trimmed_summary(
@@ -705,6 +757,16 @@ def _build_trend_rows(
                 if previous_changed_lines is not None
                 else None
             ),
+            period_start_date=period_start_date.isoformat(),
+            period_end_date=period_end_date.isoformat(),
+            status=str(period_state["status"]),
+            label=str(period_state["label"]),
+            is_open=bool(period_state["is_open"]),
+            is_closed=bool(period_state["is_closed"]),
+            is_partial=bool(period_state["is_partial"]),
+            observed_through_date=str(period_state["observed_through_date"]),
+            open_week=bool(period_state["open_week"]),
+            open_month=bool(period_state["open_month"]),
         )
         rows.append(row)
         previous_pull_requests = pull_request_count
@@ -758,6 +820,9 @@ def _build_author_details(
     authors: list[dict[str, Any]],
     reviewers: list[dict[str, Any]],
     pull_requests: list[dict[str, Any]],
+    since: date,
+    until: date,
+    source_as_of: date,
     distribution_percentile: int,
     distribution_thresholds: dict[str, float | None],
 ) -> dict[str, Any]:
@@ -849,6 +914,9 @@ def _build_author_details(
                 for row in _build_trend_rows(
                     author_pull_requests,
                     grain="week",
+                    since=since,
+                    until=until,
+                    source_as_of=source_as_of,
                     distribution_percentile=distribution_percentile,
                     distribution_thresholds=distribution_thresholds,
                 )
@@ -858,6 +926,9 @@ def _build_author_details(
                 for row in _build_trend_rows(
                     author_pull_requests,
                     grain="month",
+                    since=since,
+                    until=until,
+                    source_as_of=source_as_of,
                     distribution_percentile=distribution_percentile,
                     distribution_thresholds=distribution_thresholds,
                 )
@@ -1304,6 +1375,39 @@ def _period_key(value: datetime, *, grain: str) -> str:
         return value.strftime("%Y-%m")
     iso_year, iso_week, _iso_weekday = value.isocalendar()
     return f"{iso_year}-W{iso_week:02d}"
+
+
+def _period_dates(period_key: str, *, grain: str) -> tuple[date, date]:
+    if grain == "month":
+        start_date = date.fromisoformat(f"{period_key}-01")
+        return start_date, _next_month_start(start_date) - timedelta(days=1)
+    iso_year, iso_week = period_key.split("-W", maxsplit=1)
+    start_date = datetime.fromisocalendar(int(iso_year), int(iso_week), 1).date()
+    return start_date, start_date + timedelta(days=6)
+
+
+def _dashboard_source_as_of(overview: dict[str, Any]) -> date:
+    source_as_of = overview.get("source_as_of")
+    if source_as_of:
+        return date.fromisoformat(str(source_as_of))
+    return date.fromisoformat(str(overview["until"]))
+
+
+def _next_month_start(current: date) -> date:
+    return (current.replace(day=28) + timedelta(days=4)).replace(day=1)
+
+
+def _week_key(current: date) -> str:
+    iso_year, iso_week, _iso_weekday = current.isocalendar()
+    return f"{iso_year}-W{iso_week:02d}"
+
+
+def _week_end(current: date) -> date:
+    return current + timedelta(days=6 - current.weekday())
+
+
+def _month_end(current: date) -> date:
+    return _next_month_start(current.replace(day=1)) - timedelta(days=1)
 
 
 def _parse_datetime(value: str) -> datetime:

@@ -48,6 +48,8 @@ def expected_period_state(
         "is_closed": closed,
         "is_partial": not closed,
         "observed_through_date": observed_through_date,
+        "open_week": not closed and grain == "week",
+        "open_month": not closed and grain == "month",
     }
 
 

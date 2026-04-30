@@ -507,7 +507,7 @@ class TestOrgSummaryWriter:
         previous_index_payload = json.loads(
             previous_result.index_path.read_text(encoding="utf-8")
         )
-        previous_index_payload["history"][0]["debug_note"] = "legacy"
+        previous_index_payload["history"][0]["debug_note"] = "extra"
         previous_result.index_path.write_text(
             json.dumps(previous_index_payload),
             encoding="utf-8",
@@ -557,4 +557,3 @@ class TestOrgSummaryWriter:
             average=average,
             median=average,
         )
-

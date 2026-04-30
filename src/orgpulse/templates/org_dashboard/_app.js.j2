@@ -537,6 +537,16 @@
       const stepX = rows.length > 1 ? plotWidth / (rows.length - 1) : plotWidth / 2;
       const yFor = (value) => padding.top + plotHeight - (value / maxValue) * plotHeight;
       const xFor = (index) => padding.left + index * stepX;
+      const bandStart = (index) => (
+        index === 0
+          ? padding.left
+          : (xFor(index - 1) + xFor(index)) / 2
+      );
+      const bandEnd = (index) => (
+        index === rows.length - 1
+          ? width - padding.right
+          : (xFor(index) + xFor(index + 1)) / 2
+      );
       const linePoints = rows
         .map((row, index) => ({ index, value: toNumeric(row[metric]) }))
         .filter((point) => point.value !== null);
@@ -562,10 +572,7 @@
         if (!row.is_partial) {
           return "";
         }
-        const previousX = index === 0 ? padding.left : xFor(index - 1);
-        const nextX = index === rows.length - 1 ? width - padding.right : xFor(index + 1);
-        const bandWidth = Math.max(12, (nextX - previousX) / 2);
-        return `<rect class="chart-partial-band" x="${xFor(index) - bandWidth / 2}" y="${padding.top}" width="${bandWidth}" height="${plotHeight}" rx="8"></rect>`;
+        return `<rect class="chart-partial-band" x="${bandStart(index)}" y="${padding.top}" width="${Math.max(8, bandEnd(index) - bandStart(index))}" height="${plotHeight}"></rect>`;
       }).join("");
       const points = rows.map((row, index) => {
         const value = toNumeric(row[metric]);

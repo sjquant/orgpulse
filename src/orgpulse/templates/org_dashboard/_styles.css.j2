@@ -540,6 +540,18 @@
       border-radius: var(--radius-pill);
     }
 
+    .legend-band {
+      width: 18px;
+      height: 10px;
+      border: 1px solid color-mix(in srgb, var(--accent-3) 44%, transparent);
+      background:
+        linear-gradient(
+          135deg,
+          color-mix(in srgb, var(--accent-3) 22%, transparent),
+          color-mix(in srgb, var(--accent-3) 10%, transparent)
+        );
+      box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent-3) 10%, transparent);
+    }
     .period-state-pill {
       display: inline-flex;
       align-items: center;

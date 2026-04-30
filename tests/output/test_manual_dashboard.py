@@ -67,6 +67,8 @@ class TestManualDashboardPayload:
         assert "chart-partial-band" in html
         assert "partial-period-row" in html
         assert "period-state-pill open" in html
+        assert "Yellow band = open or partial period" in html
+        assert 'rx="8"' not in html
 
     def test_labels_closed_truncated_dashboard_periods_as_partial(self) -> None:
         """Label a closed dashboard period as partial when the window starts inside it."""
@@ -122,6 +124,8 @@ class TestManualDashboardPayload:
         assert prepared.monthly_trends[0]["open_month"] is False
         assert "partial month" in html
         assert "period-state-pill partial" in html
+        assert "Yellow band = open or partial period" in html
+        assert 'rx="8"' not in html
 
     def test_renders_theme_switch_with_tokenized_theme_bootstrap(self) -> None:
         """Render a manual dashboard with a persisted light/dark theme switch and CSS tokens."""
@@ -400,6 +404,16 @@ class TestManualDashboardPayload:
         assert prepared.monthly_trends == [
             {
                 "period_key": "2026-01",
+                "period_start_date": "2026-01-01",
+                "period_end_date": "2026-01-31",
+                "status": "closed",
+                "label": "closed month",
+                "is_open": False,
+                "is_closed": True,
+                "is_partial": False,
+                "observed_through_date": "2026-01-31",
+                "open_week": False,
+                "open_month": False,
                 "pull_requests": 2,
                 "merged_pull_requests": 2,
                 "open_pull_requests": 0,
@@ -426,6 +440,16 @@ class TestManualDashboardPayload:
             },
             {
                 "period_key": "2026-02",
+                "period_start_date": "2026-02-01",
+                "period_end_date": "2026-02-28",
+                "status": "closed",
+                "label": "closed month",
+                "is_open": False,
+                "is_closed": True,
+                "is_partial": False,
+                "observed_through_date": "2026-02-28",
+                "open_week": False,
+                "open_month": False,
                 "pull_requests": 1,
                 "merged_pull_requests": 1,
                 "open_pull_requests": 0,

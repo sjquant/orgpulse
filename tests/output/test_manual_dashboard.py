@@ -68,6 +68,7 @@ class TestManualDashboardPayload:
         assert "partial-period-row" in html
         assert "period-state-pill open" in html
         assert "Yellow band = open or partial period" in html
+        assert 'rx="8"' not in html
 
     def test_labels_closed_truncated_dashboard_periods_as_partial(self) -> None:
         """Label a closed dashboard period as partial when the window starts inside it."""
@@ -123,6 +124,7 @@ class TestManualDashboardPayload:
         assert "partial month" in html
         assert "period-state-pill partial" in html
         assert "Yellow band = open or partial period" in html
+        assert 'rx="8"' not in html
 
     def test_renders_theme_switch_with_tokenized_theme_bootstrap(self) -> None:
         """Render a manual dashboard with a persisted light/dark theme switch and CSS tokens."""

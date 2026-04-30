@@ -479,20 +479,9 @@ class TestRepositorySummaryCsvWriter:
         previous_index_payload = json.loads(
             previous_result.index_path.read_text(encoding="utf-8")
         )
-        previous_index_payload["history"][0]["debug_note"] = "legacy"
-        previous_index_payload["history"][0].pop("open_week")
-        previous_index_payload["history"][0].pop("open_month")
+        previous_index_payload["history"][0]["debug_note"] = "extra"
         previous_result.index_path.write_text(
             json.dumps(previous_index_payload),
-            encoding="utf-8",
-        )
-        previous_contract_payload = json.loads(
-            previous_result.contract_path.read_text(encoding="utf-8")
-        )
-        previous_contract_payload["period_state_fields"].remove("open_week")
-        previous_contract_payload["period_state_fields"].remove("open_month")
-        previous_result.contract_path.write_text(
-            json.dumps(previous_contract_payload),
             encoding="utf-8",
         )
         current_raw_snapshot = self._write_raw_snapshot(

@@ -1405,11 +1405,7 @@ def _prune_output_entries_for_contract_change(
     contract_path: Path,
     contract: object,
 ) -> None:
-    saved_contract = _load_json_payload(contract_path)
-    current_contract = _json_ready_payload(contract)
-    if saved_contract == current_contract:
-        return
-    if _contract_change_preserves_existing_outputs(saved_contract, current_contract):
+    if _load_json_payload(contract_path) == _json_ready_payload(contract):
         return
     if not root_dir.exists():
         return
@@ -1420,28 +1416,6 @@ def _prune_output_entries_for_contract_change(
             shutil.rmtree(child)
             continue
         child.unlink(missing_ok=True)
-
-
-def _contract_change_preserves_existing_outputs(
-    saved_contract: dict[str, object] | None,
-    current_contract: dict[str, object],
-) -> bool:
-    if saved_contract is None:
-        return False
-    saved_fields = saved_contract.get("period_state_fields")
-    current_fields = current_contract.get("period_state_fields")
-    if not isinstance(saved_fields, list) or not isinstance(current_fields, list):
-        return False
-    added_fields = ["open_week", "open_month"]
-    if [*saved_fields, *added_fields] != current_fields:
-        return False
-    saved_without_fields = {
-        key: value for key, value in saved_contract.items() if key != "period_state_fields"
-    }
-    current_without_fields = {
-        key: value for key, value in current_contract.items() if key != "period_state_fields"
-    }
-    return saved_without_fields == current_without_fields
 
 
 def _load_json_payload(path: Path) -> dict[str, object] | None:

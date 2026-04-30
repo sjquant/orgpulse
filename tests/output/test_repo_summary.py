@@ -167,6 +167,8 @@ class TestRepositorySummaryCsvWriter:
         assert rows[0]["period_status"] == "open"
         assert rows[0]["period_label"] == "open month"
         assert rows[0]["period_open"] == "true"
+        assert rows[0]["period_open_week"] == "false"
+        assert rows[0]["period_open_month"] == "true"
         assert rows[0]["period_closed"] == "false"
         assert rows[0]["period_partial"] == "true"
         assert rows[0]["period_observed_through_date"] == "2026-04-18"
@@ -477,7 +479,7 @@ class TestRepositorySummaryCsvWriter:
         previous_index_payload = json.loads(
             previous_result.index_path.read_text(encoding="utf-8")
         )
-        previous_index_payload["history"][0]["debug_note"] = "legacy"
+        previous_index_payload["history"][0]["debug_note"] = "extra"
         previous_result.index_path.write_text(
             json.dumps(previous_index_payload),
             encoding="utf-8",
@@ -527,10 +529,13 @@ class TestRepositorySummaryCsvWriter:
         )
 
         # Then
-        assert [entry["key"] for entry in json.loads(result.index_path.read_text(encoding="utf-8"))["history"]] == [
+        history = json.loads(result.index_path.read_text(encoding="utf-8"))["history"]
+        assert [entry["key"] for entry in history] == [
             "2026-03",
             "2026-04",
         ]
+        assert history[0]["open_week"] is False
+        assert history[0]["open_month"] is False
 
     def _build_run_config(self, **overrides: object) -> RunConfig:
         """Build the minimal run configuration needed for repo summary export tests."""

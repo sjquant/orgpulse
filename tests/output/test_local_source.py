@@ -315,4 +315,3 @@ class TestManualDashboardLocalSource:
 
         # Then
         assert "Missing periods: 2026-03" in error_message
-

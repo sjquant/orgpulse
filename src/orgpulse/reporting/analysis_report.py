@@ -340,7 +340,6 @@ def _period_catalog(
     return [
         {
             "key": period.key,
-            "label": period.key,
             "start_date": period.start_date.isoformat(),
             "end_date": period.end_date.isoformat(),
             "closed": period.closed,
@@ -353,6 +352,7 @@ def _period_catalog(
                 since=since,
                 until=until,
             ).model_dump(mode="json"),
+            "label": period.key,
         }
         for period in raw_snapshot.periods
         if period.key in included_periods

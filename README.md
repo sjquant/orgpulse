@@ -266,6 +266,8 @@ supported dashboard view as JSON, per-PR CSV, and interactive HTML files.
 - Currently supports only `month` grain with the `created_at` anchor
 - Respects `--since`, `--until`, `--distribution-percentile`, and
   `--refresh/--no-refresh`
+- Surfaces org overview, repository, author, reviewer, trend, and PR size
+  diagnostics from the local snapshot set
 - Writes dashboard artifacts under an explicit `--output-dir`
 - Reuses the saved local manifest contract from `--source-output-dir`
 
@@ -366,10 +368,15 @@ same catalog without opening JSON directly.
 
 ## Current Metrics
 
-- Merged PR count
-- Time to merge
-- Time to first review
-- PR size
-- Commit count
-- Active author count
-- Merged PR per active author
+`orgpulse` currently exposes more than a basic PR count and latency summary.
+Across rollups, analysis outputs, and the dashboard, the current metric surface
+includes:
+
+- Pull request throughput by org, repository, author, and period
+- Merged PR count, open PR count, merge rate, and stale open PR count
+- Time to first review, time to merge, and time to close
+- Review coverage, review submissions, unique reviewers, and 24-hour review SLA
+- PR size using additions, deletions, changed lines, changed files, and commits
+- Active author count, PRs per active author, and changed lines per active author
+- Reviewer workload via review submissions and unique PRs reviewed
+- Repository concentration, author concentration, and PR size-bucket diagnostics

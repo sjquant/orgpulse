@@ -873,6 +873,13 @@ def _build_author_details(
                 ),
                 "review_submissions_given": int(reviewer.get("review_submissions", 0)),
                 "pull_requests_reviewed": int(reviewer.get("pull_requests_reviewed", 0)),
+                "reviewed_lines": int(reviewer.get("reviewed_lines", 0)),
+                "pull_requests_reviewed_per_month": reviewer.get(
+                    "pull_requests_reviewed_per_month"
+                ),
+                "reviewed_lines_per_month": reviewer.get(
+                    "reviewed_lines_per_month"
+                ),
                 "approvals_given": int(reviewer.get("approvals", 0)),
                 "changes_requested_given": int(reviewer.get("changes_requested", 0)),
                 "review_comments_given": int(reviewer.get("comments", 0)),

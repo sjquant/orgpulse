@@ -372,7 +372,10 @@
         <div class="detail-grid">
           ${detailCard("Authored PRs", summary.pull_requests)}
           ${detailCard("Reviewed PRs", summary.pull_requests_reviewed)}
+          ${detailCard("Reviewed PRs / month", formatMetric(summary.pull_requests_reviewed_per_month))}
           ${detailCard("Reviews given", summary.review_submissions_given)}
+          ${detailCard("Reviewed lines", formatMetric(summary.reviewed_lines))}
+          ${detailCard("Reviewed lines / month", formatMetric(summary.reviewed_lines_per_month))}
           ${detailCard("Merge rate", formatMetric(summary.merge_rate_pct, "%"))}
           ${detailCard("Avg lines / PR", formatMetric(summary.average_changed_lines_per_pr))}
           ${detailCard("First review", formatDuration(summary.median_first_review_hours))}

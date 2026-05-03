@@ -282,6 +282,9 @@
                 <th class="rank">#</th>
                 <th>Reviewer</th>
                 <th class="num">PRs reviewed</th>
+                <th class="num">PRs / month</th>
+                <th class="num">Reviewed lines</th>
+                <th class="num tablet-hide">Lines / month</th>
                 <th class="num">Submissions</th>
                 <th class="num">Approvals</th>
                 <th class="num tablet-hide">Changes requested</th>
@@ -295,9 +298,12 @@
                 <td class="rank" data-label="Rank">{{ loop.index }}</td>
                 <td class="leader" data-label="Reviewer">
                   <strong>{{ row.reviewer_login }}</strong>
-                  <span>{{ row.pull_requests_reviewed | intfmt }} PRs touched</span>
+                  <span>{{ row.pull_requests_reviewed | intfmt }} PRs touched · {{ row.pull_requests_reviewed_per_month | numfmt }} PRs/mo</span>
                 </td>
                 <td class="num" data-label="PRs reviewed">{{ row.pull_requests_reviewed | intfmt }}</td>
+                <td class="num" data-label="PRs / month">{{ row.pull_requests_reviewed_per_month | numfmt }}</td>
+                <td class="num" data-label="Reviewed lines">{{ row.reviewed_lines | intfmt }}</td>
+                <td class="num tablet-hide" data-label="Lines / month">{{ row.reviewed_lines_per_month | numfmt }}</td>
                 <td class="num" data-label="Submissions">{{ row.review_submissions | intfmt }}</td>
                 <td class="num" data-label="Approvals">{{ row.approvals | intfmt }}</td>
                 <td class="num tablet-hide" data-label="Changes requested">{{ row.changes_requested | intfmt }}</td>
@@ -313,9 +319,12 @@
                 <td class="rank" data-label="Rank">{{ loop.index + 10 }}</td>
                 <td class="leader" data-label="Reviewer">
                   <strong>{{ row.reviewer_login }}</strong>
-                  <span>{{ row.pull_requests_reviewed | intfmt }} PRs touched</span>
+                  <span>{{ row.pull_requests_reviewed | intfmt }} PRs touched · {{ row.pull_requests_reviewed_per_month | numfmt }} PRs/mo</span>
                 </td>
                 <td class="num" data-label="PRs reviewed">{{ row.pull_requests_reviewed | intfmt }}</td>
+                <td class="num" data-label="PRs / month">{{ row.pull_requests_reviewed_per_month | numfmt }}</td>
+                <td class="num" data-label="Reviewed lines">{{ row.reviewed_lines | intfmt }}</td>
+                <td class="num tablet-hide" data-label="Lines / month">{{ row.reviewed_lines_per_month | numfmt }}</td>
                 <td class="num" data-label="Submissions">{{ row.review_submissions | intfmt }}</td>
                 <td class="num" data-label="Approvals">{{ row.approvals | intfmt }}</td>
                 <td class="num tablet-hide" data-label="Changes requested">{{ row.changes_requested | intfmt }}</td>

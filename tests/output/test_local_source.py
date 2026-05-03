@@ -265,6 +265,105 @@ class TestManualDashboardLocalSource:
             "acme/web",
         ]
 
+    def test_builds_reviewer_monthly_rates_and_reviewed_lines_from_local_outputs(
+        self,
+        tmp_path,
+    ) -> None:
+        """Build reviewer monthly rates and reviewed lines from unique reviewed PRs in the selected window."""
+        # Given
+        source_output_dir = tmp_path
+        raw_root_dir = source_output_dir / "raw" / "month" / "created_at"
+        _write_manual_dashboard_source_period(
+            period_dir=raw_root_dir / "2026-03",
+            pull_request_rows=[
+                _manual_dashboard_pull_request_row(
+                    period_key="2026-03",
+                    repository_full_name="acme/api",
+                    pull_request_number=1,
+                    author_login="alice",
+                    created_at="2026-03-20T09:00:00+00:00",
+                    updated_at="2026-03-20T12:00:00+00:00",
+                    closed_at="2026-03-20T12:00:00+00:00",
+                    merged_at="2026-03-20T12:00:00+00:00",
+                    additions=30,
+                    deletions=10,
+                    changed_files=3,
+                    commits=2,
+                ),
+                _manual_dashboard_pull_request_row(
+                    period_key="2026-03",
+                    repository_full_name="acme/web",
+                    pull_request_number=2,
+                    author_login="bob",
+                    created_at="2026-03-24T09:00:00+00:00",
+                    updated_at="2026-03-24T12:00:00+00:00",
+                    closed_at="2026-03-24T12:00:00+00:00",
+                    merged_at="2026-03-24T12:00:00+00:00",
+                    additions=18,
+                    deletions=2,
+                    changed_files=2,
+                    commits=1,
+                ),
+            ],
+            review_rows=[
+                _manual_dashboard_review_row(
+                    period_key="2026-03",
+                    repository_full_name="acme/api",
+                    pull_request_number=1,
+                    review_id=101,
+                    author_login="reviewer-1",
+                    submitted_at="2026-03-20T10:00:00+00:00",
+                ),
+                _manual_dashboard_review_row(
+                    period_key="2026-03",
+                    repository_full_name="acme/api",
+                    pull_request_number=1,
+                    review_id=102,
+                    author_login="reviewer-1",
+                    submitted_at="2026-03-20T11:00:00+00:00",
+                ),
+                _manual_dashboard_review_row(
+                    period_key="2026-03",
+                    repository_full_name="acme/web",
+                    pull_request_number=2,
+                    review_id=201,
+                    author_login="reviewer-1",
+                    submitted_at="2026-03-24T10:00:00+00:00",
+                ),
+            ],
+            timeline_rows=[],
+        )
+        _write_manual_dashboard_source_manifest(
+            source_output_dir=source_output_dir,
+            refreshed_period_keys=("2026-03",),
+            locked_period_keys=(),
+            as_of="2026-03-31",
+        )
+
+        # When
+        payload = build_dashboard_payload_from_local_outputs(
+            org="acme",
+            since=date.fromisoformat("2026-03-01"),
+            until=date.fromisoformat("2026-03-31"),
+            source_output_dir=source_output_dir,
+        )
+
+        # Then
+        assert payload.reviewers == [
+            _dashboard_module.DashboardReviewerPayload(
+                reviewer_login="reviewer-1",
+                review_submissions=3,
+                pull_requests_reviewed=2,
+                reviewed_lines=60,
+                pull_requests_reviewed_per_month=2.0,
+                reviewed_lines_per_month=60.0,
+                approvals=3,
+                changes_requested=0,
+                comments=0,
+                authors_supported=2,
+            )
+        ]
+
     def test_rejects_manual_dashboard_window_when_local_manifest_has_gaps(
         self,
         tmp_path,

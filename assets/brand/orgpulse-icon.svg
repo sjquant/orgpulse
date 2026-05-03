@@ -1,0 +1,59 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-labelledby="orgpulse-icon-title orgpulse-icon-desc">
+  <title id="orgpulse-icon-title">OrgPulse icon</title>
+  <desc id="orgpulse-icon-desc">A segmented ring framing a branching pulse path for the OrgPulse brand mark.</desc>
+  <defs>
+    <linearGradient id="orgpulse-icon-gradient" x1="18%" y1="0%" x2="82%" y2="100%">
+      <stop offset="0%" stop-color="#2563eb" />
+      <stop offset="100%" stop-color="#06b6d4" />
+    </linearGradient>
+  </defs>
+
+  <circle cx="64" cy="64" r="56" fill="#f8fafc" />
+  <circle cx="64" cy="64" r="50" fill="none" stroke="#0f172a" stroke-width="8" opacity="0.18" />
+  <circle
+    cx="64"
+    cy="64"
+    r="50"
+    fill="none"
+    stroke="#0f172a"
+    stroke-width="8"
+    stroke-linecap="round"
+    stroke-dasharray="264 1000"
+    transform="rotate(-18 64 64)"
+  />
+  <circle
+    cx="64"
+    cy="64"
+    r="50"
+    fill="none"
+    stroke="#06b6d4"
+    stroke-width="8"
+    stroke-linecap="round"
+    stroke-dasharray="18 1000"
+    transform="rotate(-42 64 64)"
+  />
+
+  <path
+    d="M 30 64 H 48 L 66 46 H 95"
+    fill="none"
+    stroke="url(#orgpulse-icon-gradient)"
+    stroke-width="6"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+  <path
+    d="M 48 64 L 66 82 H 92"
+    fill="none"
+    stroke="#94a3b8"
+    stroke-width="4"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+
+  <circle cx="30" cy="64" r="4" fill="#ffffff" stroke="#2563eb" stroke-width="3" />
+  <circle cx="48" cy="64" r="4.5" fill="#ffffff" stroke="#3b82f6" stroke-width="3" />
+  <circle cx="66" cy="46" r="4" fill="#ffffff" stroke="#0891b2" stroke-width="3" />
+  <circle cx="95" cy="46" r="7" fill="#06b6d4" />
+  <circle cx="66" cy="82" r="3.5" fill="#ffffff" stroke="#94a3b8" stroke-width="2.5" />
+  <circle cx="92" cy="82" r="3.5" fill="#ffffff" stroke="#94a3b8" stroke-width="2.5" />
+</svg>

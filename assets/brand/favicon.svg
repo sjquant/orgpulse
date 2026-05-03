@@ -41,8 +41,18 @@
     stroke-linecap="round"
     stroke-linejoin="round"
   />
+  <path
+    d="M 24 32 L 33 41 H 45"
+    fill="none"
+    stroke="#7c8ba1"
+    stroke-width="3.75"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
   <circle cx="14" cy="32" r="2.6" fill="#ffffff" stroke="#2563eb" stroke-width="2" />
   <circle cx="24" cy="32" r="3" fill="#ffffff" stroke="#3b82f6" stroke-width="2" />
   <circle cx="33" cy="23" r="2.6" fill="#ffffff" stroke="#0891b2" stroke-width="2" />
   <circle cx="48" cy="23" r="4.5" fill="#06b6d4" />
+  <circle cx="33" cy="41" r="2.5" fill="#d9e1ec" stroke="#64748b" stroke-width="1.8" />
+  <circle cx="45" cy="41" r="2.5" fill="#d9e1ec" stroke="#64748b" stroke-width="1.8" />
 </svg>

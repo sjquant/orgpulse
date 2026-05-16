@@ -54,6 +54,12 @@ from orgpulse.models import (
     RunMode,
     TimeAnchor,
 )
+from orgpulse.person import (
+    PersonExportFormat,
+    PersonMetricsService,
+    build_person_config,
+    render_person_metrics_result,
+)
 from orgpulse.reporting.analysis_export import render_analysis_result
 from orgpulse.reporting.run_outputs import (
     OrgSummaryWriter,
@@ -530,6 +536,99 @@ def analyze_command(
         raise typer.Exit(code=1) from exc
 
     typer.echo(render_analysis_result(result))
+
+
+@app.command("person")
+def person_command(
+    login: Annotated[
+        str,
+        typer.Option(
+            "--login",
+            help="GitHub login whose local person metrics should be extracted.",
+        ),
+    ],
+    org: Annotated[
+        str | None,
+        typer.Option(
+            "--org",
+            help="GitHub organization whose local outputs should be analyzed. Falls back to ORGPULSE_ORG.",
+        ),
+    ] = None,
+    grain: Annotated[
+        PeriodGrain | None,
+        typer.Option(
+            "--grain",
+            help="Snapshot grain to analyze. Falls back to ORGPULSE_PERIOD.",
+        ),
+    ] = None,
+    since: Annotated[
+        str | None,
+        typer.Option(
+            "--since",
+            help="Inclusive ISO date lower bound for authored PR anchors and submitted reviews.",
+        ),
+    ] = None,
+    until: Annotated[
+        str | None,
+        typer.Option(
+            "--until",
+            help="Inclusive ISO date upper bound for authored PR anchors and submitted reviews.",
+        ),
+    ] = None,
+    distribution_percentile: Annotated[
+        int | None,
+        typer.Option(
+            "--distribution-percentile",
+            help="Upper-tail percentile retained for latency metrics. Use 95, 99, or 100.",
+        ),
+    ] = None,
+    time_anchor: Annotated[
+        TimeAnchor | None,
+        typer.Option(
+            "--time-anchor",
+            help="Timestamp used to filter authored pull requests. Falls back to ORGPULSE_TIME_ANCHOR.",
+        ),
+    ] = None,
+    output_dir: Annotated[
+        Path | None,
+        typer.Option(
+            "--output-dir",
+            help="Directory containing local orgpulse outputs. Falls back to ORGPULSE_OUTPUT_DIR.",
+        ),
+    ] = None,
+    export_format: Annotated[
+        PersonExportFormat | None,
+        typer.Option(
+            "--format",
+            help="Person metrics export format written to stdout.",
+        ),
+    ] = None,
+) -> None:
+    """Extract local performance metrics for one GitHub login."""
+
+    try:
+        config = build_person_config(
+            org=org,
+            login=login,
+            output_dir=output_dir,
+            grain=grain,
+            time_anchor=time_anchor,
+            since=since,
+            until=until,
+            distribution_percentile=distribution_percentile,
+            export_format=export_format,
+        )
+    except ValidationError as exc:
+        typer.echo(f"orgpulse: invalid person metrics configuration\n{exc}", err=True)
+        raise typer.Exit(code=2) from exc
+
+    try:
+        result = PersonMetricsService().extract(config)
+    except AnalysisInputError as exc:
+        typer.echo(f"orgpulse: person metrics input failed\n{exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+    typer.echo(render_person_metrics_result(result))
 
 
 @app.command("dashboard")

@@ -449,7 +449,8 @@ def analyze_command(
         PeriodGrain | None,
         typer.Option(
             "--grain",
-            help="Snapshot grain to analyze. Falls back to ORGPULSE_PERIOD.",
+            "--period",
+            help="Snapshot period grain to analyze. Falls back to ORGPULSE_PERIOD.",
         ),
     ] = None,
     grouping: Annotated[
@@ -499,7 +500,8 @@ def analyze_command(
         Path | None,
         typer.Option(
             "--output-dir",
-            help="Directory containing local orgpulse outputs. Falls back to ORGPULSE_OUTPUT_DIR.",
+            "--source-output-dir",
+            help="Directory containing source local orgpulse outputs. Falls back to ORGPULSE_OUTPUT_DIR.",
         ),
     ] = None,
     export_format: Annotated[
@@ -541,12 +543,19 @@ def analyze_command(
 @app.command("person")
 def person_command(
     login: Annotated[
-        str,
+        str | None,
+        typer.Argument(
+            help="GitHub login whose local person metrics should be extracted.",
+            metavar="LOGIN",
+        ),
+    ] = None,
+    login_option: Annotated[
+        str | None,
         typer.Option(
             "--login",
             help="GitHub login whose local person metrics should be extracted.",
         ),
-    ],
+    ] = None,
     org: Annotated[
         str | None,
         typer.Option(
@@ -558,7 +567,8 @@ def person_command(
         PeriodGrain | None,
         typer.Option(
             "--grain",
-            help="Snapshot grain to analyze. Falls back to ORGPULSE_PERIOD.",
+            "--period",
+            help="Snapshot period grain to analyze. Falls back to ORGPULSE_PERIOD.",
         ),
     ] = None,
     since: Annotated[
@@ -586,30 +596,54 @@ def person_command(
         TimeAnchor | None,
         typer.Option(
             "--time-anchor",
-            help="Timestamp used to filter authored pull requests. Falls back to ORGPULSE_TIME_ANCHOR.",
+            "--pr-time-anchor",
+            help="Timestamp used to filter authored pull requests. Reviews use submitted_at. Falls back to ORGPULSE_TIME_ANCHOR.",
         ),
     ] = None,
     output_dir: Annotated[
         Path | None,
         typer.Option(
             "--output-dir",
-            help="Directory containing local orgpulse outputs. Falls back to ORGPULSE_OUTPUT_DIR.",
+            "--source-output-dir",
+            help="Directory containing source local orgpulse outputs. Falls back to ORGPULSE_OUTPUT_DIR.",
+        ),
+    ] = None,
+    output_file: Annotated[
+        Path | None,
+        typer.Option(
+            "--output-file",
+            help="Write the rendered person metrics output to this file instead of stdout.",
+        ),
+    ] = None,
+    include_repos: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--repo",
+            help="Restrict person metrics to a repository already present in local outputs. May be provided multiple times.",
+        ),
+    ] = None,
+    exclude_repos: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--exclude-repo",
+            help="Exclude a repository from person metrics. May be provided multiple times.",
         ),
     ] = None,
     export_format: Annotated[
         PersonExportFormat | None,
         typer.Option(
             "--format",
-            help="Person metrics export format written to stdout.",
+            help="Person metrics export format written to stdout or --output-file.",
         ),
     ] = None,
 ) -> None:
     """Extract local performance metrics for one GitHub login."""
 
     try:
+        resolved_login = _resolve_person_login(login, login_option)
         config = build_person_config(
             org=org,
-            login=login,
+            login=resolved_login,
             output_dir=output_dir,
             grain=grain,
             time_anchor=time_anchor,
@@ -617,8 +651,10 @@ def person_command(
             until=until,
             distribution_percentile=distribution_percentile,
             export_format=export_format,
+            include_repos=include_repos,
+            exclude_repos=exclude_repos,
         )
-    except ValidationError as exc:
+    except (ValidationError, ValueError) as exc:
         typer.echo(f"orgpulse: invalid person metrics configuration\n{exc}", err=True)
         raise typer.Exit(code=2) from exc
 
@@ -628,7 +664,33 @@ def person_command(
         typer.echo(f"orgpulse: person metrics input failed\n{exc}", err=True)
         raise typer.Exit(code=1) from exc
 
-    typer.echo(render_person_metrics_result(result))
+    _write_person_output(render_person_metrics_result(result), output_file)
+
+
+def _resolve_person_login(
+    login_arg: str | None,
+    login_option: str | None,
+) -> str:
+    if login_arg is not None and login_option is not None and login_arg != login_option:
+        raise ValueError(
+            "person login argument and --login must match when both are provided"
+        )
+    login = login_option if login_option is not None else login_arg
+    if login is None:
+        raise ValueError("person login is required as an argument or --login")
+    return login
+
+
+def _write_person_output(
+    rendered_output: str,
+    output_file: Path | None,
+) -> None:
+    if output_file is None:
+        typer.echo(rendered_output)
+        return
+    output_file = output_file.expanduser()
+    output_file.parent.mkdir(parents=True, exist_ok=True)
+    output_file.write_text(rendered_output, encoding="utf-8")
 
 
 @app.command("dashboard")

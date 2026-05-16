@@ -3,6 +3,7 @@ from __future__ import annotations
 import csv
 import json
 from collections import defaultdict
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import date, datetime
 from enum import StrEnum
@@ -19,6 +20,7 @@ from pydantic import (
     StringConstraints,
     ValidationInfo,
     field_validator,
+    model_validator,
 )
 
 from orgpulse.config import get_settings
@@ -29,8 +31,11 @@ from orgpulse.models import (
     PeriodGrain,
     RawSnapshotPeriod,
     ReportingPeriod,
+    RepoSlug,
     RunManifest,
     TimeAnchor,
+    canonicalize_repo_filter,
+    repo_filter_matches,
 )
 from orgpulse.raw_snapshot_source import read_snapshot_csv_rows
 
@@ -61,6 +66,38 @@ class PersonConfig(BaseModel):
     until: date | None = None
     distribution_percentile: int = 100
     export_format: PersonExportFormat = PersonExportFormat.JSON
+    include_repos: tuple[RepoSlug, ...] = ()
+    exclude_repos: tuple[RepoSlug, ...] = ()
+
+    @field_validator("include_repos", "exclude_repos", mode="before")
+    @classmethod
+    def normalize_repo_filters(
+        cls,
+        value: object,
+        info: ValidationInfo,
+    ) -> tuple[str, ...]:
+        if value is None:
+            return ()
+        if isinstance(value, str):
+            items = [value]
+        elif isinstance(value, Iterable):
+            items = list(value)
+        else:
+            items = [value]
+
+        org = info.data.get("org")
+        deduped: list[str] = []
+        seen: set[str] = set()
+        for item in items:
+            cleaned = str(item).strip()
+            if not cleaned:
+                continue
+            canonical = canonicalize_repo_filter(cleaned, org=org)
+            if canonical in seen:
+                continue
+            deduped.append(cleaned)
+            seen.add(canonical)
+        return tuple(deduped)
 
     @field_validator("output_dir", mode="before")
     @classmethod
@@ -88,6 +125,33 @@ class PersonConfig(BaseModel):
         value: int,
     ) -> int:
         return validate_distribution_percentile(value)
+
+    @model_validator(mode="after")
+    def validate_repo_filters(self) -> "PersonConfig":
+        for repo_filter in (*self.include_repos, *self.exclude_repos):
+            if "/" not in repo_filter:
+                continue
+            owner, _name = repo_filter.split("/", 1)
+            if owner.lower() != self.org.lower():
+                raise ValueError(
+                    f"repo filter owner must match target org '{self.org}': {repo_filter}"
+                )
+
+        include_index = {
+            canonicalize_repo_filter(repo_filter, org=self.org)
+            for repo_filter in self.include_repos
+        }
+        overlapping = [
+            repo_filter
+            for repo_filter in self.exclude_repos
+            if canonicalize_repo_filter(repo_filter, org=self.org) in include_index
+        ]
+        if overlapping:
+            overlap = ", ".join(sorted(overlapping))
+            raise ValueError(
+                f"repo filters overlap across include and exclude lists: {overlap}"
+            )
+        return self
 
 
 class PersonSummary(BaseModel):
@@ -244,7 +308,10 @@ class PersonMetricsService:
     ) -> PersonMetricsResult:
         manifest_path, manifest = self._load_manifest(config)
         periods = self._load_snapshot_periods(manifest)
-        pull_requests = self._load_pull_requests(periods)
+        pull_requests = self._filter_pull_requests_by_repository(
+            config,
+            self._load_pull_requests(periods),
+        )
         authored_pull_requests = self._authored_pull_requests(config, pull_requests)
         review_submissions = self._review_submissions(config, pull_requests)
         period_rows = self._period_rows(
@@ -491,6 +558,43 @@ class PersonMetricsService:
                 since=config.since,
                 until=config.until,
             )
+        )
+
+    def _filter_pull_requests_by_repository(
+        self,
+        config: PersonConfig,
+        pull_requests: tuple[PullRequestFact, ...],
+    ) -> tuple[PullRequestFact, ...]:
+        return tuple(
+            pull_request
+            for pull_request in pull_requests
+            if self._repository_in_scope(config, pull_request.repository_full_name)
+        )
+
+    def _repository_in_scope(
+        self,
+        config: PersonConfig,
+        repository_full_name: str,
+    ) -> bool:
+        repository_name = repository_full_name.split("/", maxsplit=1)[-1]
+        if config.include_repos and not any(
+            repo_filter_matches(
+                repo_filter,
+                full_name=repository_full_name,
+                name=repository_name,
+                org=config.org,
+            )
+            for repo_filter in config.include_repos
+        ):
+            return False
+        return not any(
+            repo_filter_matches(
+                repo_filter,
+                full_name=repository_full_name,
+                name=repository_name,
+                org=config.org,
+            )
+            for repo_filter in config.exclude_repos
         )
 
     def _review_submissions(
@@ -1013,6 +1117,8 @@ def build_person_config(
     until: date | str | None = None,
     distribution_percentile: int | None = None,
     export_format: PersonExportFormat | None = None,
+    include_repos: list[str] | None = None,
+    exclude_repos: list[str] | None = None,
 ) -> PersonConfig:
     """Build person metric settings from CLI inputs and application defaults."""
 
@@ -1033,6 +1139,10 @@ def build_person_config(
         payload["until"] = until
     if distribution_percentile is not None:
         payload["distribution_percentile"] = distribution_percentile
+    if include_repos is not None:
+        payload["include_repos"] = include_repos
+    if exclude_repos is not None:
+        payload["exclude_repos"] = exclude_repos
     return PersonConfig.model_validate(payload)
 
 

@@ -255,6 +255,121 @@ class TestPersonCommand:
             }
         ]
 
+    def test_supports_positional_login_aliases_output_file_and_repo_filters(
+        self,
+        runner: CliRunner,
+        github_auth_service: None,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path,
+        pull_request_factory,
+        review_factory,
+    ) -> None:
+        """Extract person metrics with positional login, aliases, output file, and repo filters."""
+        # Given
+        output_file = tmp_path / "reports" / "alice.json"
+        collection = PullRequestCollection(
+            window=CollectionWindow(
+                scope=RunScope.FULL_HISTORY,
+                start_date=None,
+                end_date=datetime.fromisoformat("2026-04-30T00:00:00").date(),
+            ),
+            pull_requests=(
+                pull_request_factory(
+                    repository_full_name="acme/api",
+                    number=61,
+                    title="Alice API work",
+                    author_login="alice",
+                    created_at=datetime.fromisoformat("2026-04-02T09:00:00"),
+                    updated_at=datetime.fromisoformat("2026-04-03T10:00:00"),
+                    additions=12,
+                    deletions=3,
+                    reviews=(
+                        review_factory(
+                            review_id=601,
+                            author_login="alice",
+                            submitted_at=datetime.fromisoformat("2026-04-04T09:00:00"),
+                        ),
+                    ),
+                ),
+                pull_request_factory(
+                    repository_full_name="acme/web",
+                    number=62,
+                    title="Alice web work",
+                    author_login="alice",
+                    created_at=datetime.fromisoformat("2026-04-05T09:00:00"),
+                    updated_at=datetime.fromisoformat("2026-04-06T10:00:00"),
+                    additions=100,
+                    deletions=20,
+                ),
+            ),
+            failures=(),
+        )
+        _configure_production_cli_runtime(
+            monkeypatch,
+            collection=collection,
+        )
+        run_result = runner.invoke(
+            app,
+            [
+                "run",
+                "--org",
+                "acme",
+                "--mode",
+                "full",
+                "--as-of",
+                "2026-04-30",
+                "--output-dir",
+                str(tmp_path),
+            ],
+        )
+        assert run_result.exit_code == 0
+
+        # When
+        result = runner.invoke(
+            app,
+            [
+                "person",
+                "alice",
+                "--org",
+                "acme",
+                "--period",
+                "month",
+                "--pr-time-anchor",
+                "created_at",
+                "--source-output-dir",
+                str(tmp_path),
+                "--repo",
+                "api",
+                "--exclude-repo",
+                "web",
+                "--output-file",
+                str(output_file),
+                "--format",
+                "json",
+            ],
+        )
+
+        # Then
+        assert result.exit_code == 0
+        assert result.stdout == ""
+        payload = json.loads(output_file.read_text(encoding="utf-8"))
+        assert payload["summary"]["authored_pull_request_count"] == 1
+        assert payload["summary"]["changed_lines_total"] == 15
+        assert payload["reviewer_summary"]["review_submissions"] == 1
+        assert payload["repository_rows"] == [
+            {
+                "authored_pull_request_count": 1,
+                "changed_lines_total": 15,
+                "commits_total": 1,
+                "merged_pull_request_count": 0,
+                "open_pull_request_count": 1,
+                "pull_requests_reviewed": 1,
+                "repository_full_name": "acme/api",
+                "review_submissions_given": 1,
+                "reviews_received": 1,
+            }
+        ]
+
     def test_writes_person_metrics_as_markdown_and_html(
         self,
         runner: CliRunner,

@@ -539,6 +539,7 @@ class TestPersonCommand:
         assert '<script id="person-report-data" type="application/json">' in html_result.stdout
         assert 'data-label="Period">2026-04</td>' in html_result.stdout
         assert 'data-label="Authored PRs">1</td>' in html_result.stdout
+        assert str(tmp_path) not in html_result.stdout
 
     def test_writes_person_html_with_progressive_tables(
         self,

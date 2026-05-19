@@ -76,22 +76,6 @@
       gap: 16px;
     }
 
-    .person-report .source-coverage-note {
-      margin: 0 0 14px;
-      border: 1px solid var(--accent-3);
-      border-radius: var(--radius-control);
-      padding: 12px 14px;
-      background: color-mix(in srgb, var(--accent-3) 12%, transparent);
-      color: var(--text);
-      line-height: 1.5;
-    }
-
-    .person-report .source-coverage-note strong {
-      display: block;
-      margin-bottom: 2px;
-      font-family: var(--font-display);
-    }
-
     @media (max-width: 1180px) {
       .person-report .stats-grid,
       .person-report .repository-focus-grid,
@@ -220,19 +204,13 @@
         <div class="table-heading">
           <div>
             <p class="section-kicker">Period Tracking</p>
-            <h2>{{ period_total_count | intfmt }} periods in the local source</h2>
+            <h2>{{ period_total_count | intfmt }} periods</h2>
             <p class="section-copy">Each row combines authored pull request flow with review-given activity for the same reporting period.</p>
           </div>
           <span class="period-state-pill{% if result.until is none %} open{% endif %}">
             {% if result.until is none %}source bounded{% else %}filtered window{% endif %}
           </span>
         </div>
-        {% if missing_period_count %}
-        <div class="source-coverage-note">
-          <strong>{{ missing_period_count | intfmt }} requested periods are not in the local source</strong>
-          <span>The report renders the local periods that exist. Missing periods: {{ missing_period_keys[:8] | join(", ") }}{% if missing_period_count > 8 %}, and {{ missing_period_count - 8 }} more{% endif %}.</span>
-        </div>
-        {% endif %}
         <div class="table-wrap">
           <table>
             <thead>
@@ -374,14 +352,14 @@
           </article>
           <article class="support-card">
             <strong>Source</strong>
-            <span>Rendered from {{ result.output_dir }} using local normalized orgpulse snapshots.</span>
+            <span>Uses normalized orgpulse snapshots already present for the selected organization, grain, and anchor.</span>
           </article>
         </div>
       </section>
     </div>
   </div>
 
-  <script id="person-report-data" type="application/json">{{ result.model_dump(mode="json") | json_script }}</script>
+  <script id="person-report-data" type="application/json">{{ report_payload | json_script }}</script>
   <script>
     (function () {
       const storageKey = "orgpulse-manual-dashboard-theme";

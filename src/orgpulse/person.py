@@ -1285,8 +1285,8 @@ def _render_html(
         result.repository_rows,
         top_count=10,
     )
-    missing_period_keys = _missing_period_keys(result)
     window_label = _window_label(result)
+    report_payload = _html_report_payload(result)
     template = _template_environment().get_template("person_report.html.j2")
     return template.render(
         result=result,
@@ -1299,8 +1299,7 @@ def _render_html(
         top_repository_rows=top_repository_rows,
         period_total_count=len(result.period_rows),
         repository_total_count=len(result.repository_rows),
-        missing_period_keys=missing_period_keys,
-        missing_period_count=len(missing_period_keys),
+        report_payload=report_payload,
         window_label=window_label,
     )
 
@@ -1346,44 +1345,21 @@ def _top_repository_rows(
     return _ranked_repository_rows(rows)[:6]
 
 
-def _missing_period_keys(
-    result: PersonMetricsResult,
-) -> tuple[str, ...]:
-    if result.since is None or result.until is None:
-        return ()
-    actual_keys = {row.period_key for row in result.period_rows}
-    return tuple(
-        period_key
-        for period_key in _expected_period_keys(
-            grain=result.grain,
-            since=result.since,
-            until=result.until,
-        )
-        if period_key not in actual_keys
-    )
-
-
-def _expected_period_keys(
-    *,
-    grain: PeriodGrain,
-    since: date,
-    until: date,
-) -> tuple[str, ...]:
-    keys: list[str] = []
-    cursor = grain.start_for(since)
-    while cursor <= until:
-        keys.append(grain.key_for(cursor))
-        end_date = grain.end_for(cursor)
-        cursor = end_date.fromordinal(end_date.toordinal() + 1)
-    return tuple(keys)
-
-
 def _window_label(
     result: PersonMetricsResult,
 ) -> str:
     since = result.since.isoformat() if result.since is not None else "all"
     until = result.until.isoformat() if result.until is not None else "all"
     return f"{since} to {until}"
+
+
+def _html_report_payload(
+    result: PersonMetricsResult,
+) -> dict[str, Any]:
+    payload = result.model_dump(mode="json")
+    payload.pop("source_manifest_path", None)
+    payload.pop("output_dir", None)
+    return payload
 
 
 def _template_environment() -> Environment:

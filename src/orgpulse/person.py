@@ -637,7 +637,6 @@ class PersonMetricsService:
         authored_pull_requests: tuple[PullRequestFact, ...],
         review_submissions: tuple[ReviewFact, ...],
     ) -> tuple[PersonPeriodRow, ...]:
-        period_catalog = self._period_catalog(config, periods)
         authored_by_period: dict[str, list[PullRequestFact]] = defaultdict(list)
         for pull_request in authored_pull_requests:
             authored_by_period[
@@ -651,6 +650,14 @@ class PersonMetricsService:
                 reviews_by_period[config.grain.key_for(review.submitted_at.date())].append(
                     review
                 )
+        period_catalog = self._period_catalog(
+            config,
+            periods,
+            activity_period_keys=(
+                *authored_by_period.keys(),
+                *reviews_by_period.keys(),
+            ),
+        )
         return tuple(
             self._period_row(
                 period=period,
@@ -664,47 +671,50 @@ class PersonMetricsService:
         self,
         config: PersonConfig,
         periods: tuple[RawSnapshotPeriod, ...],
+        *,
+        activity_period_keys: tuple[str, ...],
     ) -> tuple[RawSnapshotPeriod, ...]:
-        if config.since is not None and config.until is not None:
-            return self._period_catalog_for_window(config)
-        return tuple(
-            period
+        period_index = {
+            period.key: period
             for period in periods
             if self._period_overlaps_window(
                 period,
                 since=config.since,
                 until=config.until,
             )
+        }
+        for period_key in activity_period_keys:
+            period_index.setdefault(
+                period_key,
+                self._synthetic_activity_period(config.grain, period_key),
+            )
+        return tuple(
+            period_index[key]
+            for key in sorted(
+                period_index,
+                key=lambda key: (period_index[key].start_date, key),
+            )
         )
 
-    def _period_catalog_for_window(
+    def _synthetic_activity_period(
         self,
-        config: PersonConfig,
-    ) -> tuple[RawSnapshotPeriod, ...]:
-        assert config.since is not None
-        assert config.until is not None
-        periods: list[RawSnapshotPeriod] = []
-        cursor = config.grain.start_for(config.since)
-        while cursor <= config.until:
-            end_date = config.grain.end_for(cursor)
-            key = config.grain.key_for(cursor)
-            periods.append(
-                RawSnapshotPeriod(
-                    key=key,
-                    start_date=cursor,
-                    end_date=end_date,
-                    closed=True,
-                    directory=Path(),
-                    pull_requests_path=Path(),
-                    pull_request_count=0,
-                    reviews_path=Path(),
-                    review_count=0,
-                    timeline_events_path=Path(),
-                    timeline_event_count=0,
-                )
-            )
-            cursor = end_date.fromordinal(end_date.toordinal() + 1)
-        return tuple(periods)
+        grain: PeriodGrain,
+        period_key: str,
+    ) -> RawSnapshotPeriod:
+        start_date = grain.start_for_key(period_key)
+        return RawSnapshotPeriod(
+            key=period_key,
+            start_date=start_date,
+            end_date=grain.end_for(start_date),
+            closed=True,
+            directory=Path(),
+            pull_requests_path=Path(),
+            pull_request_count=0,
+            reviews_path=Path(),
+            review_count=0,
+            timeline_events_path=Path(),
+            timeline_event_count=0,
+        )
 
     def _period_row(
         self,
@@ -1267,22 +1277,54 @@ def _render_html(
     result: PersonMetricsResult,
 ) -> str:
     top_repository_rows = _top_repository_rows(result.repository_rows)
+    period_recent_rows, period_older_rows = _split_recent_rows(
+        result.period_rows,
+        recent_count=6,
+    )
+    repository_top_rows, repository_rest_rows = _split_ranked_repository_rows(
+        result.repository_rows,
+        top_count=10,
+    )
+    missing_period_keys = _missing_period_keys(result)
     window_label = _window_label(result)
     template = _template_environment().get_template("person_report.html.j2")
     return template.render(
         result=result,
         summary=result.summary,
         reviewer_summary=result.reviewer_summary,
-        period_rows=result.period_rows,
-        repository_rows=result.repository_rows,
+        period_recent_rows=period_recent_rows,
+        period_older_rows=period_older_rows,
+        repository_top_rows=repository_top_rows,
+        repository_rest_rows=repository_rest_rows,
         top_repository_rows=top_repository_rows,
         period_total_count=len(result.period_rows),
         repository_total_count=len(result.repository_rows),
+        missing_period_keys=missing_period_keys,
+        missing_period_count=len(missing_period_keys),
         window_label=window_label,
     )
 
 
-def _top_repository_rows(
+def _split_recent_rows(
+    rows: tuple[PersonPeriodRow, ...],
+    *,
+    recent_count: int,
+) -> tuple[tuple[PersonPeriodRow, ...], tuple[PersonPeriodRow, ...]]:
+    if len(rows) <= recent_count:
+        return tuple(reversed(rows)), ()
+    return tuple(reversed(rows[-recent_count:])), tuple(reversed(rows[:-recent_count]))
+
+
+def _split_ranked_repository_rows(
+    rows: tuple[PersonRepositoryRow, ...],
+    *,
+    top_count: int,
+) -> tuple[tuple[PersonRepositoryRow, ...], tuple[PersonRepositoryRow, ...]]:
+    ranked_rows = _ranked_repository_rows(rows)
+    return ranked_rows[:top_count], ranked_rows[top_count:]
+
+
+def _ranked_repository_rows(
     rows: tuple[PersonRepositoryRow, ...],
 ) -> tuple[PersonRepositoryRow, ...]:
     return tuple(
@@ -1294,8 +1336,46 @@ def _top_repository_rows(
                 -row.changed_lines_total,
                 row.repository_full_name,
             ),
-        )[:6]
+        )
     )
+
+
+def _top_repository_rows(
+    rows: tuple[PersonRepositoryRow, ...],
+) -> tuple[PersonRepositoryRow, ...]:
+    return _ranked_repository_rows(rows)[:6]
+
+
+def _missing_period_keys(
+    result: PersonMetricsResult,
+) -> tuple[str, ...]:
+    if result.since is None or result.until is None:
+        return ()
+    actual_keys = {row.period_key for row in result.period_rows}
+    return tuple(
+        period_key
+        for period_key in _expected_period_keys(
+            grain=result.grain,
+            since=result.since,
+            until=result.until,
+        )
+        if period_key not in actual_keys
+    )
+
+
+def _expected_period_keys(
+    *,
+    grain: PeriodGrain,
+    since: date,
+    until: date,
+) -> tuple[str, ...]:
+    keys: list[str] = []
+    cursor = grain.start_for(since)
+    while cursor <= until:
+        keys.append(grain.key_for(cursor))
+        end_date = grain.end_for(cursor)
+        cursor = end_date.fromordinal(end_date.toordinal() + 1)
+    return tuple(keys)
 
 
 def _window_label(

@@ -76,6 +76,22 @@
       gap: 16px;
     }
 
+    .person-report .source-coverage-note {
+      margin: 0 0 14px;
+      border: 1px solid var(--accent-3);
+      border-radius: var(--radius-control);
+      padding: 12px 14px;
+      background: color-mix(in srgb, var(--accent-3) 12%, transparent);
+      color: var(--text);
+      line-height: 1.5;
+    }
+
+    .person-report .source-coverage-note strong {
+      display: block;
+      margin-bottom: 2px;
+      font-family: var(--font-display);
+    }
+
     @media (max-width: 1180px) {
       .person-report .stats-grid,
       .person-report .repository-focus-grid,
@@ -211,6 +227,12 @@
             {% if result.until is none %}source bounded{% else %}filtered window{% endif %}
           </span>
         </div>
+        {% if missing_period_count %}
+        <div class="source-coverage-note">
+          <strong>{{ missing_period_count | intfmt }} requested periods are not in the local source</strong>
+          <span>The report renders the local periods that exist. Missing periods: {{ missing_period_keys[:8] | join(", ") }}{% if missing_period_count > 8 %}, and {{ missing_period_count - 8 }} more{% endif %}.</span>
+        </div>
+        {% endif %}
         <div class="table-wrap">
           <table>
             <thead>
@@ -227,7 +249,7 @@
               </tr>
             </thead>
             <tbody>
-              {% for row in period_rows %}
+              {% for row in period_recent_rows %}
               <tr>
                 <td data-label="Period">{{ row.period_key }}</td>
                 <td class="num" data-label="Authored PRs">{{ row.authored_pull_request_count | intfmt }}</td>
@@ -241,8 +263,32 @@
               </tr>
               {% endfor %}
             </tbody>
+            {% if period_older_rows %}
+            <tbody id="period-extra" class="hidden">
+              {% for row in period_older_rows %}
+              <tr>
+                <td data-label="Period">{{ row.period_key }}</td>
+                <td class="num" data-label="Authored PRs">{{ row.authored_pull_request_count | intfmt }}</td>
+                <td class="num" data-label="Merged">{{ row.merged_pull_request_count | intfmt }}</td>
+                <td class="num" data-label="Open">{{ row.open_pull_request_count | intfmt }}</td>
+                <td class="num" data-label="Changed Lines">{{ row.changed_lines_total | intfmt }}</td>
+                <td class="num" data-label="Commits">{{ row.commits_total | intfmt }}</td>
+                <td class="num" data-label="Reviews Received">{{ row.reviews_received | intfmt }}</td>
+                <td class="num" data-label="Reviews Given">{{ row.review_submissions_given | intfmt }}</td>
+                <td class="num" data-label="PRs Reviewed">{{ row.pull_requests_reviewed | intfmt }}</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+            {% endif %}
           </table>
         </div>
+        {% if period_older_rows %}
+        <div class="table-footer">
+          <button type="button" id="period-toggle" class="ghost-button" aria-expanded="false">
+            Show {{ period_older_rows|length }} more older {{ result.grain.value }} rows
+          </button>
+        </div>
+        {% endif %}
       </section>
 
       <section id="repositories" class="panel section-panel">
@@ -276,7 +322,7 @@
               </tr>
             </thead>
             <tbody>
-              {% for row in repository_rows %}
+              {% for row in repository_top_rows %}
               <tr>
                 <td data-label="Repository">{{ row.repository_full_name }}</td>
                 <td class="num" data-label="Authored PRs">{{ row.authored_pull_request_count | intfmt }}</td>
@@ -288,8 +334,30 @@
               </tr>
               {% endfor %}
             </tbody>
+            {% if repository_rest_rows %}
+            <tbody id="repository-extra" class="hidden">
+              {% for row in repository_rest_rows %}
+              <tr>
+                <td data-label="Repository">{{ row.repository_full_name }}</td>
+                <td class="num" data-label="Authored PRs">{{ row.authored_pull_request_count | intfmt }}</td>
+                <td class="num" data-label="Merged">{{ row.merged_pull_request_count | intfmt }}</td>
+                <td class="num" data-label="Open">{{ row.open_pull_request_count | intfmt }}</td>
+                <td class="num" data-label="Changed Lines">{{ row.changed_lines_total | intfmt }}</td>
+                <td class="num" data-label="Reviews Given">{{ row.review_submissions_given | intfmt }}</td>
+                <td class="num" data-label="PRs Reviewed">{{ row.pull_requests_reviewed | intfmt }}</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+            {% endif %}
           </table>
         </div>
+        {% if repository_rest_rows %}
+        <div class="table-footer">
+          <button type="button" id="repository-toggle" class="ghost-button" aria-expanded="false">
+            Show {{ repository_rest_rows|length }} more repositories
+          </button>
+        </div>
+        {% endif %}
       </section>
 
       <section id="methodology" class="panel section-panel reference-panel">
@@ -320,6 +388,10 @@
       const root = document.documentElement;
       const switcher = document.querySelector(".theme-switch");
       const buttons = Array.from(document.querySelectorAll(".theme-switch-button"));
+      const periodToggle = document.getElementById("period-toggle");
+      const periodExtra = document.getElementById("period-extra");
+      const repositoryToggle = document.getElementById("repository-toggle");
+      const repositoryExtra = document.getElementById("repository-extra");
 
       function activeTheme() {
         return root.dataset.theme || "dark";
@@ -352,6 +424,51 @@
       });
 
       syncThemeButtons();
+      setupProgressiveToggle({
+        button: periodToggle,
+        container: periodExtra,
+        items: periodExtra ? Array.from(periodExtra.querySelectorAll("tr")) : [],
+        chunkSize: 6,
+        label: "older {{ result.grain.value }} rows",
+      });
+      setupProgressiveToggle({
+        button: repositoryToggle,
+        container: repositoryExtra,
+        items: repositoryExtra ? Array.from(repositoryExtra.querySelectorAll("tr")) : [],
+        chunkSize: 10,
+        label: "repositories",
+      });
+
+      function setupProgressiveToggle({ button, container, items, chunkSize, label }) {
+        if (!button || !container || !items.length) {
+          return;
+        }
+        let visibleCount = 0;
+        sync();
+        button.addEventListener("click", () => {
+          if (visibleCount >= items.length) {
+            visibleCount = 0;
+          } else {
+            visibleCount = Math.min(items.length, visibleCount + chunkSize);
+          }
+          sync();
+        });
+
+        function sync() {
+          container.classList.toggle("hidden", visibleCount === 0);
+          items.forEach((item, index) => {
+            item.classList.toggle("hidden", index >= visibleCount);
+          });
+          const remaining = Math.max(0, items.length - visibleCount);
+          if (remaining === 0) {
+            button.textContent = `Collapse ${label}`;
+            button.setAttribute("aria-expanded", "true");
+            return;
+          }
+          button.textContent = `Show ${Math.min(chunkSize, remaining)} more ${label}`;
+          button.setAttribute("aria-expanded", String(visibleCount > 0));
+        }
+      }
     }());
   </script>
 </body>

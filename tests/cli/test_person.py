@@ -255,6 +255,81 @@ class TestPersonCommand:
             }
         ]
 
+    def test_renders_only_existing_local_periods_for_requested_window(
+        self,
+        runner: CliRunner,
+        github_auth_service: None,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path,
+        pull_request_factory,
+    ) -> None:
+        """Render only periods present in local snapshots when the requested window is wider."""
+        # Given
+        collection = PullRequestCollection(
+            window=CollectionWindow(
+                scope=RunScope.FULL_HISTORY,
+                start_date=None,
+                end_date=datetime.fromisoformat("2026-04-30T00:00:00").date(),
+            ),
+            pull_requests=(
+                pull_request_factory(
+                    repository_full_name="acme/api",
+                    number=71,
+                    title="Alice April work",
+                    author_login="alice",
+                    created_at=datetime.fromisoformat("2026-04-02T09:00:00"),
+                    updated_at=datetime.fromisoformat("2026-04-03T10:00:00"),
+                ),
+            ),
+            failures=(),
+        )
+        _configure_production_cli_runtime(
+            monkeypatch,
+            collection=collection,
+        )
+        run_result = runner.invoke(
+            app,
+            [
+                "run",
+                "--org",
+                "acme",
+                "--mode",
+                "full",
+                "--as-of",
+                "2026-04-30",
+                "--output-dir",
+                str(tmp_path),
+            ],
+        )
+        assert run_result.exit_code == 0
+
+        # When
+        result = runner.invoke(
+            app,
+            [
+                "person",
+                "--org",
+                "acme",
+                "--login",
+                "alice",
+                "--grain",
+                "month",
+                "--since",
+                "2026-02-01",
+                "--until",
+                "2026-04-30",
+                "--output-dir",
+                str(tmp_path),
+                "--format",
+                "json",
+            ],
+        )
+
+        # Then
+        assert result.exit_code == 0
+        payload = json.loads(result.stdout)
+        assert [row["period_key"] for row in payload["period_rows"]] == ["2026-04"]
+
     def test_supports_positional_login_aliases_output_file_and_repo_filters(
         self,
         runner: CliRunner,
@@ -464,6 +539,92 @@ class TestPersonCommand:
         assert '<script id="person-report-data" type="application/json">' in html_result.stdout
         assert 'data-label="Period">2026-04</td>' in html_result.stdout
         assert 'data-label="Authored PRs">1</td>' in html_result.stdout
+
+    def test_writes_person_html_with_progressive_tables(
+        self,
+        runner: CliRunner,
+        github_auth_service: None,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path,
+        pull_request_factory,
+    ) -> None:
+        """Render person HTML with collapsed extra periods and repositories."""
+        # Given
+        pull_requests = tuple(
+            pull_request_factory(
+                repository_full_name=f"acme/service-{index:02d}",
+                number=100 + index,
+                title=f"Alice work {index}",
+                author_login="alice",
+                created_at=datetime.fromisoformat(
+                    f"2026-{(index % 8) + 1:02d}-02T09:00:00"
+                ),
+                updated_at=datetime.fromisoformat(
+                    f"2026-{(index % 8) + 1:02d}-03T10:00:00"
+                ),
+                additions=10 + index,
+                deletions=index,
+            )
+            for index in range(12)
+        )
+        collection = PullRequestCollection(
+            window=CollectionWindow(
+                scope=RunScope.FULL_HISTORY,
+                start_date=None,
+                end_date=datetime.fromisoformat("2026-08-31T00:00:00").date(),
+            ),
+            pull_requests=pull_requests,
+            failures=(),
+        )
+        _configure_production_cli_runtime(
+            monkeypatch,
+            collection=collection,
+        )
+        run_result = runner.invoke(
+            app,
+            [
+                "run",
+                "--org",
+                "acme",
+                "--mode",
+                "full",
+                "--as-of",
+                "2026-08-31",
+                "--output-dir",
+                str(tmp_path),
+            ],
+        )
+        assert run_result.exit_code == 0
+
+        # When
+        result = runner.invoke(
+            app,
+            [
+                "person",
+                "--org",
+                "acme",
+                "--login",
+                "alice",
+                "--grain",
+                "month",
+                "--since",
+                "2026-01-01",
+                "--until",
+                "2026-08-31",
+                "--output-dir",
+                str(tmp_path),
+                "--format",
+                "html",
+            ],
+        )
+
+        # Then
+        assert result.exit_code == 0
+        assert 'id="period-extra" class="hidden"' in result.stdout
+        assert "Show 2 more older month rows" in result.stdout
+        assert 'id="repository-extra" class="hidden"' in result.stdout
+        assert "Show 2 more repositories" in result.stdout
+        assert "setupProgressiveToggle" in result.stdout
 
     def test_writes_zero_result_for_unknown_login(
         self,

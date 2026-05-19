@@ -8,6 +8,8 @@ from typing import Annotated
 import typer
 from github import Auth, Github
 from pydantic import ValidationError
+from rich.console import Console
+from rich.progress import BarColumn, Progress, SpinnerColumn, TaskID, TextColumn
 
 from orgpulse.analysis import (
     AnalysisExportFormat,
@@ -178,11 +180,15 @@ def run_command(
         ).validate_access(config)
         ingestion_service = GitHubIngestionService(github_client)
         inventory = ingestion_service.load_repository_inventory(config)
-        collection = ingestion_service.fetch_pull_requests(
-            config,
-            inventory,
-            progress_callback=_echo_pull_request_fetch_progress,
-        )
+        progress_reporter = _PullRequestProgressReporter()
+        try:
+            collection = ingestion_service.fetch_pull_requests(
+                config,
+                inventory,
+                progress_callback=progress_reporter,
+            )
+        finally:
+            progress_reporter.stop()
         (
             raw_snapshot,
             raw_snapshot_skipped_reason,
@@ -696,6 +702,102 @@ def _write_person_output(
     output_file = output_file.expanduser()
     output_file.parent.mkdir(parents=True, exist_ok=True)
     output_file.write_text(rendered_output, encoding="utf-8")
+
+
+class _PullRequestProgressReporter:
+    """Render pull request fetch progress for interactive and captured CLI output."""
+
+    def __init__(self) -> None:
+        self._console = Console(stderr=True)
+        self._progress: Progress | None = None
+        self._task_id: TaskID | None = None
+
+    def __call__(
+        self,
+        progress: PullRequestFetchProgress,
+    ) -> None:
+        if not self._console.is_terminal:
+            _echo_pull_request_fetch_progress(progress)
+            return
+        self._render_live_progress(progress)
+
+    def _render_live_progress(
+        self,
+        progress: PullRequestFetchProgress,
+    ) -> None:
+        if self._progress is None:
+            self._progress = Progress(
+                SpinnerColumn(),
+                TextColumn("[bold]orgpulse[/] pull request download"),
+                BarColumn(),
+                TextColumn("{task.percentage:>5.1f}%"),
+                TextColumn("{task.fields[message]}"),
+                console=self._console,
+                transient=False,
+            )
+            self._progress.start()
+        if self._task_id is None:
+            self._task_id = self._progress.add_task(
+                "pull request download",
+                total=max(progress.total_repositories, 1),
+                completed=self._completed_units(progress),
+                message=self._progress_message(progress),
+            )
+        else:
+            self._progress.update(
+                self._task_id,
+                total=max(progress.total_repositories, 1),
+                completed=self._completed_units(progress),
+                message=self._progress_message(progress),
+            )
+        if progress.phase == "finish":
+            self.stop()
+
+    def _completed_units(
+        self,
+        progress: PullRequestFetchProgress,
+    ) -> int:
+        if progress.total_repositories == 0:
+            return 1
+        return progress.completed_repositories
+
+    def _progress_message(
+        self,
+        progress: PullRequestFetchProgress,
+    ) -> str:
+        repository_progress = (
+            f"{progress.completed_repositories}/{progress.total_repositories}"
+        )
+        if progress.phase == "start":
+            return f"{repository_progress} repositories complete"
+        if progress.phase == "repository_started":
+            return (
+                f"{repository_progress} fetching "
+                f"{progress.repository_full_name or 'repository'}"
+            )
+        if progress.phase == "repository_completed":
+            return (
+                f"{repository_progress} done "
+                f"{progress.repository_full_name or 'repository'} "
+                f"+{progress.fetched_pull_request_count} PRs "
+                f"({progress.repository_pull_request_count} total)"
+            )
+        if progress.phase == "repository_failed":
+            return (
+                f"{repository_progress} failed "
+                f"{progress.repository_full_name or 'repository'}; "
+                f"{progress.failure_count} failures"
+            )
+        if progress.phase == "finish":
+            return f"{repository_progress} complete; {progress.failure_count} failures"
+        return repository_progress
+
+    def stop(self) -> None:
+        if self._progress is None:
+            return
+        self._progress.stop()
+        self._progress = None
+        self._task_id = None
 
 
 def _echo_pull_request_fetch_progress(

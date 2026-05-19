@@ -458,7 +458,12 @@ class TestPersonCommand:
         assert "| 2026-04 | 1 | 0 | 1 | 10 | 1 | 0 | 0 | 0 |" in markdown_result.stdout
         assert html_result.exit_code == 0
         assert "<title>orgpulse person metrics: alice</title>" in html_result.stdout
-        assert "<td>2026-04</td><td>1</td><td>0</td><td>1</td>" in html_result.stdout
+        assert '<div class="shell person-report">' in html_result.stdout
+        assert 'data-theme-option="dark"' in html_result.stdout
+        assert 'class="table-wrap"' in html_result.stdout
+        assert '<script id="person-report-data" type="application/json">' in html_result.stdout
+        assert 'data-label="Period">2026-04</td>' in html_result.stdout
+        assert 'data-label="Authored PRs">1</td>' in html_result.stdout
 
     def test_writes_zero_result_for_unknown_login(
         self,

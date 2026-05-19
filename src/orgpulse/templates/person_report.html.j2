@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>orgpulse person metrics: {{ result.login }}</title>
+  {% include "org_dashboard/_theme_bootstrap.js.j2" %}
+  {% include "org_dashboard/_styles.css.j2" %}
+  <style>
+    .person-report .hero-panel {
+      margin-bottom: 16px;
+    }
+
+    .person-report .summary-strip {
+      grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+    }
+
+    .person-report .section-panel {
+      margin-bottom: 16px;
+    }
+
+    .person-report .stats-grid {
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+
+    .person-report .repository-focus-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .person-report .repository-focus-card {
+      display: grid;
+      gap: 10px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius-control);
+      padding: 14px 16px;
+      background: var(--panel-subtle);
+    }
+
+    .person-report .repository-focus-card strong {
+      font-family: var(--font-display);
+      overflow-wrap: anywhere;
+    }
+
+    .person-report .repository-focus-card span {
+      color: var(--muted);
+      font-size: 0.86rem;
+      line-height: 1.45;
+    }
+
+    .person-report .table-heading {
+      display: flex;
+      justify-content: space-between;
+      gap: 14px;
+      align-items: start;
+      margin-bottom: 12px;
+    }
+
+    .person-report .table-heading > div {
+      min-width: 0;
+    }
+
+    .person-report .table-heading .period-state-pill {
+      flex-shrink: 0;
+    }
+
+    .person-report td:first-child {
+      font-weight: 700;
+      color: var(--text);
+    }
+
+    .person-report .metric-split {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 16px;
+    }
+
+    @media (max-width: 1180px) {
+      .person-report .stats-grid,
+      .person-report .repository-focus-grid,
+      .person-report .metric-split {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    @media (max-width: 720px) {
+      .person-report .table-heading {
+        display: grid;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell person-report">
+    <section class="hero">
+      <div class="panel hero-panel">
+        <div class="hero-head">
+          <div class="hero-copy">
+            <p class="eyebrow">Person Performance Extract</p>
+            <h1>{{ result.login }} performance</h1>
+            <p class="subtitle">
+              Authored pull request metrics use {{ result.time_anchor.value }}.
+              Review-given activity is counted by review submission time.
+            </p>
+          </div>
+          <div class="theme-switch" role="group" aria-label="Color theme">
+            <span class="theme-switch-indicator" aria-hidden="true"></span>
+            <button type="button" class="theme-switch-button" data-theme-option="dark" aria-label="Dark theme" aria-pressed="false" title="Dark theme">
+              <svg class="theme-switch-icon" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 1 0 9.8 9.8Z"></path>
+              </svg>
+            </button>
+            <button type="button" class="theme-switch-button" data-theme-option="light" aria-label="Light theme" aria-pressed="false" title="Light theme">
+              <svg class="theme-switch-icon" viewBox="0 0 24 24" aria-hidden="true">
+                <circle cx="12" cy="12" r="4.1"></circle>
+                <path d="M12 2.75v2.35"></path>
+                <path d="M12 18.9v2.35"></path>
+                <path d="M21.25 12h-2.35"></path>
+                <path d="M5.1 12H2.75"></path>
+                <path d="m18.55 5.45-1.66 1.66"></path>
+                <path d="m7.11 16.89-1.66 1.66"></path>
+                <path d="m18.55 18.55-1.66-1.66"></path>
+                <path d="m7.11 7.11-1.66-1.66"></path>
+              </svg>
+            </button>
+          </div>
+        </div>
+        <div class="hero-meta">
+          <div class="meta-box">
+            <span class="meta-label">Organization</span>
+            <span class="meta-value">{{ result.target_org }}</span>
+          </div>
+          <div class="meta-box">
+            <span class="meta-label">Window</span>
+            <span class="meta-value">{{ window_label }}</span>
+          </div>
+          <div class="meta-box">
+            <span class="meta-label">Grain</span>
+            <span class="meta-value">{{ result.grain.value }}</span>
+          </div>
+          <div class="meta-box">
+            <span class="meta-label">Distribution cutoff</span>
+            <span class="meta-value">{{ result.distribution_percentile }}th percentile</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="stats-grid" aria-label="Person summary metrics">
+      <article class="stat-card">
+        <span class="stat-label">Authored PRs</span>
+        <div class="stat-value">{{ summary.authored_pull_request_count | intfmt }}</div>
+        <div class="stat-subvalue">{{ summary.merged_pull_request_count | intfmt }} merged / {{ summary.open_pull_request_count | intfmt }} open</div>
+      </article>
+      <article class="stat-card">
+        <span class="stat-label">Merge rate</span>
+        <div class="stat-value">{{ summary.merge_rate_pct | pctfmt }}</div>
+        <div class="stat-subvalue">{{ summary.median_merge_hours | duration }} median merge time</div>
+      </article>
+      <article class="stat-card">
+        <span class="stat-label">Review coverage</span>
+        <div class="stat-value">{{ summary.review_coverage_pct | pctfmt }}</div>
+        <div class="stat-subvalue">{{ summary.reviews_received | intfmt }} review submissions received</div>
+      </article>
+      <article class="stat-card">
+        <span class="stat-label">Reviewer activity</span>
+        <div class="stat-value">{{ reviewer_summary.review_submissions | intfmt }}</div>
+        <div class="stat-subvalue">{{ reviewer_summary.pull_requests_reviewed | intfmt }} PRs reviewed</div>
+      </article>
+    </section>
+
+    <section class="summary-strip" aria-label="Additional person metrics">
+      <article class="summary-card panel">
+        <span class="summary-label">Changed lines</span>
+        <strong>{{ summary.changed_lines_total | intfmt }}</strong>
+        <span>{{ summary.commits_total | intfmt }} commits across authored PRs</span>
+      </article>
+      <article class="summary-card panel">
+        <span class="summary-label">First review speed</span>
+        <strong>{{ summary.median_first_review_hours | duration }}</strong>
+        <span>median time to first review on authored PRs</span>
+      </article>
+      <article class="summary-card panel">
+        <span class="summary-label">Review decisions</span>
+        <strong>{{ reviewer_summary.approvals | intfmt }} approvals</strong>
+        <span>{{ reviewer_summary.changes_requested | intfmt }} changes requested / {{ reviewer_summary.comments | intfmt }} comments</span>
+      </article>
+      <article class="summary-card panel">
+        <span class="summary-label">Review reach</span>
+        <strong>{{ reviewer_summary.repositories_reviewed | intfmt }} repositories</strong>
+        <span>{{ reviewer_summary.authors_supported | intfmt }} authors supported</span>
+      </article>
+    </section>
+
+    <nav class="section-nav" aria-label="Report sections">
+      <a href="#periods">Periods</a>
+      <a href="#repositories">Repositories</a>
+      <a href="#methodology">Methodology</a>
+    </nav>
+
+    <div class="section-grid">
+      <section id="periods" class="panel section-panel">
+        <div class="table-heading">
+          <div>
+            <p class="section-kicker">Period Tracking</p>
+            <h2>{{ period_total_count | intfmt }} periods in the local source</h2>
+            <p class="section-copy">Each row combines authored pull request flow with review-given activity for the same reporting period.</p>
+          </div>
+          <span class="period-state-pill{% if result.until is none %} open{% endif %}">
+            {% if result.until is none %}source bounded{% else %}filtered window{% endif %}
+          </span>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Period</th>
+                <th class="num">Authored PRs</th>
+                <th class="num">Merged</th>
+                <th class="num">Open</th>
+                <th class="num">Changed Lines</th>
+                <th class="num">Commits</th>
+                <th class="num">Reviews Received</th>
+                <th class="num">Reviews Given</th>
+                <th class="num">PRs Reviewed</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in period_rows %}
+              <tr>
+                <td data-label="Period">{{ row.period_key }}</td>
+                <td class="num" data-label="Authored PRs">{{ row.authored_pull_request_count | intfmt }}</td>
+                <td class="num" data-label="Merged">{{ row.merged_pull_request_count | intfmt }}</td>
+                <td class="num" data-label="Open">{{ row.open_pull_request_count | intfmt }}</td>
+                <td class="num" data-label="Changed Lines">{{ row.changed_lines_total | intfmt }}</td>
+                <td class="num" data-label="Commits">{{ row.commits_total | intfmt }}</td>
+                <td class="num" data-label="Reviews Received">{{ row.reviews_received | intfmt }}</td>
+                <td class="num" data-label="Reviews Given">{{ row.review_submissions_given | intfmt }}</td>
+                <td class="num" data-label="PRs Reviewed">{{ row.pull_requests_reviewed | intfmt }}</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="repositories" class="panel section-panel">
+        <div class="table-heading">
+          <div>
+            <p class="section-kicker">Repository Focus</p>
+            <h2>{{ repository_total_count | intfmt }} repositories with person activity</h2>
+            <p class="section-copy">Top repositories are ranked by authored PR count, then review activity and code volume.</p>
+          </div>
+        </div>
+        <div class="repository-focus-grid">
+          {% for row in top_repository_rows %}
+          <article class="repository-focus-card">
+            <strong>{{ row.repository_full_name }}</strong>
+            <span>{{ row.authored_pull_request_count | intfmt }} authored PRs / {{ row.review_submissions_given | intfmt }} reviews given</span>
+            <span>{{ row.changed_lines_total | intfmt }} changed lines</span>
+          </article>
+          {% endfor %}
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Repository</th>
+                <th class="num">Authored PRs</th>
+                <th class="num">Merged</th>
+                <th class="num">Open</th>
+                <th class="num">Changed Lines</th>
+                <th class="num">Reviews Given</th>
+                <th class="num">PRs Reviewed</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in repository_rows %}
+              <tr>
+                <td data-label="Repository">{{ row.repository_full_name }}</td>
+                <td class="num" data-label="Authored PRs">{{ row.authored_pull_request_count | intfmt }}</td>
+                <td class="num" data-label="Merged">{{ row.merged_pull_request_count | intfmt }}</td>
+                <td class="num" data-label="Open">{{ row.open_pull_request_count | intfmt }}</td>
+                <td class="num" data-label="Changed Lines">{{ row.changed_lines_total | intfmt }}</td>
+                <td class="num" data-label="Reviews Given">{{ row.review_submissions_given | intfmt }}</td>
+                <td class="num" data-label="PRs Reviewed">{{ row.pull_requests_reviewed | intfmt }}</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="methodology" class="panel section-panel reference-panel">
+        <p class="section-kicker">Methodology</p>
+        <h2>How this extract is counted</h2>
+        <div class="methodology-grid">
+          <article class="support-card">
+            <strong>Authored work</strong>
+            <span>Authored PRs are filtered by {{ result.time_anchor.value }} and grouped by {{ result.grain.value }}.</span>
+          </article>
+          <article class="support-card">
+            <strong>Review work</strong>
+            <span>Reviews given are filtered and grouped by review submission time, even if the PR was created earlier.</span>
+          </article>
+          <article class="support-card">
+            <strong>Source</strong>
+            <span>Rendered from {{ result.output_dir }} using local normalized orgpulse snapshots.</span>
+          </article>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <script id="person-report-data" type="application/json">{{ result.model_dump(mode="json") | json_script }}</script>
+  <script>
+    (function () {
+      const storageKey = "orgpulse-manual-dashboard-theme";
+      const root = document.documentElement;
+      const switcher = document.querySelector(".theme-switch");
+      const buttons = Array.from(document.querySelectorAll(".theme-switch-button"));
+
+      function activeTheme() {
+        return root.dataset.theme || "dark";
+      }
+
+      function syncThemeButtons() {
+        const theme = activeTheme();
+        if (switcher) {
+          switcher.dataset.activeTheme = theme;
+        }
+        buttons.forEach(button => {
+          button.setAttribute(
+            "aria-pressed",
+            button.dataset.themeOption === theme ? "true" : "false",
+          );
+        });
+      }
+
+      buttons.forEach(button => {
+        button.addEventListener("click", () => {
+          const theme = button.dataset.themeOption;
+          root.dataset.theme = theme;
+          try {
+            window.localStorage.setItem(storageKey, theme);
+          } catch (_error) {
+            // Ignore localStorage failures; the current page state still updates.
+          }
+          syncThemeButtons();
+        });
+      });
+
+      syncThemeButtons();
+    }());
+  </script>
+</body>
+</html>

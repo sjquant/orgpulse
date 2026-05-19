@@ -7,12 +7,13 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import date, datetime
 from enum import StrEnum
-from html import escape
 from io import StringIO
 from pathlib import Path
 from statistics import median
-from typing import Annotated
+from typing import Annotated, Any
 
+from jinja2 import Environment, FileSystemLoader, select_autoescape
+from markupsafe import Markup, escape
 from pydantic import (
     BaseModel,
     ConfigDict,
@@ -1265,137 +1266,59 @@ def _render_json(
 def _render_html(
     result: PersonMetricsResult,
 ) -> str:
-    summary = result.summary
-    reviewer = result.reviewer_summary
-    return "\n".join(
-        [
-            "<!doctype html>",
-            '<html lang="en">',
-            "<head>",
-            '  <meta charset="utf-8">',
-            f"  <title>orgpulse person metrics: {escape(result.login)}</title>",
-            "  <style>",
-            "    body { color: #17202a; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; margin: 32px; }",
-            "    h1, h2 { margin: 0 0 12px; }",
-            "    section { margin-top: 28px; }",
-            "    dl { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; }",
-            "    div.metric { border: 1px solid #d8dee4; border-radius: 8px; padding: 12px; }",
-            "    dt { color: #57606a; font-size: 12px; text-transform: uppercase; }",
-            "    dd { font-size: 22px; font-weight: 700; margin: 4px 0 0; }",
-            "    table { border-collapse: collapse; margin-top: 12px; width: 100%; }",
-            "    th, td { border-bottom: 1px solid #d8dee4; padding: 8px; text-align: right; }",
-            "    th:first-child, td:first-child { text-align: left; }",
-            "    th { background: #f6f8fa; }",
-            "  </style>",
-            "</head>",
-            "<body>",
-            f"  <h1>{escape(result.login)} performance</h1>",
-            f"  <p>{escape(result.target_org)} · {escape(result.grain.value)} · {escape(result.time_anchor.value)}</p>",
-            "  <section>",
-            "    <h2>Summary</h2>",
-            "    <dl>",
-            _html_metric("Authored PRs", summary.authored_pull_request_count),
-            _html_metric("Merged PRs", summary.merged_pull_request_count),
-            _html_metric("Open PRs", summary.open_pull_request_count),
-            _html_metric("Merge rate", _html_percent(summary.merge_rate_pct)),
-            _html_metric("Changed lines", summary.changed_lines_total),
-            _html_metric("Commits", summary.commits_total),
-            _html_metric("Reviews received", summary.reviews_received),
-            _html_metric("Review coverage", _html_percent(summary.review_coverage_pct)),
-            _html_metric("Median first review hours", summary.median_first_review_hours),
-            _html_metric("Median merge hours", summary.median_merge_hours),
-            _html_metric("Reviews submitted", reviewer.review_submissions),
-            _html_metric("PRs reviewed", reviewer.pull_requests_reviewed),
-            "    </dl>",
-            "  </section>",
-            _html_period_table(result.period_rows),
-            _html_repository_table(result.repository_rows),
-            "</body>",
-            "</html>",
-        ]
+    top_repository_rows = _top_repository_rows(result.repository_rows)
+    window_label = _window_label(result)
+    template = _template_environment().get_template("person_report.html.j2")
+    return template.render(
+        result=result,
+        summary=result.summary,
+        reviewer_summary=result.reviewer_summary,
+        period_rows=result.period_rows,
+        repository_rows=result.repository_rows,
+        top_repository_rows=top_repository_rows,
+        period_total_count=len(result.period_rows),
+        repository_total_count=len(result.repository_rows),
+        window_label=window_label,
     )
 
 
-def _html_metric(
-    label: str,
-    value: object,
-) -> str:
-    return (
-        '      <div class="metric">'
-        f"<dt>{escape(label)}</dt>"
-        f"<dd>{escape(str(_display_value(value)))}</dd>"
-        "</div>"
-    )
-
-
-def _html_period_table(
-    rows: tuple[PersonPeriodRow, ...],
-) -> str:
-    body_rows = [
-        "      <tr>"
-        f"<td>{escape(row.period_key)}</td>"
-        f"<td>{row.authored_pull_request_count}</td>"
-        f"<td>{row.merged_pull_request_count}</td>"
-        f"<td>{row.open_pull_request_count}</td>"
-        f"<td>{row.changed_lines_total}</td>"
-        f"<td>{row.commits_total}</td>"
-        f"<td>{row.reviews_received}</td>"
-        f"<td>{row.review_submissions_given}</td>"
-        f"<td>{row.pull_requests_reviewed}</td>"
-        "</tr>"
-        for row in rows
-    ]
-    return "\n".join(
-        [
-            "  <section>",
-            "    <h2>Periods</h2>",
-            "    <table>",
-            "      <thead><tr><th>Period</th><th>Authored PRs</th><th>Merged</th><th>Open</th><th>Changed Lines</th><th>Commits</th><th>Reviews Received</th><th>Reviews Given</th><th>PRs Reviewed</th></tr></thead>",
-            "      <tbody>",
-            *body_rows,
-            "      </tbody>",
-            "    </table>",
-            "  </section>",
-        ]
-    )
-
-
-def _html_repository_table(
+def _top_repository_rows(
     rows: tuple[PersonRepositoryRow, ...],
-) -> str:
-    body_rows = [
-        "      <tr>"
-        f"<td>{escape(row.repository_full_name)}</td>"
-        f"<td>{row.authored_pull_request_count}</td>"
-        f"<td>{row.merged_pull_request_count}</td>"
-        f"<td>{row.open_pull_request_count}</td>"
-        f"<td>{row.changed_lines_total}</td>"
-        f"<td>{row.review_submissions_given}</td>"
-        f"<td>{row.pull_requests_reviewed}</td>"
-        "</tr>"
-        for row in rows
-    ]
-    return "\n".join(
-        [
-            "  <section>",
-            "    <h2>Repositories</h2>",
-            "    <table>",
-            "      <thead><tr><th>Repository</th><th>Authored PRs</th><th>Merged</th><th>Open</th><th>Changed Lines</th><th>Reviews Given</th><th>PRs Reviewed</th></tr></thead>",
-            "      <tbody>",
-            *body_rows,
-            "      </tbody>",
-            "    </table>",
-            "  </section>",
-        ]
+) -> tuple[PersonRepositoryRow, ...]:
+    return tuple(
+        sorted(
+            rows,
+            key=lambda row: (
+                -row.authored_pull_request_count,
+                -row.review_submissions_given,
+                -row.changed_lines_total,
+                row.repository_full_name,
+            ),
+        )[:6]
     )
 
 
-def _html_percent(
-    value: float | None,
+def _window_label(
+    result: PersonMetricsResult,
 ) -> str:
-    if value is None:
-        return "-"
-    return f"{_display_value(value)}%"
+    since = result.since.isoformat() if result.since is not None else "all"
+    until = result.until.isoformat() if result.until is not None else "all"
+    return f"{since} to {until}"
+
+
+def _template_environment() -> Environment:
+    environment = Environment(
+        loader=FileSystemLoader(
+            str(Path(__file__).resolve().parent / "templates")
+        ),
+        autoescape=select_autoescape(["html", "html.j2", "xml"]),
+    )
+    environment.filters["intfmt"] = _format_integer
+    environment.filters["numfmt"] = _format_number
+    environment.filters["duration"] = _format_duration
+    environment.filters["pctfmt"] = _format_percent
+    environment.filters["json_script"] = _json_script
+    return environment
 
 
 def _markdown_number(
@@ -1404,6 +1327,42 @@ def _markdown_number(
     if value is None:
         return "-"
     return str(_display_value(value))
+
+
+def _format_integer(value: Any) -> str:
+    if value is None or value == "":
+        return "-"
+    return f"{int(float(value)):,}"
+
+
+def _format_number(value: Any) -> str:
+    if value is None or value == "":
+        return "-"
+    number = float(value)
+    if number.is_integer():
+        return f"{int(number):,}"
+    return f"{number:,.2f}".rstrip("0").rstrip(".")
+
+
+def _format_duration(value: Any) -> str:
+    if value is None or value == "":
+        return "-"
+    hours = float(value)
+    if hours < 1:
+        return f"{round(hours * 60):,} min"
+    if hours >= 24:
+        return f"{hours / 24:,.1f} d"
+    return f"{hours:,.1f} h"
+
+
+def _format_percent(value: Any) -> str:
+    if value is None or value == "":
+        return "-"
+    return f"{_format_number(value)}%"
+
+
+def _json_script(value: Any) -> Markup:
+    return Markup(escape(json.dumps(value, ensure_ascii=False)))
 
 
 def _display_value(

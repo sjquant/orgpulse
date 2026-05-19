@@ -313,7 +313,7 @@
         {% if period_older_rows %}
         <div class="table-footer">
           <button type="button" id="period-toggle" class="ghost-button" aria-expanded="false">
-            Show {{ period_older_rows|length }} more older {{ result.grain.value }} rows
+            Show {{ [progressive_chunk_size, period_older_rows|length]|min }} more older {{ result.grain.value }} rows
           </button>
         </div>
         {% endif %}
@@ -382,7 +382,7 @@
         {% if repository_rest_rows %}
         <div class="table-footer">
           <button type="button" id="repository-toggle" class="ghost-button" aria-expanded="false">
-            Show {{ repository_rest_rows|length }} more repositories
+            Show {{ [progressive_chunk_size, repository_rest_rows|length]|min }} more repositories
           </button>
         </div>
         {% endif %}
@@ -476,14 +476,14 @@
         button: periodToggle,
         container: periodExtra,
         items: periodExtra ? Array.from(periodExtra.querySelectorAll("tr")) : [],
-        chunkSize: 6,
+        chunkSize: {{ progressive_chunk_size }},
         label: "older {{ result.grain.value }} rows",
       });
       setupProgressiveToggle({
         button: repositoryToggle,
         container: repositoryExtra,
         items: repositoryExtra ? Array.from(repositoryExtra.querySelectorAll("tr")) : [],
-        chunkSize: 10,
+        chunkSize: {{ progressive_chunk_size }},
         label: "repositories",
       });
 

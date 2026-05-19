@@ -13,7 +13,7 @@ from statistics import median
 from typing import Annotated, Any
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
-from markupsafe import Markup, escape
+from markupsafe import Markup
 from pydantic import (
     BaseModel,
     ConfigDict,
@@ -1276,14 +1276,15 @@ def _render_json(
 def _render_html(
     result: PersonMetricsResult,
 ) -> str:
+    progressive_chunk_size = 5
     top_repository_rows = _top_repository_rows(result.repository_rows)
     period_recent_rows, period_older_rows = _split_recent_rows(
         result.period_rows,
-        recent_count=6,
+        recent_count=progressive_chunk_size,
     )
     repository_top_rows, repository_rest_rows = _split_ranked_repository_rows(
         result.repository_rows,
-        top_count=10,
+        top_count=progressive_chunk_size,
     )
     window_label = _window_label(result)
     report_payload = _html_report_payload(result)
@@ -1299,6 +1300,7 @@ def _render_html(
         top_repository_rows=top_repository_rows,
         period_total_count=len(result.period_rows),
         repository_total_count=len(result.repository_rows),
+        progressive_chunk_size=progressive_chunk_size,
         report_payload=report_payload,
         window_label=window_label,
     )
@@ -1418,7 +1420,13 @@ def _format_percent(value: Any) -> str:
 
 
 def _json_script(value: Any) -> Markup:
-    return Markup(escape(json.dumps(value, ensure_ascii=False)))
+    payload = json.dumps(value, ensure_ascii=False).replace("</", "<\\/")
+    return Markup(
+        payload.replace("&", "\\u0026")
+        .replace("<", "\\u003c")
+        .replace(">", "\\u003e")
+        .replace("'", "\\u0027")
+    )
 
 
 def _display_value(

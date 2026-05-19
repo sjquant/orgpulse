@@ -540,6 +540,14 @@ class TestPersonCommand:
         assert "renderSeriesChart" in html_result.stdout
         assert 'class="table-wrap"' in html_result.stdout
         assert '<script id="person-report-data" type="application/json">' in html_result.stdout
+        report_payload_match = re.search(
+            r'<script id="person-report-data" type="application/json">(.*?)</script>',
+            html_result.stdout,
+        )
+        assert report_payload_match is not None
+        report_payload = json.loads(report_payload_match.group(1))
+        assert report_payload["login"] == "alice"
+        assert report_payload["period_rows"][0]["period_key"] == "2026-04"
         assert 'data-label="Period">2026-04</td>' in html_result.stdout
         assert 'data-label="Authored PRs">1</td>' in html_result.stdout
         assert str(tmp_path) not in html_result.stdout
@@ -625,10 +633,11 @@ class TestPersonCommand:
         # Then
         assert result.exit_code == 0
         assert 'id="period-extra" class="hidden"' in result.stdout
-        assert "Show 2 more older month rows" in result.stdout
+        assert "Show 3 more older month rows" in result.stdout
         assert 'id="repository-extra" class="hidden"' in result.stdout
-        assert "Show 2 more repositories" in result.stdout
+        assert "Show 5 more repositories" in result.stdout
         assert "setupProgressiveToggle" in result.stdout
+        assert "chunkSize: 5" in result.stdout
 
     def test_writes_zero_result_for_unknown_login(
         self,

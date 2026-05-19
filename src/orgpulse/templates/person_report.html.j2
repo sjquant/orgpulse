@@ -76,11 +76,33 @@
       gap: 16px;
     }
 
+    .person-report .person-chart-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr);
+      gap: 14px;
+    }
+
+    .person-report .person-chart-toolbar {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: start;
+    }
+
+    .person-report .chart-root {
+      aspect-ratio: 16 / 6;
+    }
+
     @media (max-width: 1180px) {
       .person-report .stats-grid,
       .person-report .repository-focus-grid,
-      .person-report .metric-split {
+      .person-report .metric-split,
+      .person-report .person-chart-toolbar {
         grid-template-columns: 1fr;
+      }
+
+      .person-report .person-chart-toolbar {
+        display: grid;
       }
     }
 
@@ -194,12 +216,40 @@
     </section>
 
     <nav class="section-nav" aria-label="Report sections">
+      <a href="#charts">Charts</a>
       <a href="#periods">Periods</a>
       <a href="#repositories">Repositories</a>
       <a href="#methodology">Methodology</a>
     </nav>
 
     <div class="section-grid">
+      <section id="charts" class="panel section-panel chart-panel">
+        <div class="person-chart-toolbar">
+          <div>
+            <p class="section-kicker">Trend Charts</p>
+            <h2>Movement by {{ result.grain.value }}</h2>
+            <p class="section-copy">Metric tabs use the same period rows as the extract table.</p>
+          </div>
+          <div class="tab-strip" id="person-trend-metric-tabs" role="tablist" aria-label="Trend metric">
+            <button type="button" class="tab-button active" data-person-trend-metric="authored_pull_request_count" aria-selected="true">Authored PRs</button>
+            <button type="button" class="tab-button" data-person-trend-metric="review_submissions_given" aria-selected="false">Reviews given</button>
+            <button type="button" class="tab-button" data-person-trend-metric="changed_lines_total" aria-selected="false">Changed lines</button>
+            <button type="button" class="tab-button" data-person-trend-metric="commits_total" aria-selected="false">Commits</button>
+          </div>
+        </div>
+        <div class="person-chart-grid">
+          <div class="chart-title">
+            <span id="person-trend-chart-title">Person trend</span>
+            <div class="chart-legend">
+              <span class="legend-chip"><span class="legend-dot" style="background: var(--accent)"></span>Selected metric</span>
+              <span class="legend-chip"><span class="legend-dot" style="background: var(--accent-2)"></span>Point readout</span>
+            </div>
+          </div>
+          <div id="person-trend-chart-readout" class="chart-readout"></div>
+          <div id="person-trend-chart-root" class="chart-root"></div>
+        </div>
+      </section>
+
       <section id="periods" class="panel section-panel">
         <div class="table-heading">
           <div>
@@ -370,6 +420,14 @@
       const periodExtra = document.getElementById("period-extra");
       const repositoryToggle = document.getElementById("repository-toggle");
       const repositoryExtra = document.getElementById("repository-extra");
+      const report = JSON.parse(document.getElementById("person-report-data").textContent);
+      const trendRows = Array.isArray(report.period_rows) ? report.period_rows : [];
+      const trendMetricTabs = Array.from(document.querySelectorAll("#person-trend-metric-tabs .tab-button"));
+      const trendChartTitle = document.getElementById("person-trend-chart-title");
+      const trendChartReadout = document.getElementById("person-trend-chart-readout");
+      const trendChartRoot = document.getElementById("person-trend-chart-root");
+      let activeTrendMetric = "authored_pull_request_count";
+      let activeTrendPointIndex = null;
 
       function activeTheme() {
         return root.dataset.theme || "dark";
@@ -398,10 +456,22 @@
             // Ignore localStorage failures; the current page state still updates.
           }
           syncThemeButtons();
+          renderPersonTrendChart();
         });
       });
 
       syncThemeButtons();
+      syncTrendMetricTabs();
+      renderPersonTrendChart();
+      trendMetricTabs.forEach(button => {
+        button.addEventListener("click", () => {
+          activeTrendMetric = button.dataset.personTrendMetric;
+          activeTrendPointIndex = null;
+          syncTrendMetricTabs();
+          renderPersonTrendChart();
+        });
+      });
+      window.addEventListener("resize", renderPersonTrendChart);
       setupProgressiveToggle({
         button: periodToggle,
         container: periodExtra,
@@ -446,6 +516,258 @@
           button.textContent = `Show ${Math.min(chunkSize, remaining)} more ${label}`;
           button.setAttribute("aria-expanded", String(visibleCount > 0));
         }
+      }
+
+      function syncTrendMetricTabs() {
+        trendMetricTabs.forEach(button => {
+          const isActive = button.dataset.personTrendMetric === activeTrendMetric;
+          button.classList.toggle("active", isActive);
+          button.setAttribute("aria-selected", String(isActive));
+        });
+      }
+
+      function renderPersonTrendChart() {
+        if (!trendChartRoot || !trendChartReadout || !trendChartTitle) {
+          return;
+        }
+        activeTrendPointIndex = clampSelectedIndex(trendRows, activeTrendPointIndex, activeTrendMetric);
+        trendChartTitle.textContent = `${metricLabel(activeTrendMetric)} by ${report.grain || "period"}`;
+        trendChartReadout.innerHTML = renderTrendReadout(trendRows, activeTrendMetric, activeTrendPointIndex);
+        renderSeriesChart({
+          element: trendChartRoot,
+          rows: trendRows,
+          metric: activeTrendMetric,
+          selectedIndex: activeTrendPointIndex,
+          onSelect: index => {
+            activeTrendPointIndex = index;
+            renderPersonTrendChart();
+          },
+        });
+      }
+
+      function renderTrendReadout(rows, metric, selectedIndex) {
+        if (!rows.length) {
+          return readoutCard("Selected period", "-")
+            + readoutCard(metricLabel(metric), "-")
+            + readoutCard("Authored PRs", "-")
+            + readoutCard("Reviews given", "-");
+        }
+        const selectedRow = rows[selectedIndex] || rows[rows.length - 1];
+        return [
+          readoutCard("Selected period", selectedRow.period_key || "-"),
+          readoutCard(metricLabel(metric), formatMetricValue(selectedRow[metric], metric)),
+          readoutCard("Authored PRs", formatMetricValue(selectedRow.authored_pull_request_count, "authored_pull_request_count")),
+          readoutCard("Reviews given", formatMetricValue(selectedRow.review_submissions_given, "review_submissions_given")),
+        ].join("");
+      }
+
+      function readoutCard(label, value) {
+        return `<article class="readout-card"><strong>${escapeHtml(label)}</strong><span>${escapeHtml(value)}</span></article>`;
+      }
+
+      function renderSeriesChart({ element, rows, metric, selectedIndex, onSelect }) {
+        if (!rows.length) {
+          element.innerHTML = `<div class="small-note">No period data available.</div>`;
+          return;
+        }
+        const width = 920;
+        const height = 320;
+        const padding = { top: 20, right: 18, bottom: 42, left: 56 };
+        const plotWidth = width - padding.left - padding.right;
+        const plotHeight = height - padding.top - padding.bottom;
+        const points = rows
+          .map((row, index) => ({ row, index, value: toNumber(row[metric]) }))
+          .filter(point => point.value !== null);
+        if (!points.length) {
+          element.innerHTML = `<div class="small-note">No data for this metric.</div>`;
+          return;
+        }
+        const maxValue = Math.max(1, ...points.map(point => point.value));
+        const stepX = rows.length > 1 ? plotWidth / (rows.length - 1) : plotWidth / 2;
+        const xFor = index => rows.length > 1 ? padding.left + index * stepX : padding.left + plotWidth / 2;
+        const yFor = value => padding.top + plotHeight - (value / maxValue) * plotHeight;
+        const linePath = points
+          .map((point, pathIndex) => `${pathIndex === 0 ? "M" : "L"} ${xFor(point.index)} ${yFor(point.value)}`)
+          .join(" ");
+        const areaPath = points.length
+          ? `${linePath} L ${xFor(points.at(-1).index)} ${padding.top + plotHeight} L ${xFor(points[0].index)} ${padding.top + plotHeight} Z`
+          : "";
+        const averageValue = points.reduce((sum, point) => sum + point.value, 0) / points.length;
+        const averageLineY = yFor(averageValue);
+        const labelInterval = chartLabelInterval(rows.length);
+        const ticks = [0, 0.25, 0.5, 0.75, 1].map(ratio => {
+          const value = maxValue * ratio;
+          const y = padding.top + plotHeight - plotHeight * ratio;
+          return `
+            <line x1="${padding.left}" x2="${width - padding.right}" y1="${y}" y2="${y}" stroke="${cssVar("--grid-stroke")}"></line>
+            <text x="${padding.left - 10}" y="${y + 4}" text-anchor="end" class="chart-axis">${formatMetricValue(value, metric)}</text>
+          `;
+        }).join("");
+        const chartNodes = rows.map((row, index) => {
+          const value = toNumber(row[metric]);
+          if (value === null) {
+            return "";
+          }
+          const isSelected = index === selectedIndex;
+          const showLabel = index === 0 || index === rows.length - 1 || index % labelInterval === 0;
+          return `
+            <g class="chart-node" data-point-index="${index}" data-point-label="${escapeAttribute(row.period_key || "-")}" data-point-value="${escapeAttribute(formatMetricValue(value, metric))}" tabindex="0" role="button" aria-label="${escapeAttribute(`${row.period_key || "Period"} ${formatMetricValue(value, metric)}`)}">
+              <circle cx="${xFor(index)}" cy="${yFor(value)}" r="${isSelected ? 6 : 4}" fill="${cssVar("--accent")}" stroke="${isSelected ? cssVar("--text") : "transparent"}" stroke-width="${isSelected ? 2 : 0}">
+                <title>${escapeHtml(row.period_key || "-")}: ${escapeHtml(formatMetricValue(value, metric))}</title>
+              </circle>
+            </g>
+            ${showLabel ? `<text x="${xFor(index)}" y="${height - 12}" text-anchor="middle" class="chart-axis">${escapeHtml(shortLabel(row.period_key || ""))}</text>` : ""}
+          `;
+        }).join("");
+        element.innerHTML = `
+          <svg viewBox="0 0 ${width} ${height}" preserveAspectRatio="xMidYMid meet" role="img" aria-label="${escapeAttribute(metricLabel(metric))} chart">
+            <defs>
+              <linearGradient id="person-series-fill-${metric}" x1="0" x2="0" y1="0" y2="1">
+                <stop offset="0%" stop-color="${cssVar("--accent")}" stop-opacity="0.22"></stop>
+                <stop offset="100%" stop-color="${cssVar("--accent")}" stop-opacity="0"></stop>
+              </linearGradient>
+            </defs>
+            ${ticks}
+            <line x1="${padding.left}" x2="${width - padding.right}" y1="${averageLineY}" y2="${averageLineY}" stroke="${cssVar("--avg-stroke")}" stroke-dasharray="5 5"></line>
+            ${areaPath ? `<path d="${areaPath}" fill="url(#person-series-fill-${metric})"></path>` : ""}
+            <path d="${linePath}" fill="none" stroke="${cssVar("--accent")}" stroke-width="3" stroke-linecap="round"></path>
+            ${chartNodes}
+          </svg>
+        `;
+        bindChartSelection(element, metric, onSelect);
+      }
+
+      function bindChartSelection(element, metric, onSelect) {
+        const tooltip = ensureChartTooltip(element);
+        element.querySelectorAll("[data-point-index]").forEach(node => {
+          const select = event => {
+            onSelect(Number(node.dataset.pointIndex));
+            showChartTooltip(tooltip, element, node, metric, event);
+          };
+          const show = event => showChartTooltip(tooltip, element, node, metric, event);
+          node.addEventListener("click", select);
+          node.addEventListener("focus", select);
+          node.addEventListener("mouseenter", show);
+          node.addEventListener("mousemove", show);
+          node.addEventListener("mouseleave", () => hideChartTooltip(tooltip));
+          node.addEventListener("blur", () => hideChartTooltip(tooltip));
+        });
+        element.addEventListener("mouseleave", () => hideChartTooltip(tooltip));
+      }
+
+      function ensureChartTooltip(element) {
+        let tooltip = element.querySelector(".chart-tooltip");
+        if (tooltip) {
+          return tooltip;
+        }
+        tooltip = document.createElement("div");
+        tooltip.className = "chart-tooltip hidden";
+        tooltip.setAttribute("aria-hidden", "true");
+        element.appendChild(tooltip);
+        return tooltip;
+      }
+
+      function showChartTooltip(tooltip, chartElement, node, metric, event) {
+        tooltip.innerHTML = `
+          <strong>${escapeHtml(node.dataset.pointLabel || "-")}</strong>
+          <span>${escapeHtml(metricLabel(metric))}: ${escapeHtml(node.dataset.pointValue || "-")}</span>
+        `;
+        tooltip.classList.remove("hidden");
+        tooltip.setAttribute("aria-hidden", "false");
+        const chartRect = chartElement.getBoundingClientRect();
+        const nodeRect = node.getBoundingClientRect();
+        const left = Math.min(
+          chartRect.width - tooltip.offsetWidth - 10,
+          Math.max(10, (event?.clientX ?? nodeRect.left + nodeRect.width / 2) - chartRect.left + 12),
+        );
+        const top = Math.min(
+          chartRect.height - tooltip.offsetHeight - 10,
+          Math.max(10, nodeRect.top - chartRect.top - tooltip.offsetHeight - 8),
+        );
+        tooltip.style.transform = `translate(${left}px, ${top}px)`;
+      }
+
+      function hideChartTooltip(tooltip) {
+        tooltip.classList.add("hidden");
+        tooltip.setAttribute("aria-hidden", "true");
+      }
+
+      function clampSelectedIndex(rows, selectedIndex, metric) {
+        if (!rows.length) {
+          return null;
+        }
+        if (selectedIndex !== null && rows[selectedIndex] && toNumber(rows[selectedIndex][metric]) !== null) {
+          return selectedIndex;
+        }
+        for (let index = rows.length - 1; index >= 0; index -= 1) {
+          if (toNumber(rows[index][metric]) !== null) {
+            return index;
+          }
+        }
+        return rows.length - 1;
+      }
+
+      function metricLabel(metric) {
+        return {
+          authored_pull_request_count: "Authored PRs",
+          review_submissions_given: "Reviews given",
+          changed_lines_total: "Changed lines",
+          commits_total: "Commits",
+        }[metric] || metric;
+      }
+
+      function formatMetricValue(value, metric) {
+        const number = toNumber(value);
+        if (number === null) {
+          return "-";
+        }
+        return new Intl.NumberFormat("en-US", {
+          maximumFractionDigits: Number.isInteger(number) ? 0 : 2,
+        }).format(number);
+      }
+
+      function toNumber(value) {
+        if (value === null || value === undefined || value === "") {
+          return null;
+        }
+        const number = Number(value);
+        return Number.isFinite(number) ? number : null;
+      }
+
+      function chartLabelInterval(length) {
+        if (length <= 8) {
+          return 1;
+        }
+        if (length <= 16) {
+          return 2;
+        }
+        return Math.ceil(length / 8);
+      }
+
+      function shortLabel(value) {
+        const text = String(value);
+        if (text.includes("-W")) {
+          return text.replace(/^(\d{4})-W/, "W");
+        }
+        return text.replace(/^\d{4}-/, "");
+      }
+
+      function cssVar(name) {
+        return getComputedStyle(root).getPropertyValue(name).trim();
+      }
+
+      function escapeHtml(value) {
+        return String(value).replace(/[&<>"']/g, character => ({
+          "&": "&amp;",
+          "<": "&lt;",
+          ">": "&gt;",
+          '"': "&quot;",
+          "'": "&#39;",
+        }[character]));
+      }
+
+      function escapeAttribute(value) {
+        return escapeHtml(value);
       }
     }());
   </script>

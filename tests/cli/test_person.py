@@ -535,6 +535,9 @@ class TestPersonCommand:
         assert "<title>orgpulse person metrics: alice</title>" in html_result.stdout
         assert '<div class="shell person-report">' in html_result.stdout
         assert 'data-theme-option="dark"' in html_result.stdout
+        assert 'id="person-trend-chart-root"' in html_result.stdout
+        assert 'data-person-trend-metric="authored_pull_request_count"' in html_result.stdout
+        assert "renderSeriesChart" in html_result.stdout
         assert 'class="table-wrap"' in html_result.stdout
         assert '<script id="person-report-data" type="application/json">' in html_result.stdout
         assert 'data-label="Period">2026-04</td>' in html_result.stdout

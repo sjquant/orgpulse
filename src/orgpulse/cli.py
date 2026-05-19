@@ -30,6 +30,7 @@ from orgpulse.ingestion import (
     CanonicalRawInventoryStore,
     GitHubIngestionService,
     NormalizedRawSnapshotWriter,
+    PullRequestFetchProgress,
 )
 from orgpulse.metrics import (
     MetricValidationCollectionBuilder,
@@ -177,7 +178,11 @@ def run_command(
         ).validate_access(config)
         ingestion_service = GitHubIngestionService(github_client)
         inventory = ingestion_service.load_repository_inventory(config)
-        collection = ingestion_service.fetch_pull_requests(config, inventory)
+        collection = ingestion_service.fetch_pull_requests(
+            config,
+            inventory,
+            progress_callback=_echo_pull_request_fetch_progress,
+        )
         (
             raw_snapshot,
             raw_snapshot_skipped_reason,
@@ -691,6 +696,57 @@ def _write_person_output(
     output_file = output_file.expanduser()
     output_file.parent.mkdir(parents=True, exist_ok=True)
     output_file.write_text(rendered_output, encoding="utf-8")
+
+
+def _echo_pull_request_fetch_progress(
+    progress: PullRequestFetchProgress,
+) -> None:
+    if progress.phase == "start":
+        typer.echo(
+            "orgpulse: pull request download "
+            f"{progress.completed_repositories}/{progress.total_repositories} "
+            f"({progress.progress_percent:.1f}%) repositories complete",
+            err=True,
+        )
+        return
+    if progress.phase == "repository_started":
+        typer.echo(
+            "orgpulse: pull request download "
+            f"{progress.completed_repositories}/{progress.total_repositories} "
+            f"({progress.progress_percent:.1f}%) fetching "
+            f"{progress.repository_full_name}",
+            err=True,
+        )
+        return
+    if progress.phase == "repository_completed":
+        typer.echo(
+            "orgpulse: pull request download "
+            f"{progress.completed_repositories}/{progress.total_repositories} "
+            f"({progress.progress_percent:.1f}%) done "
+            f"{progress.repository_full_name} "
+            f"+{progress.fetched_pull_request_count} PRs "
+            f"({progress.repository_pull_request_count} total)",
+            err=True,
+        )
+        return
+    if progress.phase == "repository_failed":
+        typer.echo(
+            "orgpulse: pull request download "
+            f"{progress.completed_repositories}/{progress.total_repositories} "
+            f"({progress.progress_percent:.1f}%) failed "
+            f"{progress.repository_full_name}; "
+            f"{progress.failure_count} failures",
+            err=True,
+        )
+        return
+    if progress.phase == "finish":
+        typer.echo(
+            "orgpulse: pull request download "
+            f"{progress.completed_repositories}/{progress.total_repositories} "
+            f"({progress.progress_percent:.1f}%) complete; "
+            f"{progress.failure_count} failures",
+            err=True,
+        )
 
 
 @app.command("dashboard")

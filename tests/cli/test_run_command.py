@@ -34,7 +34,16 @@ class TestRunCommandRuntime:
         )
         inventory = RepositoryInventory(
             organization_login="acme",
-            repositories=(),
+            repositories=(
+                RepositoryInventoryItem(
+                    name="api",
+                    full_name="acme/api",
+                    default_branch="main",
+                    private=False,
+                    archived=False,
+                    disabled=False,
+                ),
+            ),
         )
         collection = PullRequestCollection(
             window=CollectionWindow(
@@ -87,6 +96,11 @@ class TestRunCommandRuntime:
 
         # Then
         assert result.exit_code == 0
+        assert "orgpulse: pull request download 0/1 (0.0%)" in result.stderr
+        assert (
+            "orgpulse: pull request download 1/1 (100.0%) done acme/api +1 PRs"
+            in result.stderr
+        )
         payload = json.loads(result.stdout)
         assert payload["collection"]["pull_request_count"] == 1
         assert payload["collection"]["failure_count"] == 0

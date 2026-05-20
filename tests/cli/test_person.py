@@ -557,6 +557,7 @@ class TestPersonCommand:
         assert 'data-label="Authored PRs">1</td>' in html_result.stdout
         assert 'id="person-trend-grain-tabs"' in html_result.stdout
         assert 'data-person-trend-grain="weekly"' in html_result.stdout
+        assert '<div class="two-col">' in html_result.stdout
         assert "setupSectionSpy" in html_result.stdout
         assert "syncActiveSectionNav" in html_result.stdout
         assert str(tmp_path) not in html_result.stdout

@@ -548,8 +548,17 @@ class TestPersonCommand:
         report_payload = json.loads(report_payload_match.group(1))
         assert report_payload["login"] == "alice"
         assert report_payload["period_rows"][0]["period_key"] == "2026-04"
+        assert [row["period_key"] for row in report_payload["monthly_period_rows"]] == [
+            "2026-04"
+        ]
+        assert report_payload["weekly_period_rows"][0]["period_key"] == "2026-W14"
+        assert report_payload["weekly_period_rows"][-1]["period_key"] == "2026-W18"
         assert 'data-label="Period">2026-04</td>' in html_result.stdout
         assert 'data-label="Authored PRs">1</td>' in html_result.stdout
+        assert 'id="person-trend-grain-tabs"' in html_result.stdout
+        assert 'data-person-trend-grain="weekly"' in html_result.stdout
+        assert "setupSectionSpy" in html_result.stdout
+        assert "syncActiveSectionNav" in html_result.stdout
         assert str(tmp_path) not in html_result.stdout
 
     def test_writes_person_html_with_progressive_tables(

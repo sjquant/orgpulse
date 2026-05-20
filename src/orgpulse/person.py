@@ -5,7 +5,7 @@ import json
 from collections import defaultdict
 from collections.abc import Iterable
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from enum import StrEnum
 from io import StringIO
 from pathlib import Path
@@ -240,6 +240,8 @@ class PersonMetricsResult(BaseModel):
     summary: PersonSummary
     reviewer_summary: PersonReviewerSummary
     period_rows: tuple[PersonPeriodRow, ...]
+    weekly_period_rows: tuple[PersonPeriodRow, ...]
+    monthly_period_rows: tuple[PersonPeriodRow, ...]
     repository_rows: tuple[PersonRepositoryRow, ...]
     export_format: PersonExportFormat
 
@@ -317,6 +319,21 @@ class PersonMetricsService:
         review_submissions = self._review_submissions(config, pull_requests)
         period_rows = self._period_rows(
             config=config,
+            grain=config.grain,
+            periods=periods,
+            authored_pull_requests=authored_pull_requests,
+            review_submissions=review_submissions,
+        )
+        weekly_period_rows = self._period_rows(
+            config=config,
+            grain=PeriodGrain.WEEK,
+            periods=periods,
+            authored_pull_requests=authored_pull_requests,
+            review_submissions=review_submissions,
+        )
+        monthly_period_rows = self._period_rows(
+            config=config,
+            grain=PeriodGrain.MONTH,
             periods=periods,
             authored_pull_requests=authored_pull_requests,
             review_submissions=review_submissions,
@@ -341,6 +358,8 @@ class PersonMetricsService:
             ),
             reviewer_summary=self._reviewer_summary(review_submissions),
             period_rows=period_rows,
+            weekly_period_rows=weekly_period_rows,
+            monthly_period_rows=monthly_period_rows,
             repository_rows=repository_rows,
             export_format=config.export_format,
         )
@@ -633,6 +652,7 @@ class PersonMetricsService:
         self,
         *,
         config: PersonConfig,
+        grain: PeriodGrain,
         periods: tuple[RawSnapshotPeriod, ...],
         authored_pull_requests: tuple[PullRequestFact, ...],
         review_submissions: tuple[ReviewFact, ...],
@@ -640,18 +660,19 @@ class PersonMetricsService:
         authored_by_period: dict[str, list[PullRequestFact]] = defaultdict(list)
         for pull_request in authored_pull_requests:
             authored_by_period[
-                config.grain.key_for(
+                grain.key_for(
                     self._anchor_datetime(config.time_anchor, pull_request).date()
                 )
             ].append(pull_request)
         reviews_by_period: dict[str, list[ReviewFact]] = defaultdict(list)
         for review in review_submissions:
             if review.submitted_at is not None:
-                reviews_by_period[config.grain.key_for(review.submitted_at.date())].append(
+                reviews_by_period[grain.key_for(review.submitted_at.date())].append(
                     review
                 )
         period_catalog = self._period_catalog(
             config,
+            grain,
             periods,
             activity_period_keys=(
                 *authored_by_period.keys(),
@@ -670,10 +691,18 @@ class PersonMetricsService:
     def _period_catalog(
         self,
         config: PersonConfig,
+        grain: PeriodGrain,
         periods: tuple[RawSnapshotPeriod, ...],
         *,
         activity_period_keys: tuple[str, ...],
     ) -> tuple[RawSnapshotPeriod, ...]:
+        if grain is not config.grain:
+            return self._derived_period_catalog(
+                config,
+                grain,
+                periods,
+                activity_period_keys=activity_period_keys,
+            )
         period_index = {
             period.key: period
             for period in periods
@@ -686,8 +715,57 @@ class PersonMetricsService:
         for period_key in activity_period_keys:
             period_index.setdefault(
                 period_key,
-                self._synthetic_activity_period(config.grain, period_key),
+                self._synthetic_activity_period(grain, period_key),
             )
+        return tuple(
+            period_index[key]
+            for key in sorted(
+                period_index,
+                key=lambda key: (period_index[key].start_date, key),
+            )
+        )
+
+    def _derived_period_catalog(
+        self,
+        config: PersonConfig,
+        grain: PeriodGrain,
+        periods: tuple[RawSnapshotPeriod, ...],
+        *,
+        activity_period_keys: tuple[str, ...],
+    ) -> tuple[RawSnapshotPeriod, ...]:
+        window_periods = tuple(
+            period
+            for period in periods
+            if self._period_overlaps_window(
+                period,
+                since=config.since,
+                until=config.until,
+            )
+        )
+        boundary_dates = [
+            boundary
+            for period in window_periods
+            for boundary in (period.start_date, period.end_date)
+        ]
+        boundary_dates.extend(
+            grain.start_for_key(period_key) for period_key in activity_period_keys
+        )
+        if not boundary_dates:
+            return ()
+
+        source_start_date = min(boundary_dates)
+        source_end_date = max(boundary_dates)
+        start_date = max(source_start_date, config.since or source_start_date)
+        end_date = min(source_end_date, config.until or source_end_date)
+        period_start = grain.start_for(start_date)
+        period_index: dict[str, RawSnapshotPeriod] = {}
+        while period_start <= end_date:
+            period_key = grain.key_for(period_start)
+            period_index[period_key] = self._synthetic_activity_period(
+                grain,
+                period_key,
+            )
+            period_start = grain.end_for(period_start) + timedelta(days=1)
         return tuple(
             period_index[key]
             for key in sorted(

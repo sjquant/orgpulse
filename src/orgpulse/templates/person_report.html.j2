@@ -227,14 +227,20 @@
         <div class="person-chart-toolbar">
           <div>
             <p class="section-kicker">Trend Charts</p>
-            <h2>Movement by {{ result.grain.value }}</h2>
-            <p class="section-copy">Metric tabs use the same period rows as the extract table.</p>
+            <h2>Weekly and monthly movement, graphed</h2>
+            <p class="section-copy">Metric and grain tabs use the same local source data as the extract table.</p>
           </div>
-          <div class="tab-strip" id="person-trend-metric-tabs" role="tablist" aria-label="Trend metric">
-            <button type="button" class="tab-button active" data-person-trend-metric="authored_pull_request_count" aria-selected="true">Authored PRs</button>
-            <button type="button" class="tab-button" data-person-trend-metric="review_submissions_given" aria-selected="false">Reviews given</button>
-            <button type="button" class="tab-button" data-person-trend-metric="changed_lines_total" aria-selected="false">Changed lines</button>
-            <button type="button" class="tab-button" data-person-trend-metric="commits_total" aria-selected="false">Commits</button>
+          <div class="metric-split">
+            <div class="tab-strip" id="person-trend-metric-tabs" role="tablist" aria-label="Trend metric">
+              <button type="button" class="tab-button active" data-person-trend-metric="authored_pull_request_count" aria-selected="true">Authored PRs</button>
+              <button type="button" class="tab-button" data-person-trend-metric="review_submissions_given" aria-selected="false">Reviews given</button>
+              <button type="button" class="tab-button" data-person-trend-metric="changed_lines_total" aria-selected="false">Changed lines</button>
+              <button type="button" class="tab-button" data-person-trend-metric="commits_total" aria-selected="false">Commits</button>
+            </div>
+            <div class="tab-strip" id="person-trend-grain-tabs" role="tablist" aria-label="Trend grain">
+              <button type="button" class="tab-button active" data-person-trend-grain="weekly" aria-selected="true">Weekly</button>
+              <button type="button" class="tab-button" data-person-trend-grain="monthly" aria-selected="false">Monthly</button>
+            </div>
           </div>
         </div>
         <div class="person-chart-grid">
@@ -421,12 +427,31 @@
       const repositoryToggle = document.getElementById("repository-toggle");
       const repositoryExtra = document.getElementById("repository-extra");
       const report = JSON.parse(document.getElementById("person-report-data").textContent);
-      const trendRows = Array.isArray(report.period_rows) ? report.period_rows : [];
+      const trendSeries = {
+        weekly: Array.isArray(report.weekly_period_rows) ? report.weekly_period_rows : [],
+        monthly: Array.isArray(report.monthly_period_rows) ? report.monthly_period_rows : [],
+      };
       const trendMetricTabs = Array.from(document.querySelectorAll("#person-trend-metric-tabs .tab-button"));
+      const trendGrainTabs = Array.from(document.querySelectorAll("#person-trend-grain-tabs .tab-button"));
       const trendChartTitle = document.getElementById("person-trend-chart-title");
       const trendChartReadout = document.getElementById("person-trend-chart-readout");
       const trendChartRoot = document.getElementById("person-trend-chart-root");
+      const sectionNavLinks = Array.from(document.querySelectorAll('.section-nav a[href^="#"]'));
+      const sectionTargets = sectionNavLinks
+        .map(link => {
+          const sectionId = link.getAttribute("href")?.slice(1);
+          if (!sectionId) {
+            return null;
+          }
+          const section = document.getElementById(sectionId);
+          if (!section) {
+            return null;
+          }
+          return { link, section, sectionId };
+        })
+        .filter(Boolean);
       let activeTrendMetric = "authored_pull_request_count";
+      let activeTrendGrain = report.grain === "week" ? "weekly" : "monthly";
       let activeTrendPointIndex = null;
 
       function activeTheme() {
@@ -462,12 +487,23 @@
 
       syncThemeButtons();
       syncTrendMetricTabs();
+      syncTrendGrainTabs();
+      syncActiveSectionNav();
+      setupSectionSpy();
       renderPersonTrendChart();
       trendMetricTabs.forEach(button => {
         button.addEventListener("click", () => {
           activeTrendMetric = button.dataset.personTrendMetric;
           activeTrendPointIndex = null;
           syncTrendMetricTabs();
+          renderPersonTrendChart();
+        });
+      });
+      trendGrainTabs.forEach(button => {
+        button.addEventListener("click", () => {
+          activeTrendGrain = button.dataset.personTrendGrain;
+          activeTrendPointIndex = null;
+          syncTrendGrainTabs();
           renderPersonTrendChart();
         });
       });
@@ -518,9 +554,85 @@
         }
       }
 
+      function syncActiveSectionNav(activeSectionId = null) {
+        const fallbackSectionId = activeSectionId || currentSectionId();
+        sectionTargets.forEach(target => {
+          target.link.setAttribute(
+            "aria-current",
+            String(target.sectionId === fallbackSectionId),
+          );
+        });
+      }
+
+      function currentSectionId() {
+        let selected = sectionTargets[0]?.sectionId ?? null;
+        let bestDistance = Number.POSITIVE_INFINITY;
+        sectionTargets.forEach(target => {
+          const rect = target.section.getBoundingClientRect();
+          const distance = Math.abs(rect.top - 116);
+          if (rect.top <= window.innerHeight * 0.55 && distance < bestDistance) {
+            selected = target.sectionId;
+            bestDistance = distance;
+          }
+        });
+        return selected;
+      }
+
+      function setupSectionSpy() {
+        if (!("IntersectionObserver" in window) || !sectionTargets.length) {
+          window.addEventListener("scroll", () => syncActiveSectionNav(), { passive: true });
+          return;
+        }
+        const visibleSections = new Map();
+        const observer = new IntersectionObserver(
+          entries => {
+            entries.forEach(entry => {
+              const sectionId = entry.target.getAttribute("id");
+              if (!sectionId) {
+                return;
+              }
+              if (entry.isIntersecting) {
+                visibleSections.set(sectionId, entry.intersectionRatio);
+              } else {
+                visibleSections.delete(sectionId);
+              }
+            });
+            if (!visibleSections.size) {
+              syncActiveSectionNav();
+              return;
+            }
+            const [activeSectionId] = [...visibleSections.entries()].sort((left, right) => {
+              if (right[1] !== left[1]) {
+                return right[1] - left[1];
+              }
+              return (
+                sectionTargets.findIndex(target => target.sectionId === left[0])
+                - sectionTargets.findIndex(target => target.sectionId === right[0])
+              );
+            })[0];
+            syncActiveSectionNav(activeSectionId);
+          },
+          {
+            root: null,
+            rootMargin: "-18% 0px -58% 0px",
+            threshold: [0.15, 0.3, 0.45, 0.6],
+          },
+        );
+        sectionTargets.forEach(target => observer.observe(target.section));
+        window.addEventListener("scroll", () => syncActiveSectionNav(), { passive: true });
+      }
+
       function syncTrendMetricTabs() {
         trendMetricTabs.forEach(button => {
           const isActive = button.dataset.personTrendMetric === activeTrendMetric;
+          button.classList.toggle("active", isActive);
+          button.setAttribute("aria-selected", String(isActive));
+        });
+      }
+
+      function syncTrendGrainTabs() {
+        trendGrainTabs.forEach(button => {
+          const isActive = button.dataset.personTrendGrain === activeTrendGrain;
           button.classList.toggle("active", isActive);
           button.setAttribute("aria-selected", String(isActive));
         });
@@ -530,8 +642,10 @@
         if (!trendChartRoot || !trendChartReadout || !trendChartTitle) {
           return;
         }
+        const trendRows = trendSeries[activeTrendGrain] || [];
+        const grainLabel = activeTrendGrain === "weekly" ? "week" : "month";
         activeTrendPointIndex = clampSelectedIndex(trendRows, activeTrendPointIndex, activeTrendMetric);
-        trendChartTitle.textContent = `${metricLabel(activeTrendMetric)} by ${report.grain || "period"}`;
+        trendChartTitle.textContent = `${metricLabel(activeTrendMetric)} by ${grainLabel}`;
         trendChartReadout.innerHTML = renderTrendReadout(trendRows, activeTrendMetric, activeTrendPointIndex);
         renderSeriesChart({
           element: trendChartRoot,

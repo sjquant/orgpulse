@@ -832,3 +832,80 @@ class TestPersonCommand:
         assert result.exit_code == 1
         assert "orgpulse: person metrics input failed" in result.stderr
         assert "local person metrics source is stale" in result.stderr
+
+    def test_bounds_derived_person_grains_to_local_source_as_of(
+        self,
+        runner: CliRunner,
+        github_auth_service: None,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path,
+        pull_request_factory,
+    ) -> None:
+        """Avoid emitting derived weekly rows after the local source as-of date."""
+        # Given
+        collection = PullRequestCollection(
+            window=CollectionWindow(
+                scope=RunScope.FULL_HISTORY,
+                start_date=None,
+                end_date=datetime.fromisoformat("2026-04-18T00:00:00").date(),
+            ),
+            pull_requests=(
+                pull_request_factory(
+                    repository_full_name="acme/api",
+                    number=61,
+                    title="Alice API work",
+                    author_login="alice",
+                    created_at=datetime.fromisoformat("2026-04-02T09:00:00"),
+                    updated_at=datetime.fromisoformat("2026-04-03T10:00:00"),
+                ),
+            ),
+            failures=(),
+        )
+        _configure_production_cli_runtime(
+            monkeypatch,
+            collection=collection,
+        )
+        run_result = runner.invoke(
+            app,
+            [
+                "run",
+                "--org",
+                "acme",
+                "--mode",
+                "full",
+                "--as-of",
+                "2026-04-18",
+                "--output-dir",
+                str(tmp_path),
+            ],
+        )
+        assert run_result.exit_code == 0
+
+        # When
+        result = runner.invoke(
+            app,
+            [
+                "person",
+                "--org",
+                "acme",
+                "--login",
+                "alice",
+                "--grain",
+                "month",
+                "--output-dir",
+                str(tmp_path),
+                "--format",
+                "json",
+            ],
+        )
+
+        # Then
+        assert result.exit_code == 0
+        payload = json.loads(result.stdout)
+        assert [row["period_key"] for row in payload["weekly_period_rows"]] == [
+            "2026-W14",
+            "2026-W15",
+            "2026-W16",
+        ]
+        assert payload["weekly_period_rows"][-1]["period_start_date"] == "2026-04-13"
+        assert payload["weekly_period_rows"][-1]["period_end_date"] == "2026-04-19"

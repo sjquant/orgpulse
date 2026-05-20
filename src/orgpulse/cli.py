@@ -61,9 +61,9 @@ from orgpulse.person import (
     PersonExportFormat,
     PersonMetricsService,
     build_person_config,
-    render_person_metrics_result,
 )
 from orgpulse.reporting.analysis_export import render_analysis_result
+from orgpulse.reporting.person_export import render_person_metrics_result
 from orgpulse.reporting.run_outputs import (
     OrgSummaryWriter,
     RepositorySummaryCsvWriter,

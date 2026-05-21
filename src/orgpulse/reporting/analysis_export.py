@@ -6,10 +6,10 @@ from io import StringIO
 
 from orgpulse.analysis import (
     AnalysisExportFormat,
-    AnalysisInputError,
     AnalysisResult,
     AnalysisRow,
 )
+from orgpulse.errors import AnalysisInputError
 from orgpulse.reporting.analysis_report import render_analysis_report_html
 
 

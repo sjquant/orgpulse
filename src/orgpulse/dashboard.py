@@ -40,20 +40,15 @@ from orgpulse.models import (
     DashboardTimeSeriesPointPayload,
     PeriodGrain,
     RawSnapshotPeriod,
-    ReportingPeriod,
     RunManifest,
     RunMode,
-    TimeAnchor,
 )
-from orgpulse.raw_snapshot_source import read_snapshot_csv_rows
+from orgpulse.raw_snapshot_source import LocalSnapshotSource, read_snapshot_csv_rows
 from orgpulse.reporting.contracts import build_time_anchor_context
 from orgpulse.reporting.dashboard_html import (
     prepare_dashboard_payload,
     render_dashboard_html,
 )
-
-DASHBOARD_SOURCE_GRAIN = PeriodGrain.MONTH
-DASHBOARD_SOURCE_TIME_ANCHOR = TimeAnchor.CREATED_AT
 
 
 @dataclass(frozen=True)
@@ -167,9 +162,9 @@ def generate_dashboard_report(
         A mapping of generated dashboard artifact paths.
     """
 
-    source_manifest = _try_load_source_manifest(
+    source_manifest = LocalSnapshotSource().try_load_dashboard_manifest(
         org=org,
-        source_output_dir=source_output_dir,
+        output_dir=source_output_dir,
     )
     try:
         if refresh:
@@ -285,19 +280,14 @@ def build_dashboard_payload_from_local_outputs(
         A validated source payload for dashboard rendering.
     """
 
-    manifest = _load_source_manifest(
+    source = LocalSnapshotSource().load_dashboard_source(
         org=org,
-        source_output_dir=source_output_dir,
-    )
-    period_index = _snapshot_period_index(manifest)
-    _validate_local_source_coverage(
-        manifest=manifest,
-        period_index=period_index,
+        output_dir=source_output_dir,
         since=since,
         until=until,
     )
     snapshots = _load_local_snapshots(
-        period_index=period_index,
+        periods=source.raw_snapshot.periods,
         since=since,
         until=until,
     )
@@ -305,168 +295,24 @@ def build_dashboard_payload_from_local_outputs(
         org=org,
         since=since,
         until=until,
-        source_as_of=manifest.last_successful_run.as_of,
+        source_as_of=source.manifest.last_successful_run.as_of,
         snapshots=snapshots,
     )
 
 
-def _load_source_manifest(
-    *,
-    org: str,
-    source_output_dir: Path,
-) -> RunManifest:
-    manifest_path = _dashboard_manifest_path(source_output_dir)
-    if not manifest_path.exists():
-        available_manifest_paths = _available_manifest_paths(source_output_dir)
-        if available_manifest_paths:
-            raise RuntimeError(
-                "dashboard currently supports only month/created_at local outputs. "
-                f"Found: {', '.join(str(path.relative_to(source_output_dir)) for path in available_manifest_paths)}"
-            )
-        raise RuntimeError(
-            "local manual dashboard source is missing: "
-            f"{manifest_path}. Run `orgpulse run --org {org}` first."
-        )
-    try:
-        payload = json.loads(manifest_path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
-        raise RuntimeError(f"local manifest is unreadable: {manifest_path}") from exc
-    manifest = RunManifest.model_validate(payload)
-    if manifest.target_org.lower() != org.lower():
-        raise RuntimeError(
-            "local manifest org does not match the requested org: "
-            f"expected {org}, found {manifest.target_org}"
-        )
-    if manifest.period_grain is not DASHBOARD_SOURCE_GRAIN:
-        raise RuntimeError(
-            "dashboard currently supports only month-grain local outputs."
-        )
-    if manifest.time_anchor is not DASHBOARD_SOURCE_TIME_ANCHOR:
-        raise RuntimeError(
-            "dashboard currently supports only created_at local outputs."
-        )
-    return manifest
-
-
-def _dashboard_manifest_path(source_output_dir: Path) -> Path:
-    return (
-        source_output_dir
-        / "manifest"
-        / DASHBOARD_SOURCE_GRAIN.value
-        / DASHBOARD_SOURCE_TIME_ANCHOR.value
-        / "manifest.json"
-    )
-
-
-def _available_manifest_paths(source_output_dir: Path) -> list[Path]:
-    return sorted(source_output_dir.glob("manifest/*/*/manifest.json"))
-
-
-def _try_load_source_manifest(
-    *,
-    org: str,
-    source_output_dir: Path,
-) -> RunManifest | None:
-    manifest_path = _dashboard_manifest_path(source_output_dir)
-    if not manifest_path.exists():
-        return None
-    return _load_source_manifest(
-        org=org,
-        source_output_dir=source_output_dir,
-    )
-
-
-def _snapshot_period_index(
-    manifest: RunManifest,
-) -> dict[str, RawSnapshotPeriod]:
-    return {
-        period.key: _build_snapshot_period(
-            manifest.raw_snapshot_root_dir,
-            period,
-        )
-        for period in (*manifest.locked_periods, *manifest.refreshed_periods)
-    }
-
-
-def _build_snapshot_period(
-    root_dir: Path,
-    period: ReportingPeriod | RawSnapshotPeriod,
-) -> RawSnapshotPeriod:
-    if isinstance(period, RawSnapshotPeriod):
-        return period
-    period_dir = root_dir / period.key
-    return RawSnapshotPeriod(
-        key=period.key,
-        start_date=period.start_date,
-        end_date=period.end_date,
-        closed=period.closed,
-        directory=period_dir,
-        pull_requests_path=period_dir / "pull_requests.csv",
-        pull_request_count=0,
-        reviews_path=period_dir / "pull_request_reviews.csv",
-        review_count=0,
-        timeline_events_path=period_dir / "pull_request_timeline_events.csv",
-        timeline_event_count=0,
-    )
-
-
-def _validate_local_source_coverage(
-    *,
-    manifest: RunManifest,
-    period_index: dict[str, RawSnapshotPeriod],
-    since: date,
-    until: date,
-) -> None:
-    if until > manifest.last_successful_run.as_of:
-        raise RuntimeError(
-            "local source outputs are stale for the requested window: "
-            f"latest local as-of is {manifest.last_successful_run.as_of.isoformat()}, "
-            f"but --until is {until.isoformat()}."
-        )
-    expected_keys = _period_keys_for_window(since=since, until=until)
-    missing_keys = [key for key in expected_keys if key not in period_index]
-    if missing_keys:
-        raise RuntimeError(
-            "local source outputs do not cover the requested historical window. "
-            f"Missing periods: {', '.join(missing_keys)}. "
-            "Run a full rebuild or period backfill before rendering this dashboard."
-        )
-
-
-def _period_keys_for_window(
-    *,
-    since: date,
-    until: date,
-) -> list[str]:
-    keys: list[str] = []
-    cursor = _month_start(since)
-    until_month_start = _month_start(until)
-    while cursor <= until_month_start:
-        keys.append(cursor.strftime("%Y-%m"))
-        cursor = _next_month_start(cursor)
-    return keys
-
-
-def _month_start(current: date) -> date:
-    return current.replace(day=1)
-
-
-def _next_month_start(current: date) -> date:
-    next_month = (current.replace(day=28) + timedelta(days=4)).replace(day=1)
-    return next_month
-
-
 def _load_local_snapshots(
     *,
-    period_index: dict[str, RawSnapshotPeriod],
+    periods: tuple[RawSnapshotPeriod, ...],
     since: date,
     until: date,
 ) -> list[PullRequestSnapshot]:
     snapshots: list[PullRequestSnapshot] = []
-    for period_key in _period_keys_for_window(since=since, until=until):
+    for period in periods:
+        if period.end_date < since or period.start_date > until:
+            continue
         snapshots.extend(
             _period_snapshots(
-                period=period_index[period_key],
+                period=period,
                 since=since,
                 until=until,
             )
@@ -620,7 +466,9 @@ def _snapshot_from_local_rows(
         changes_requested_count=sum(
             1 for review in reviews if review.state == "CHANGES_REQUESTED"
         ),
-        comment_review_count=sum(1 for review in reviews if review.state == "COMMENTED"),
+        comment_review_count=sum(
+            1 for review in reviews if review.state == "COMMENTED"
+        ),
         reviewer_count=len({review.author_login for review in reviews}),
         first_review_at=first_review_at,
         first_review_hours=_hours_between(
@@ -662,7 +510,9 @@ def _build_dashboard_payload(
         date_selector=lambda snapshot: snapshot.created_at.date(),
     )
     merged_series = _time_series(
-        snapshots=[snapshot for snapshot in snapshots if snapshot.merged_at is not None],
+        snapshots=[
+            snapshot for snapshot in snapshots if snapshot.merged_at is not None
+        ],
         date_selector=lambda snapshot: snapshot.merged_at.date(),
     )
     review_series = _time_series(
@@ -793,10 +643,7 @@ def _review_cycle_markers(
         ("event", event.created_at, event)
         for event in timeline_events
         if event.created_at is not None
-    ] + [
-        ("review", review.submitted_at, review)
-        for review in reviews
-    ]
+    ] + [("review", review.submitted_at, review) for review in reviews]
     markers.sort(
         key=lambda marker: (
             marker[1].isoformat(),
@@ -855,17 +702,19 @@ def _overview_summary(
         if snapshot.first_review_hours is not None
     ]
     merge_values = [
-        snapshot.merge_hours for snapshot in snapshots if snapshot.merge_hours is not None
+        snapshot.merge_hours
+        for snapshot in snapshots
+        if snapshot.merge_hours is not None
     ]
     close_values = [
-        snapshot.close_hours for snapshot in snapshots if snapshot.close_hours is not None
+        snapshot.close_hours
+        for snapshot in snapshots
+        if snapshot.close_hours is not None
     ]
     return DashboardOverviewPayload(
         org=org,
         time_anchor="created_at",
-        time_anchor_context=build_time_anchor_context(
-            "created_at"
-        ),
+        time_anchor_context=build_time_anchor_context("created_at"),
         since=since.isoformat(),
         until=until.isoformat(),
         source_as_of=source_as_of.isoformat(),
@@ -910,12 +759,16 @@ def _overview_summary(
             if snapshots
             else None
         ),
-        top_repository=repository_rows[0].repository_full_name if repository_rows else None,
+        top_repository=repository_rows[0].repository_full_name
+        if repository_rows
+        else None,
         top_author=author_rows[0].author_login if author_rows else None,
         open_week=source_as_of < _week_end(until),
         open_week_key=_week_key(until) if source_as_of < _week_end(until) else None,
         open_month=source_as_of < _month_end(until),
-        open_month_key=until.strftime("%Y-%m") if source_as_of < _month_end(until) else None,
+        open_month_key=until.strftime("%Y-%m")
+        if source_as_of < _month_end(until)
+        else None,
     )
 
 
@@ -929,7 +782,7 @@ def _week_end(current: date) -> date:
 
 
 def _month_end(current: date) -> date:
-    return _next_month_start(_month_start(current)) - timedelta(days=1)
+    return PeriodGrain.MONTH.end_for(current)
 
 
 def _author_rows(
@@ -1042,7 +895,9 @@ def _size_bucket_rows(
                 bucket=bucket,
                 pull_requests=len(bucket_snapshots),
                 median_changed_lines=_round(
-                    _median_or_none([snapshot.changed_lines for snapshot in bucket_snapshots])
+                    _median_or_none(
+                        [snapshot.changed_lines for snapshot in bucket_snapshots]
+                    )
                 ),
                 median_first_review_hours=_round(
                     _median_or_none(
@@ -1188,7 +1043,9 @@ def _author_row(
         if snapshot.first_review_hours is not None
     ]
     merge_values = [
-        snapshot.merge_hours for snapshot in snapshots if snapshot.merge_hours is not None
+        snapshot.merge_hours
+        for snapshot in snapshots
+        if snapshot.merge_hours is not None
     ]
     return DashboardAuthorPayload(
         author_login=author_login,
@@ -1197,7 +1054,9 @@ def _author_row(
         open_pull_requests=sum(1 for snapshot in snapshots if snapshot.state == "open"),
         changed_lines=sum(snapshot.changed_lines for snapshot in snapshots),
         commits=sum(snapshot.commits for snapshot in snapshots),
-        review_submissions_received=sum(snapshot.review_count for snapshot in snapshots),
+        review_submissions_received=sum(
+            snapshot.review_count for snapshot in snapshots
+        ),
         average_reviews_per_pr=_round(
             sum(snapshot.review_count for snapshot in snapshots) / len(snapshots)
             if snapshots
@@ -1228,7 +1087,9 @@ def _repository_row(
         if snapshot.first_review_hours is not None
     ]
     merge_values = [
-        snapshot.merge_hours for snapshot in snapshots if snapshot.merge_hours is not None
+        snapshot.merge_hours
+        for snapshot in snapshots
+        if snapshot.merge_hours is not None
     ]
     return DashboardRepositoryPayload(
         repository_full_name=repository_full_name,
@@ -1262,8 +1123,12 @@ def _snapshot_row(snapshot: PullRequestSnapshot) -> DashboardPullRequestPayload:
         state=snapshot.state,
         created_at=snapshot.created_at.isoformat(),
         updated_at=snapshot.updated_at.isoformat(),
-        closed_at=None if snapshot.closed_at is None else snapshot.closed_at.isoformat(),
-        merged_at=None if snapshot.merged_at is None else snapshot.merged_at.isoformat(),
+        closed_at=None
+        if snapshot.closed_at is None
+        else snapshot.closed_at.isoformat(),
+        merged_at=None
+        if snapshot.merged_at is None
+        else snapshot.merged_at.isoformat(),
         html_url=snapshot.html_url,
         additions=snapshot.additions,
         deletions=snapshot.deletions,

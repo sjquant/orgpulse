@@ -3,12 +3,10 @@ from __future__ import annotations
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime
-from pathlib import Path
 
 from orgpulse.models import (
     RawSnapshotPeriod,
-    ReportingPeriod,
-    RunManifest,
+    RawSnapshotWriteResult,
 )
 from orgpulse.raw_snapshot_source import read_snapshot_csv_rows
 
@@ -84,51 +82,11 @@ class PersonSnapshotSource:
 
     def load(
         self,
-        manifest: RunManifest,
+        raw_snapshot: RawSnapshotWriteResult,
     ) -> PersonSnapshot:
-        periods = self._load_snapshot_periods(manifest)
         return PersonSnapshot(
-            periods=periods,
-            pull_requests=self._load_pull_requests(periods),
-        )
-
-    def _load_snapshot_periods(
-        self,
-        manifest: RunManifest,
-    ) -> tuple[RawSnapshotPeriod, ...]:
-        period_index = {
-            period.key: self._snapshot_period(manifest.raw_snapshot_root_dir, period)
-            for period in (*manifest.locked_periods, *manifest.refreshed_periods)
-        }
-        return tuple(
-            period_index[key]
-            for key in sorted(
-                period_index,
-                key=lambda period_key: (
-                    period_index[period_key].start_date,
-                    period_key,
-                ),
-            )
-        )
-
-    def _snapshot_period(
-        self,
-        root_dir: Path,
-        period: ReportingPeriod | RawSnapshotPeriod,
-    ) -> RawSnapshotPeriod:
-        period_dir = root_dir / period.key
-        return RawSnapshotPeriod(
-            key=period.key,
-            start_date=period.start_date,
-            end_date=period.end_date,
-            closed=period.closed,
-            directory=period_dir,
-            pull_requests_path=period_dir / "pull_requests.csv",
-            pull_request_count=0,
-            reviews_path=period_dir / "pull_request_reviews.csv",
-            review_count=0,
-            timeline_events_path=period_dir / "pull_request_timeline_events.csv",
-            timeline_event_count=0,
+            periods=raw_snapshot.periods,
+            pull_requests=self._load_pull_requests(raw_snapshot.periods),
         )
 
     def _load_pull_requests(

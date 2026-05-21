@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
+from orgpulse.ingestion import PullRequestFetchProgress
 from orgpulse.models import (
     LastSuccessfulRun,
     ManifestWatermarks,
@@ -40,7 +41,61 @@ class FakeCliIngestionService:
         self,
         config,
         inventory: RepositoryInventory,
+        *,
+        progress_callback=None,
     ) -> PullRequestCollection:
+        if progress_callback is not None:
+            total_repositories = len(inventory.repositories)
+            progress_callback(
+                PullRequestFetchProgress(
+                    phase="start",
+                    repository_full_name=None,
+                    repository_index=None,
+                    total_repositories=total_repositories,
+                    completed_repositories=0,
+                    progress_percent=0.0 if total_repositories else 100.0,
+                    cached_pull_request_count=0,
+                    fetched_pull_request_count=0,
+                    repository_pull_request_count=0,
+                    failure_count=0,
+                )
+            )
+            for index, repository in enumerate(inventory.repositories, start=1):
+                repository_pull_request_count = sum(
+                    1
+                    for pull_request in (
+                        () if self._collection is None else self._collection.pull_requests
+                    )
+                    if pull_request.repository_full_name == repository.full_name
+                )
+                progress_callback(
+                    PullRequestFetchProgress(
+                        phase="repository_completed",
+                        repository_full_name=repository.full_name,
+                        repository_index=index,
+                        total_repositories=total_repositories,
+                        completed_repositories=index,
+                        progress_percent=round((index / total_repositories) * 100, 1),
+                        cached_pull_request_count=0,
+                        fetched_pull_request_count=repository_pull_request_count,
+                        repository_pull_request_count=repository_pull_request_count,
+                        failure_count=0,
+                    )
+                )
+            progress_callback(
+                PullRequestFetchProgress(
+                    phase="finish",
+                    repository_full_name=None,
+                    repository_index=None,
+                    total_repositories=total_repositories,
+                    completed_repositories=total_repositories,
+                    progress_percent=100.0,
+                    cached_pull_request_count=0,
+                    fetched_pull_request_count=0,
+                    repository_pull_request_count=0,
+                    failure_count=0,
+                )
+            )
         return (
             self._collection
             if self._collection is not None

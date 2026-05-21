@@ -9,6 +9,7 @@ dependencies = [
   "pydantic>=2.11,<3",
   "pydantic-settings>=2.11,<3",
   "PyGithub>=2.6,<3",
+  "rich>=15.0,<16",
   "typer>=0.21,<1",
 ]
 

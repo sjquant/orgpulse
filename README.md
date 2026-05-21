@@ -259,6 +259,72 @@ focused analysis views without refetching GitHub data.
   diagnostics such as same-period-created ratio, older-PR ratio, top
   contributing repositories, top updated dates, and timeline-event breakdowns
 
+## Person Metrics
+
+`orgpulse person` extracts performance metrics for one GitHub login from local
+outputs without refetching GitHub data.
+
+- Authored PR metrics use `--time-anchor` for date filtering
+- Review-given metrics use the review submission date for date filtering
+- Login matching is case-insensitive
+- The login can be passed as a positional argument or with `--login`
+- `--period` is accepted as an alias for `--grain`
+- `--source-output-dir` is accepted as an alias for `--output-dir`
+- `--pr-time-anchor` is accepted as an alias for `--time-anchor`
+- `--repo` and `--exclude-repo` filter the already-collected local data
+- Supports JSON, CSV, Markdown, and HTML output
+
+JSON example:
+
+```bash
+uv run orgpulse person \
+  alice \
+  --org acme \
+  --period month \
+  --since 2026-04-01 \
+  --until 2026-04-30 \
+  --source-output-dir output \
+  --format json
+```
+
+CSV example for spreadsheet tracking:
+
+```bash
+uv run orgpulse person \
+  alice \
+  --org acme \
+  --period month \
+  --since 2026-01-01 \
+  --until 2026-04-30 \
+  --source-output-dir output \
+  --repo api \
+  --exclude-repo legacy \
+  --format csv
+```
+
+Markdown example:
+
+```bash
+uv run orgpulse person \
+  alice \
+  --org acme \
+  --grain month \
+  --output-dir output \
+  --format markdown
+```
+
+HTML example:
+
+```bash
+uv run orgpulse person \
+  alice \
+  --org acme \
+  --period month \
+  --source-output-dir output \
+  --format html \
+  --output-file alice-performance.html
+```
+
 `orgpulse dashboard` reads local `month/created_at` outputs and renders the
 supported dashboard view as JSON, per-PR CSV, and interactive HTML files.
 

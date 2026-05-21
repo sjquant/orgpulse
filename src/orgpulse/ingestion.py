@@ -236,6 +236,22 @@ class _CollectionCheckpoint:
     repository_end_dates: dict[str, date]
 
 
+@dataclass(frozen=True)
+class PullRequestFetchProgress:
+    """Describe repository-level pull request download progress."""
+
+    phase: str
+    repository_full_name: str | None
+    repository_index: int | None
+    total_repositories: int
+    completed_repositories: int
+    progress_percent: float
+    cached_pull_request_count: int
+    fetched_pull_request_count: int
+    repository_pull_request_count: int
+    failure_count: int
+
+
 class NormalizedRawSnapshotWriter:
     """Persist enriched pull request records into period-partitioned raw snapshots."""
 
@@ -1151,17 +1167,52 @@ class GitHubIngestionService:
         self,
         config: RunConfig,
         inventory: RepositoryInventory,
+        *,
+        progress_callback: Callable[[PullRequestFetchProgress], None] | None = None,
     ) -> PullRequestCollection:
         """Fetch pull requests for the configured collection window across repositories."""
         checkpoint = self._load_collection_checkpoint(config)
         pull_requests_by_repository = dict(checkpoint.pull_requests_by_repository)
         failures: list[RepositoryCollectionFailure] = []
         window = config.collection_window
+        total_repositories = len(inventory.repositories)
+        completed_repositories = {
+            repository.full_name
+            for repository in inventory.repositories
+            if repository.full_name in checkpoint.repository_end_dates
+        }
+        self._emit_pull_request_fetch_progress(
+            progress_callback,
+            phase="start",
+            repository_full_name=None,
+            repository_index=None,
+            total_repositories=total_repositories,
+            completed_repositories=len(completed_repositories),
+            cached_pull_request_count=sum(
+                len(pull_requests)
+                for pull_requests in pull_requests_by_repository.values()
+            ),
+            fetched_pull_request_count=0,
+            repository_pull_request_count=0,
+            failure_count=0,
+        )
 
-        for repository in inventory.repositories:
+        for repository_index, repository in enumerate(inventory.repositories, start=1):
             cached_pull_requests = pull_requests_by_repository.get(
                 repository.full_name,
                 (),
+            )
+            self._emit_pull_request_fetch_progress(
+                progress_callback,
+                phase="repository_started",
+                repository_full_name=repository.full_name,
+                repository_index=repository_index,
+                total_repositories=total_repositories,
+                completed_repositories=len(completed_repositories),
+                cached_pull_request_count=len(cached_pull_requests),
+                fetched_pull_request_count=0,
+                repository_pull_request_count=len(cached_pull_requests),
+                failure_count=len(failures),
             )
             try:
                 delta_pull_requests = self._fetch_repository_pull_requests(
@@ -1186,6 +1237,19 @@ class GitHubIngestionService:
                     repository_full_name=repository.full_name,
                     pull_requests=repository_pull_requests,
                 )
+                completed_repositories.add(repository.full_name)
+                self._emit_pull_request_fetch_progress(
+                    progress_callback,
+                    phase="repository_completed",
+                    repository_full_name=repository.full_name,
+                    repository_index=repository_index,
+                    total_repositories=total_repositories,
+                    completed_repositories=len(completed_repositories),
+                    cached_pull_request_count=len(cached_pull_requests),
+                    fetched_pull_request_count=len(delta_pull_requests),
+                    repository_pull_request_count=len(repository_pull_requests),
+                    failure_count=len(failures),
+                )
             except (GithubException, RequestException) as exc:
                 pull_requests_by_repository.pop(repository.full_name, None)
                 failures.append(
@@ -1195,7 +1259,34 @@ class GitHubIngestionService:
                         exc=exc,
                     )
                 )
+                self._emit_pull_request_fetch_progress(
+                    progress_callback,
+                    phase="repository_failed",
+                    repository_full_name=repository.full_name,
+                    repository_index=repository_index,
+                    total_repositories=total_repositories,
+                    completed_repositories=len(completed_repositories),
+                    cached_pull_request_count=len(cached_pull_requests),
+                    fetched_pull_request_count=0,
+                    repository_pull_request_count=0,
+                    failure_count=len(failures),
+                )
 
+        self._emit_pull_request_fetch_progress(
+            progress_callback,
+            phase="finish",
+            repository_full_name=None,
+            repository_index=None,
+            total_repositories=total_repositories,
+            completed_repositories=len(completed_repositories),
+            cached_pull_request_count=sum(
+                len(pull_requests)
+                for pull_requests in pull_requests_by_repository.values()
+            ),
+            fetched_pull_request_count=0,
+            repository_pull_request_count=0,
+            failure_count=len(failures),
+        )
         return PullRequestCollection(
             window=window,
             pull_requests=tuple(
@@ -1218,6 +1309,49 @@ class GitHubIngestionService:
             ),
             failures=tuple(failures),
         )
+
+    def _emit_pull_request_fetch_progress(
+        self,
+        progress_callback: Callable[[PullRequestFetchProgress], None] | None,
+        *,
+        phase: str,
+        repository_full_name: str | None,
+        repository_index: int | None,
+        total_repositories: int,
+        completed_repositories: int,
+        cached_pull_request_count: int,
+        fetched_pull_request_count: int,
+        repository_pull_request_count: int,
+        failure_count: int,
+    ) -> None:
+        if progress_callback is None:
+            return
+        progress_callback(
+            PullRequestFetchProgress(
+                phase=phase,
+                repository_full_name=repository_full_name,
+                repository_index=repository_index,
+                total_repositories=total_repositories,
+                completed_repositories=completed_repositories,
+                progress_percent=self._progress_percent(
+                    completed_repositories,
+                    total_repositories,
+                ),
+                cached_pull_request_count=cached_pull_request_count,
+                fetched_pull_request_count=fetched_pull_request_count,
+                repository_pull_request_count=repository_pull_request_count,
+                failure_count=failure_count,
+            )
+        )
+
+    def _progress_percent(
+        self,
+        completed_repositories: int,
+        total_repositories: int,
+    ) -> float:
+        if total_repositories == 0:
+            return 100.0
+        return round((completed_repositories / total_repositories) * 100, 1)
 
     def clear_checkpoint(self, config: RunConfig) -> None:
         """Delete any repo-scoped checkpoint state for the current run contract."""

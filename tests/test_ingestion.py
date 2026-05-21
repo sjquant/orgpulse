@@ -12,7 +12,11 @@ from typing import Any, TypeVar, cast, overload
 from github import GithubException
 from requests.exceptions import ChunkedEncodingError, RequestException
 
-from orgpulse.ingestion import GitHubIngestionService, NormalizedRawSnapshotWriter
+from orgpulse.ingestion import (
+    GitHubIngestionService,
+    NormalizedRawSnapshotWriter,
+    PullRequestFetchProgress,
+)
 from orgpulse.models import (
     PullRequestCollection,
     PullRequestRecord,
@@ -219,6 +223,88 @@ class TestGitHubIngestionService:
         ]
         assert result.failures == ()
         assert paginated_pull_requests.page_accesses == [0, 1]
+
+    def test_reports_pull_request_fetch_progress_by_repository(self) -> None:
+        """Report repository-level pull request fetch progress with percentages."""
+        # Given
+        progress_events: list[PullRequestFetchProgress] = []
+        api_repository = self._build_repository(
+            "acme/api",
+            pull_outcomes=[
+                [
+                    self._build_pull_request(
+                        number=10,
+                        updated_at="2026-04-10T09:00:00",
+                    ),
+                ]
+            ],
+        )
+        web_repository = self._build_repository(
+            "acme/web",
+            pull_outcomes=[
+                [
+                    self._build_pull_request(
+                        number=20,
+                        updated_at="2026-04-11T09:00:00",
+                    ),
+                ]
+            ],
+        )
+        service = GitHubIngestionService(
+            cast(
+                GitHubIngestionClientLike,
+                FakeGithubClient(
+                    organizations={},
+                    repositories={
+                        "acme/api": [api_repository],
+                        "acme/web": [web_repository],
+                    },
+                ),
+            )
+        )
+        config = self._build_run_config(as_of="2026-04-18")
+
+        # When
+        result = service.fetch_pull_requests(
+            config,
+            RepositoryInventory(
+                organization_login="acme",
+                repositories=(
+                    self._build_inventory_item("acme/api"),
+                    self._build_inventory_item("acme/web"),
+                ),
+            ),
+            progress_callback=progress_events.append,
+        )
+
+        # Then
+        assert [pull_request.number for pull_request in result.pull_requests] == [
+            10,
+            20,
+        ]
+        completed_events = [
+            event
+            for event in progress_events
+            if event.phase == "repository_completed"
+        ]
+        assert [
+            (
+                event.repository_full_name,
+                event.completed_repositories,
+                event.total_repositories,
+                event.progress_percent,
+                event.fetched_pull_request_count,
+                event.repository_pull_request_count,
+            )
+            for event in completed_events
+        ] == [
+            ("acme/api", 1, 2, 50.0, 1, 1),
+            ("acme/web", 2, 2, 100.0, 1, 1),
+        ]
+        assert progress_events[0].phase == "start"
+        assert progress_events[0].progress_percent == 0.0
+        assert progress_events[-1].phase == "finish"
+        assert progress_events[-1].progress_percent == 100.0
 
     def test_fetches_pull_requests_through_graphql_batches_when_available(self) -> None:
         """Fetch pull requests through the GraphQL batch path when the client supports it."""

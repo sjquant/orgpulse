@@ -253,18 +253,17 @@ class PersonMetricsService:
         config: PersonConfig,
     ) -> PersonMetricsResult:
         manifest_path, manifest = self._load_manifest(config)
-        source = PersonSnapshotSource()
-        periods = source.load_snapshot_periods(manifest)
+        snapshot = PersonSnapshotSource().load(manifest)
         pull_requests = self._filter_pull_requests_by_repository(
             config,
-            source.load_pull_requests(periods),
+            snapshot.pull_requests,
         )
         authored_pull_requests = self._authored_pull_requests(config, pull_requests)
         review_submissions = self._review_submissions(config, pull_requests)
         period_rows = self._period_rows(
             config=config,
             grain=config.grain,
-            periods=periods,
+            periods=snapshot.periods,
             source_as_of=manifest.last_successful_run.as_of,
             authored_pull_requests=authored_pull_requests,
             review_submissions=review_submissions,
@@ -272,7 +271,7 @@ class PersonMetricsService:
         weekly_period_rows = self._period_rows(
             config=config,
             grain=PeriodGrain.WEEK,
-            periods=periods,
+            periods=snapshot.periods,
             source_as_of=manifest.last_successful_run.as_of,
             authored_pull_requests=authored_pull_requests,
             review_submissions=review_submissions,
@@ -280,7 +279,7 @@ class PersonMetricsService:
         monthly_period_rows = self._period_rows(
             config=config,
             grain=PeriodGrain.MONTH,
-            periods=periods,
+            periods=snapshot.periods,
             source_as_of=manifest.last_successful_run.as_of,
             authored_pull_requests=authored_pull_requests,
             review_submissions=review_submissions,

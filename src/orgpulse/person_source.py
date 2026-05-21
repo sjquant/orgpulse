@@ -71,10 +71,28 @@ class PullRequestFact:
         return self.additions + self.deletions
 
 
+@dataclass(frozen=True)
+class PersonSnapshot:
+    """Store local snapshot facts needed for person metrics aggregation."""
+
+    periods: tuple[RawSnapshotPeriod, ...]
+    pull_requests: tuple[PullRequestFact, ...]
+
+
 class PersonSnapshotSource:
     """Load person metric facts from normalized local snapshot CSV files."""
 
-    def load_snapshot_periods(
+    def load(
+        self,
+        manifest: RunManifest,
+    ) -> PersonSnapshot:
+        periods = self._load_snapshot_periods(manifest)
+        return PersonSnapshot(
+            periods=periods,
+            pull_requests=self._load_pull_requests(periods),
+        )
+
+    def _load_snapshot_periods(
         self,
         manifest: RunManifest,
     ) -> tuple[RawSnapshotPeriod, ...]:
@@ -113,7 +131,7 @@ class PersonSnapshotSource:
             timeline_event_count=0,
         )
 
-    def load_pull_requests(
+    def _load_pull_requests(
         self,
         periods: tuple[RawSnapshotPeriod, ...],
     ) -> tuple[PullRequestFact, ...]:

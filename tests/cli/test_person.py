@@ -536,9 +536,11 @@ class TestPersonCommand:
         assert '<div class="shell person-report">' in html_result.stdout
         assert 'data-theme-option="dark"' in html_result.stdout
         assert 'id="person-trend-chart-root"' in html_result.stdout
+        assert 'id="person-trend-chart-readout"' in html_result.stdout
         assert 'data-person-trend-metric="authored_pull_request_count"' in html_result.stdout
-        assert "renderSeriesChart" in html_result.stdout
-        assert 'class="table-wrap"' in html_result.stdout
+        assert 'data-person-trend-metric="review_submissions_given"' in html_result.stdout
+        assert 'data-person-trend-metric="changed_lines_total"' in html_result.stdout
+        assert 'data-person-trend-metric="commits_total"' in html_result.stdout
         assert '<script id="person-report-data" type="application/json">' in html_result.stdout
         report_payload_match = re.search(
             r'<script id="person-report-data" type="application/json">(.*?)</script>',
@@ -557,11 +559,13 @@ class TestPersonCommand:
         assert 'data-label="Authored PRs">1</td>' in html_result.stdout
         assert 'id="person-trend-grain-tabs"' in html_result.stdout
         assert 'data-person-trend-grain="weekly"' in html_result.stdout
+        assert 'data-person-trend-grain="monthly"' in html_result.stdout
         assert '<div class="two-col">' in html_result.stdout
-        assert "#person-trend-grain-tabs" in html_result.stdout
-        assert "justify-content: flex-end" in html_result.stdout
-        assert "setupSectionSpy" in html_result.stdout
-        assert "syncActiveSectionNav" in html_result.stdout
+        assert '<nav class="section-nav" aria-label="Report sections">' in html_result.stdout
+        assert '<a href="#charts">Charts</a>' in html_result.stdout
+        assert '<a href="#periods">Periods</a>' in html_result.stdout
+        assert '<a href="#repositories">Repositories</a>' in html_result.stdout
+        assert '<a href="#methodology">Methodology</a>' in html_result.stdout
         assert str(tmp_path) not in html_result.stdout
 
     def test_writes_person_html_with_progressive_tables(
@@ -646,10 +650,10 @@ class TestPersonCommand:
         assert result.exit_code == 0
         assert 'id="period-extra" class="hidden"' in result.stdout
         assert "Show 3 more older month rows" in result.stdout
+        assert 'id="period-toggle" class="ghost-button" aria-expanded="false"' in result.stdout
         assert 'id="repository-extra" class="hidden"' in result.stdout
         assert "Show 5 more repositories" in result.stdout
-        assert "setupProgressiveToggle" in result.stdout
-        assert "chunkSize: 5" in result.stdout
+        assert 'id="repository-toggle" class="ghost-button" aria-expanded="false"' in result.stdout
 
     def test_writes_zero_result_for_unknown_login(
         self,

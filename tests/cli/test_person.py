@@ -681,9 +681,9 @@ class TestPersonCommand:
         assert 'data-person-trend-metric="reviewed_lines"' in html_result.stdout
         assert 'data-person-trend-metric="changed_lines_total"' in html_result.stdout
         assert 'data-person-trend-metric="commits_total"' in html_result.stdout
-        assert "Yellow band = open or partial period" in html_result.stdout
+        assert "Yellow band = open period" in html_result.stdout
         assert 'class="chart-partial-band"' in html_result.stdout
-        assert "function isPartialPeriod(row)" in html_result.stdout
+        assert "function isOpenPeriod(row)" in html_result.stdout
         assert (
             '<script id="person-report-data" type="application/json">'
             in html_result.stdout

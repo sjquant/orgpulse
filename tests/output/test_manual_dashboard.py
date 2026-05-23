@@ -67,11 +67,11 @@ class TestManualDashboardPayload:
         assert "chart-partial-band" in html
         assert "partial-period-row" in html
         assert "period-state-pill open" in html
-        assert "Yellow band = open or partial period" in html
+        assert "Yellow band = open period" in html
         assert 'rx="8"' not in html
 
-    def test_labels_closed_truncated_dashboard_periods_as_partial(self) -> None:
-        """Label a closed dashboard period as partial when the window starts inside it."""
+    def test_labels_closed_truncated_dashboard_periods_as_open_in_html(self) -> None:
+        """Label a truncated dashboard period as open in the rendered dashboard."""
         # Given
         payload = {
             "overview": {
@@ -119,12 +119,12 @@ class TestManualDashboardPayload:
 
         # Then
         assert prepared.monthly_trends[0]["status"] == "closed"
-        assert prepared.monthly_trends[0]["label"] == "partial month"
+        assert prepared.monthly_trends[0]["label"] == "open month"
         assert prepared.monthly_trends[0]["is_partial"] is True
         assert prepared.monthly_trends[0]["open_month"] is False
-        assert "partial month" in html
-        assert "period-state-pill partial" in html
-        assert "Yellow band = open or partial period" in html
+        assert "open month" in html
+        assert "period-state-pill open" in html
+        assert "Yellow band = open period" in html
         assert 'rx="8"' not in html
 
     def test_renders_theme_switch_with_tokenized_theme_bootstrap(self) -> None:

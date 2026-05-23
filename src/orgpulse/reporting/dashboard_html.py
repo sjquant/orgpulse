@@ -760,7 +760,7 @@ def _build_trend_rows(
             period_start_date=period_start_date.isoformat(),
             period_end_date=period_end_date.isoformat(),
             status=str(period_state["status"]),
-            label=str(period_state["label"]),
+            label=_display_period_label(grain, period_state),
             is_open=bool(period_state["is_open"]),
             is_closed=bool(period_state["is_closed"]),
             is_partial=bool(period_state["is_partial"]),
@@ -772,6 +772,17 @@ def _build_trend_rows(
         previous_pull_requests = pull_request_count
         previous_changed_lines = _as_int(changed_lines["total"])
     return rows
+
+
+def _display_period_label(
+    grain: str,
+    period_state: dict[str, object],
+) -> str:
+    if period_state["is_open"]:
+        return str(period_state["label"])
+    if period_state["is_partial"]:
+        return f"open {grain}"
+    return str(period_state["label"])
 
 
 def _build_team_normalized_overview(

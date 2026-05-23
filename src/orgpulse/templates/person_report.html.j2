@@ -257,7 +257,7 @@
             <span id="person-trend-chart-title">Person trend</span>
             <div class="chart-legend">
               <span class="legend-chip"><span class="legend-dot" style="background: var(--accent)"></span>Selected metric</span>
-              <span class="legend-chip"><span class="legend-dot" style="background: var(--accent-2)"></span>Point readout</span>
+              <span class="legend-chip"><span class="legend-band" aria-hidden="true"></span>Yellow band = open or partial period</span>
             </div>
           </div>
           <div id="person-trend-chart-readout" class="chart-readout"></div>
@@ -281,6 +281,7 @@
             <thead>
               <tr>
                 <th>Period</th>
+                <th>State</th>
                 <th class="num">Authored PRs</th>
                 <th class="num">Merged</th>
                 <th class="num">Open</th>
@@ -296,6 +297,13 @@
               {% for row in period_recent_rows %}
               <tr>
                 <td data-label="Period">{{ row.period_key }}</td>
+                <td data-label="State">
+                  {% if result.until is not none and row.period_start_date <= result.until and row.period_end_date > result.until %}
+                  <span class="period-state-pill partial">partial {{ result.grain.value }}</span>
+                  {% else %}
+                  <span class="period-state-pill">closed {{ result.grain.value }}</span>
+                  {% endif %}
+                </td>
                 <td class="num" data-label="Authored PRs">{{ row.authored_pull_request_count | intfmt }}</td>
                 <td class="num" data-label="Merged">{{ row.merged_pull_request_count | intfmt }}</td>
                 <td class="num" data-label="Open">{{ row.open_pull_request_count | intfmt }}</td>
@@ -313,6 +321,13 @@
               {% for row in period_older_rows %}
               <tr>
                 <td data-label="Period">{{ row.period_key }}</td>
+                <td data-label="State">
+                  {% if result.until is not none and row.period_start_date <= result.until and row.period_end_date > result.until %}
+                  <span class="period-state-pill partial">partial {{ result.grain.value }}</span>
+                  {% else %}
+                  <span class="period-state-pill">closed {{ result.grain.value }}</span>
+                  {% endif %}
+                </td>
                 <td class="num" data-label="Authored PRs">{{ row.authored_pull_request_count | intfmt }}</td>
                 <td class="num" data-label="Merged">{{ row.merged_pull_request_count | intfmt }}</td>
                 <td class="num" data-label="Open">{{ row.open_pull_request_count | intfmt }}</td>
@@ -716,6 +731,16 @@
         const stepX = rows.length > 1 ? plotWidth / (rows.length - 1) : plotWidth / 2;
         const xFor = index => rows.length > 1 ? padding.left + index * stepX : padding.left + plotWidth / 2;
         const yFor = value => padding.top + plotHeight - (value / maxValue) * plotHeight;
+        const bandStart = index => (
+          index === 0
+            ? padding.left
+            : (xFor(index - 1) + xFor(index)) / 2
+        );
+        const bandEnd = index => (
+          index === rows.length - 1
+            ? width - padding.right
+            : (xFor(index) + xFor(index + 1)) / 2
+        );
         const linePath = points
           .map((point, pathIndex) => `${pathIndex === 0 ? "M" : "L"} ${xFor(point.index)} ${yFor(point.value)}`)
           .join(" ");
@@ -725,6 +750,12 @@
         const averageValue = points.reduce((sum, point) => sum + point.value, 0) / points.length;
         const averageLineY = yFor(averageValue);
         const labelInterval = chartLabelInterval(rows.length);
+        const partialBands = rows.map((row, index) => {
+          if (!isPartialPeriod(row)) {
+            return "";
+          }
+          return `<rect class="chart-partial-band" x="${bandStart(index)}" y="${padding.top}" width="${Math.max(8, bandEnd(index) - bandStart(index))}" height="${plotHeight}"></rect>`;
+        }).join("");
         const ticks = [0, 0.25, 0.5, 0.75, 1].map(ratio => {
           const value = maxValue * ratio;
           const y = padding.top + plotHeight - plotHeight * ratio;
@@ -740,10 +771,11 @@
           }
           const isSelected = index === selectedIndex;
           const showLabel = index === 0 || index === rows.length - 1 || index % labelInterval === 0;
+          const stateSuffix = isPartialPeriod(row) ? ", partial period" : "";
           return `
-            <g class="chart-node" data-point-index="${index}" data-point-label="${escapeAttribute(row.period_key || "-")}" data-point-value="${escapeAttribute(formatMetricValue(value, metric))}" tabindex="0" role="button" aria-label="${escapeAttribute(`${row.period_key || "Period"} ${formatMetricValue(value, metric)}`)}">
+            <g class="chart-node ${isPartialPeriod(row) ? "partial-period" : ""}" data-point-index="${index}" data-point-label="${escapeAttribute(row.period_key || "-")}" data-point-value="${escapeAttribute(formatMetricValue(value, metric))}" tabindex="0" role="button" aria-label="${escapeAttribute(`${row.period_key || "Period"} ${formatMetricValue(value, metric)}${stateSuffix}`)}">
               <circle cx="${xFor(index)}" cy="${yFor(value)}" r="${isSelected ? 6 : 4}" fill="${cssVar("--accent")}" stroke="${isSelected ? cssVar("--text") : "transparent"}" stroke-width="${isSelected ? 2 : 0}">
-                <title>${escapeHtml(row.period_key || "-")}: ${escapeHtml(formatMetricValue(value, metric))}</title>
+                <title>${escapeHtml(row.period_key || "-")}: ${escapeHtml(formatMetricValue(value, metric))}${isPartialPeriod(row) ? " (partial period)" : ""}</title>
               </circle>
             </g>
             ${showLabel ? `<text x="${xFor(index)}" y="${height - 12}" text-anchor="middle" class="chart-axis">${escapeHtml(shortLabel(row.period_key || ""))}</text>` : ""}
@@ -758,6 +790,7 @@
               </linearGradient>
             </defs>
             ${ticks}
+            ${partialBands}
             <line x1="${padding.left}" x2="${width - padding.right}" y1="${averageLineY}" y2="${averageLineY}" stroke="${cssVar("--avg-stroke")}" stroke-dasharray="5 5"></line>
             ${areaPath ? `<path d="${areaPath}" fill="url(#person-series-fill-${metric})"></path>` : ""}
             <path d="${linePath}" fill="none" stroke="${cssVar("--accent")}" stroke-width="3" stroke-linecap="round"></path>
@@ -835,6 +868,13 @@
           }
         }
         return rows.length - 1;
+      }
+
+      function isPartialPeriod(row) {
+        if (!report.until || !row.period_start_date || !row.period_end_date) {
+          return false;
+        }
+        return row.period_start_date <= report.until && row.period_end_date > report.until;
       }
 
       function metricLabel(metric) {

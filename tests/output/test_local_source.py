@@ -37,9 +37,15 @@ class TestManualDashboardLocalSource:
             json.dumps(manifest_payload),
             encoding="utf-8",
         )
-        source_manifest = _dashboard_module._load_source_manifest(
-            org="acme",
-            source_output_dir=source_output_dir,
+        source_manifest = (
+            LocalSnapshotSource()
+            .load_dashboard_source(
+                org="acme",
+                output_dir=source_output_dir,
+                since=date.fromisoformat("2026-03-01"),
+                until=date.fromisoformat("2026-04-27"),
+            )
+            .manifest
         )
         captured: dict[str, object] = {}
 
@@ -75,13 +81,14 @@ class TestManualDashboardLocalSource:
         # Given
         captured: dict[str, object] = {}
 
-        def fake_try_load_source_manifest(
+        def fake_try_load_dashboard_manifest(
+            self,
             *,
             org: str,
-            source_output_dir: Path,
+            output_dir: Path,
         ) -> None:
             captured["manifest_org"] = org
-            captured["manifest_source_output_dir"] = source_output_dir
+            captured["manifest_source_output_dir"] = output_dir
             return None
 
         def fake_refresh_local_source_outputs(
@@ -123,9 +130,9 @@ class TestManualDashboardLocalSource:
             return {"html_path": "report.html"}
 
         monkeypatch.setattr(
-            _dashboard_module,
-            "_try_load_source_manifest",
-            fake_try_load_source_manifest,
+            LocalSnapshotSource,
+            "try_load_dashboard_manifest",
+            fake_try_load_dashboard_manifest,
         )
         monkeypatch.setattr(
             _dashboard_module,

@@ -41,6 +41,7 @@ from orgpulse.models import (
     RunMode,
     RunScope,
 )
+from orgpulse.raw_snapshot_source import LocalSnapshotSource
 from orgpulse.reporting.analysis_report import (
     build_organization_report_payload,
     render_organization_report_html,
@@ -77,7 +78,9 @@ from .dashboard_source import (
     write_dashboard_source_period as _write_manual_dashboard_source_period,
 )
 
-build_dashboard_payload_from_local_outputs = _dashboard_module.build_dashboard_payload_from_local_outputs
+build_dashboard_payload_from_local_outputs = (
+    _dashboard_module.build_dashboard_payload_from_local_outputs
+)
 
 __all__ = [
     "csv",
@@ -119,6 +122,7 @@ __all__ = [
     "prepare_dashboard_payload",
     "render_dashboard_artifact",
     "render_dashboard_html",
+    "LocalSnapshotSource",
     "MANIFEST_FILENAME",
     "ORG_SUMMARY_DIRNAME",
     "REQUIRED_RAW_SNAPSHOT_HEADERS",

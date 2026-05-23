@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from collections import defaultdict
 from collections.abc import Iterable
 from datetime import date, datetime, timedelta
@@ -21,13 +20,11 @@ from pydantic import (
 
 from orgpulse.config import get_settings
 from orgpulse.distribution import trim_upper_tail, validate_distribution_percentile
-from orgpulse.errors import AnalysisInputError
 from orgpulse.models import (
     OrgSlug,
     PeriodGrain,
     RawSnapshotPeriod,
     RepoSlug,
-    RunManifest,
     TimeAnchor,
     canonicalize_repo_filter,
     repo_filter_matches,
@@ -39,6 +36,7 @@ from orgpulse.person_source import (
     ReviewFact,
     TimelineEventFact,
 )
+from orgpulse.raw_snapshot_source import LocalSnapshotSource
 
 Login = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
 
@@ -252,8 +250,14 @@ class PersonMetricsService:
         self,
         config: PersonConfig,
     ) -> PersonMetricsResult:
-        manifest_path, manifest = self._load_manifest(config)
-        snapshot = PersonSnapshotSource().load(manifest)
+        source = LocalSnapshotSource().load_person_metrics_source(
+            org=config.org,
+            output_dir=config.output_dir,
+            grain=config.grain,
+            time_anchor=config.time_anchor,
+            until=config.until,
+        )
+        snapshot = PersonSnapshotSource().load(source.raw_snapshot)
         pull_requests = self._filter_pull_requests_by_repository(
             config,
             snapshot.pull_requests,
@@ -264,7 +268,7 @@ class PersonMetricsService:
             config=config,
             grain=config.grain,
             periods=snapshot.periods,
-            source_as_of=manifest.last_successful_run.as_of,
+            source_as_of=source.manifest.last_successful_run.as_of,
             authored_pull_requests=authored_pull_requests,
             review_submissions=review_submissions,
         )
@@ -272,7 +276,7 @@ class PersonMetricsService:
             config=config,
             grain=PeriodGrain.WEEK,
             periods=snapshot.periods,
-            source_as_of=manifest.last_successful_run.as_of,
+            source_as_of=source.manifest.last_successful_run.as_of,
             authored_pull_requests=authored_pull_requests,
             review_submissions=review_submissions,
         )
@@ -280,7 +284,7 @@ class PersonMetricsService:
             config=config,
             grain=PeriodGrain.MONTH,
             periods=snapshot.periods,
-            source_as_of=manifest.last_successful_run.as_of,
+            source_as_of=source.manifest.last_successful_run.as_of,
             authored_pull_requests=authored_pull_requests,
             review_submissions=review_submissions,
         )
@@ -289,9 +293,9 @@ class PersonMetricsService:
             review_submissions=review_submissions,
         )
         return PersonMetricsResult(
-            target_org=manifest.target_org,
+            target_org=source.manifest.target_org,
             login=config.login,
-            source_manifest_path=manifest_path,
+            source_manifest_path=source.manifest_path,
             output_dir=config.output_dir,
             grain=config.grain,
             time_anchor=config.time_anchor,
@@ -309,46 +313,6 @@ class PersonMetricsService:
             repository_rows=repository_rows,
             export_format=config.export_format,
         )
-
-    def _load_manifest(
-        self,
-        config: PersonConfig,
-    ) -> tuple[Path, RunManifest]:
-        manifest_path = (
-            config.output_dir
-            / "manifest"
-            / config.grain.value
-            / config.time_anchor.value
-            / "manifest.json"
-        )
-        if not manifest_path.exists():
-            raise AnalysisInputError(
-                "person metrics input is missing: "
-                f"{manifest_path}. Run `orgpulse run` for this grain and time anchor first."
-            )
-        try:
-            payload = json.loads(manifest_path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError) as exc:
-            raise AnalysisInputError(
-                f"person metrics manifest is unreadable: {manifest_path}"
-            ) from exc
-
-        manifest = RunManifest.model_validate(payload)
-        if manifest.target_org.lower() != config.org.lower():
-            raise AnalysisInputError(
-                "person metrics manifest org does not match the requested org: "
-                f"expected {config.org}, found {manifest.target_org}"
-            )
-        if (
-            config.until is not None
-            and config.until > manifest.last_successful_run.as_of
-        ):
-            raise AnalysisInputError(
-                "local person metrics source is stale for the requested window: "
-                f"latest local as-of is {manifest.last_successful_run.as_of.isoformat()}, "
-                f"but --until is {config.until.isoformat()}."
-            )
-        return manifest_path, manifest
 
     def _authored_pull_requests(
         self,
@@ -602,24 +566,35 @@ class PersonMetricsService:
                 1 for pull_request in authored_pull_requests if pull_request.merged
             ),
             open_pull_request_count=sum(
-                1 for pull_request in authored_pull_requests if pull_request.state == "open"
+                1
+                for pull_request in authored_pull_requests
+                if pull_request.state == "open"
             ),
             changed_lines_total=sum(
                 pull_request.changed_lines for pull_request in authored_pull_requests
             ),
-            commits_total=sum(pull_request.commits for pull_request in authored_pull_requests),
+            commits_total=sum(
+                pull_request.commits for pull_request in authored_pull_requests
+            ),
             reviews_received=sum(
-                self._review_count(pull_request) for pull_request in authored_pull_requests
+                self._review_count(pull_request)
+                for pull_request in authored_pull_requests
             ),
             review_submissions_given=len(review_submissions),
             pull_requests_reviewed=len(
                 {self._review_pull_request_key(review) for review in review_submissions}
             ),
-            approvals_given=sum(1 for review in review_submissions if review.state == "APPROVED"),
-            changes_requested_given=sum(
-                1 for review in review_submissions if review.state == "CHANGES_REQUESTED"
+            approvals_given=sum(
+                1 for review in review_submissions if review.state == "APPROVED"
             ),
-            comments_given=sum(1 for review in review_submissions if review.state == "COMMENTED"),
+            changes_requested_given=sum(
+                1
+                for review in review_submissions
+                if review.state == "CHANGES_REQUESTED"
+            ),
+            comments_given=sum(
+                1 for review in review_submissions if review.state == "COMMENTED"
+            ),
         )
 
     def _repository_rows(
@@ -630,7 +605,9 @@ class PersonMetricsService:
     ) -> tuple[PersonRepositoryRow, ...]:
         authored_by_repository: dict[str, list[PullRequestFact]] = defaultdict(list)
         for pull_request in authored_pull_requests:
-            authored_by_repository[pull_request.repository_full_name].append(pull_request)
+            authored_by_repository[pull_request.repository_full_name].append(
+                pull_request
+            )
         reviews_by_repository: dict[str, list[ReviewFact]] = defaultdict(list)
         for review in review_submissions:
             reviews_by_repository[review.repository_full_name].append(review)
@@ -640,8 +617,12 @@ class PersonMetricsService:
         return tuple(
             self._repository_row(
                 repository_full_name=repository_name,
-                authored_pull_requests=tuple(authored_by_repository.get(repository_name, ())),
-                review_submissions=tuple(reviews_by_repository.get(repository_name, ())),
+                authored_pull_requests=tuple(
+                    authored_by_repository.get(repository_name, ())
+                ),
+                review_submissions=tuple(
+                    reviews_by_repository.get(repository_name, ())
+                ),
             )
             for repository_name in repository_names
         )
@@ -660,14 +641,19 @@ class PersonMetricsService:
                 1 for pull_request in authored_pull_requests if pull_request.merged
             ),
             open_pull_request_count=sum(
-                1 for pull_request in authored_pull_requests if pull_request.state == "open"
+                1
+                for pull_request in authored_pull_requests
+                if pull_request.state == "open"
             ),
             changed_lines_total=sum(
                 pull_request.changed_lines for pull_request in authored_pull_requests
             ),
-            commits_total=sum(pull_request.commits for pull_request in authored_pull_requests),
+            commits_total=sum(
+                pull_request.commits for pull_request in authored_pull_requests
+            ),
             reviews_received=sum(
-                self._review_count(pull_request) for pull_request in authored_pull_requests
+                self._review_count(pull_request)
+                for pull_request in authored_pull_requests
             ),
             review_submissions_given=len(review_submissions),
             pull_requests_reviewed=len(
@@ -688,7 +674,9 @@ class PersonMetricsService:
             authored_pull_request_count=len(authored_pull_requests),
             merged_pull_request_count=merged_pull_request_count,
             open_pull_request_count=sum(
-                1 for pull_request in authored_pull_requests if pull_request.state == "open"
+                1
+                for pull_request in authored_pull_requests
+                if pull_request.state == "open"
             ),
             merge_rate_pct=self._percentage(
                 merged_pull_request_count,
@@ -697,9 +685,12 @@ class PersonMetricsService:
             changed_lines_total=sum(
                 pull_request.changed_lines for pull_request in authored_pull_requests
             ),
-            commits_total=sum(pull_request.commits for pull_request in authored_pull_requests),
+            commits_total=sum(
+                pull_request.commits for pull_request in authored_pull_requests
+            ),
             reviews_received=sum(
-                self._review_count(pull_request) for pull_request in authored_pull_requests
+                self._review_count(pull_request)
+                for pull_request in authored_pull_requests
             ),
             review_coverage_pct=self._percentage(
                 sum(
@@ -713,9 +704,7 @@ class PersonMetricsService:
                 tuple(
                     first_review_hours
                     for pull_request in authored_pull_requests
-                    if (
-                        first_review_hours := self._first_review_hours(pull_request)
-                    )
+                    if (first_review_hours := self._first_review_hours(pull_request))
                     is not None
                 ),
                 distribution_percentile=distribution_percentile,
@@ -739,11 +728,17 @@ class PersonMetricsService:
             pull_requests_reviewed=len(
                 {self._review_pull_request_key(review) for review in review_submissions}
             ),
-            approvals=sum(1 for review in review_submissions if review.state == "APPROVED"),
-            changes_requested=sum(
-                1 for review in review_submissions if review.state == "CHANGES_REQUESTED"
+            approvals=sum(
+                1 for review in review_submissions if review.state == "APPROVED"
             ),
-            comments=sum(1 for review in review_submissions if review.state == "COMMENTED"),
+            changes_requested=sum(
+                1
+                for review in review_submissions
+                if review.state == "CHANGES_REQUESTED"
+            ),
+            comments=sum(
+                1 for review in review_submissions if review.state == "COMMENTED"
+            ),
             authors_supported=len(
                 {
                     review.pull_request_author_login
@@ -781,7 +776,9 @@ class PersonMetricsService:
                 and review.author_login == pull_request.author_login
             ):
                 continue
-            review_started_at = self._review_started_at(pull_request, review.submitted_at)
+            review_started_at = self._review_started_at(
+                pull_request, review.submitted_at
+            )
             return self._hours_between(review_started_at, review.submitted_at)
         return None
 
@@ -898,7 +895,9 @@ class PersonMetricsService:
         self,
         pull_request: PullRequestFact,
     ) -> int:
-        return sum(1 for review in pull_request.reviews if review.submitted_at is not None)
+        return sum(
+            1 for review in pull_request.reviews if review.submitted_at is not None
+        )
 
     def _period_overlaps_window(
         self,

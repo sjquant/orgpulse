@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from datetime import date, datetime
 from enum import StrEnum
 from pathlib import Path
@@ -10,7 +9,6 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validat
 
 from orgpulse.config import get_settings
 from orgpulse.distribution import trim_upper_tail, validate_distribution_percentile
-from orgpulse.errors import AnalysisInputError
 from orgpulse.metrics import PullRequestMetricCollectionBuilder
 from orgpulse.models import (
     AnalysisReportPayload,
@@ -19,13 +17,12 @@ from orgpulse.models import (
     PeriodGrain,
     PullRequestMetricCollection,
     PullRequestMetricRecord,
-    RawSnapshotPeriod,
     RawSnapshotWriteResult,
-    ReportingPeriod,
     RunConfig,
     RunManifest,
     TimeAnchor,
 )
+from orgpulse.raw_snapshot_source import LocalSnapshotSource
 from orgpulse.reporting.analysis_report import (
     build_analysis_report_payload,
 )
@@ -151,18 +148,22 @@ class AnalysisService:
         self,
         config: AnalysisConfig,
     ) -> AnalysisResult:
-        manifest_path, manifest = self._load_manifest(config)
-        raw_snapshot = self._load_raw_snapshot(manifest)
+        source = LocalSnapshotSource().load_analysis_source(
+            org=config.org,
+            output_dir=config.output_dir,
+            grain=config.grain,
+            time_anchor=config.time_anchor,
+        )
         pull_request_metrics = self._load_pull_request_metrics(
             config,
-            manifest,
-            raw_snapshot,
+            source.manifest,
+            source.raw_snapshot,
         )
         filtered_metrics = self._filter_metrics(config, pull_request_metrics)
         rows = self._build_rows(config, pull_request_metrics, filtered_metrics)
         return AnalysisResult(
-            target_org=manifest.target_org,
-            source_manifest_path=manifest_path,
+            target_org=source.manifest.target_org,
+            source_manifest_path=source.manifest_path,
             output_dir=config.output_dir,
             grain=config.grain,
             grouping=config.grouping,
@@ -176,73 +177,11 @@ class AnalysisService:
             export_format=config.export_format,
             report_payload=self._build_report_payload(
                 config,
-                manifest=manifest,
-                raw_snapshot=raw_snapshot,
+                manifest=source.manifest,
+                raw_snapshot=source.raw_snapshot,
                 filtered_metrics=filtered_metrics,
             ),
         )
-
-    def _load_manifest(
-        self,
-        config: AnalysisConfig,
-    ) -> tuple[Path, RunManifest]:
-        manifest_path = (
-            config.output_dir
-            / "manifest"
-            / config.grain.value
-            / config.time_anchor.value
-            / "manifest.json"
-        )
-        if not manifest_path.exists():
-            raise AnalysisInputError(
-                "analysis input is missing: "
-                f"{manifest_path}. Run `orgpulse run` for this grain and time anchor first."
-            )
-        try:
-            payload = json.loads(manifest_path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError) as exc:
-            raise AnalysisInputError(
-                f"analysis manifest is unreadable: {manifest_path}"
-            ) from exc
-
-        manifest = RunManifest.model_validate(payload)
-        if manifest.target_org.lower() != config.org.lower():
-            raise AnalysisInputError(
-                "analysis manifest org does not match the requested org: "
-                f"expected {config.org}, found {manifest.target_org}"
-            )
-        return manifest_path, manifest
-
-    def _load_raw_snapshot(
-        self,
-        manifest: RunManifest,
-    ) -> RawSnapshotWriteResult:
-        period_index = self._snapshot_period_index(manifest)
-        return RawSnapshotWriteResult(
-            root_dir=manifest.raw_snapshot_root_dir,
-            periods=tuple(
-                period_index[key]
-                for key in sorted(
-                    period_index,
-                    key=lambda period_key: (
-                        period_index[period_key].start_date,
-                        period_key,
-                    ),
-                )
-            ),
-        )
-
-    def _snapshot_period_index(
-        self,
-        manifest: RunManifest,
-    ) -> dict[str, RawSnapshotPeriod]:
-        return {
-            period.key: self._build_snapshot_period(
-                manifest.raw_snapshot_root_dir,
-                period,
-            )
-            for period in (*manifest.locked_periods, *manifest.refreshed_periods)
-        }
 
     def _load_pull_request_metrics(
         self,
@@ -260,28 +199,6 @@ class AnalysisService:
             }
         )
         return PullRequestMetricCollectionBuilder().build(metric_config, raw_snapshot)
-
-    def _build_snapshot_period(
-        self,
-        root_dir: Path,
-        period: ReportingPeriod | RawSnapshotPeriod,
-    ) -> RawSnapshotPeriod:
-        if isinstance(period, RawSnapshotPeriod):
-            return period
-        period_dir = root_dir / period.key
-        return RawSnapshotPeriod(
-            key=period.key,
-            start_date=period.start_date,
-            end_date=period.end_date,
-            closed=period.closed,
-            directory=period_dir,
-            pull_requests_path=period_dir / "pull_requests.csv",
-            pull_request_count=0,
-            reviews_path=period_dir / "pull_request_reviews.csv",
-            review_count=0,
-            timeline_events_path=period_dir / "pull_request_timeline_events.csv",
-            timeline_event_count=0,
-        )
 
     def _build_report_payload(
         self,
@@ -314,7 +231,9 @@ class AnalysisService:
         filtered_metrics: list[PullRequestMetricRecord] = []
         for period in pull_request_metrics.periods:
             for pull_request_metric in period.pull_request_metrics:
-                anchor_at = self._anchor_datetime(config.time_anchor, pull_request_metric)
+                anchor_at = self._anchor_datetime(
+                    config.time_anchor, pull_request_metric
+                )
                 if anchor_at is None:
                     continue
                 if config.since is not None and anchor_at.date() < config.since:
@@ -608,13 +527,9 @@ def build_analysis_config(
         "output_dir": settings.output_dir if output_dir is None else output_dir,
         "grain": settings.period if grain is None else grain,
         "time_anchor": settings.time_anchor if time_anchor is None else time_anchor,
-        "grouping": (
-            AnalysisGrouping.PERIOD if grouping is None else grouping
-        ),
+        "grouping": (AnalysisGrouping.PERIOD if grouping is None else grouping),
         "export_format": (
-            AnalysisExportFormat.JSON
-            if export_format is None
-            else export_format
+            AnalysisExportFormat.JSON if export_format is None else export_format
         ),
     }
     if top_n is not None:

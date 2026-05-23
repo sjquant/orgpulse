@@ -196,7 +196,7 @@
       <article class="stat-card">
         <span class="stat-label">Reviewer activity</span>
         <div class="stat-value">{{ reviewer_summary.review_submissions | intfmt }}</div>
-        <div class="stat-subvalue">{{ reviewer_summary.pull_requests_reviewed | intfmt }} PRs reviewed</div>
+        <div class="stat-subvalue">{{ reviewer_summary.pull_requests_reviewed_per_month | numfmt }} PRs reviewed / month</div>
       </article>
     </section>
 
@@ -217,9 +217,9 @@
         <span>{{ reviewer_summary.changes_requested | intfmt }} changes requested / {{ reviewer_summary.comments | intfmt }} comments</span>
       </article>
       <article class="summary-card panel">
-        <span class="summary-label">Review reach</span>
-        <strong>{{ reviewer_summary.repositories_reviewed | intfmt }} repositories</strong>
-        <span>{{ reviewer_summary.authors_supported | intfmt }} authors supported</span>
+        <span class="summary-label">Reviewed lines</span>
+        <strong>{{ reviewer_summary.reviewed_lines | intfmt }}</strong>
+        <span>{{ reviewer_summary.reviewed_lines_per_month | numfmt }} lines / month</span>
       </article>
     </section>
 
@@ -243,6 +243,7 @@
           <div class="tab-strip" id="person-trend-metric-tabs" role="tablist" aria-label="Trend metric">
             <button type="button" class="tab-button active" data-person-trend-metric="authored_pull_request_count" aria-selected="true">Authored PRs</button>
             <button type="button" class="tab-button" data-person-trend-metric="review_submissions_given" aria-selected="false">Reviews given</button>
+            <button type="button" class="tab-button" data-person-trend-metric="reviewed_lines" aria-selected="false">Reviewed lines</button>
             <button type="button" class="tab-button" data-person-trend-metric="changed_lines_total" aria-selected="false">Changed lines</button>
             <button type="button" class="tab-button" data-person-trend-metric="commits_total" aria-selected="false">Commits</button>
           </div>
@@ -288,6 +289,7 @@
                 <th class="num">Reviews Received</th>
                 <th class="num">Reviews Given</th>
                 <th class="num">PRs Reviewed</th>
+                <th class="num">Reviewed Lines</th>
               </tr>
             </thead>
             <tbody>
@@ -302,6 +304,7 @@
                 <td class="num" data-label="Reviews Received">{{ row.reviews_received | intfmt }}</td>
                 <td class="num" data-label="Reviews Given">{{ row.review_submissions_given | intfmt }}</td>
                 <td class="num" data-label="PRs Reviewed">{{ row.pull_requests_reviewed | intfmt }}</td>
+                <td class="num" data-label="Reviewed Lines">{{ row.reviewed_lines | intfmt }}</td>
               </tr>
               {% endfor %}
             </tbody>
@@ -318,6 +321,7 @@
                 <td class="num" data-label="Reviews Received">{{ row.reviews_received | intfmt }}</td>
                 <td class="num" data-label="Reviews Given">{{ row.review_submissions_given | intfmt }}</td>
                 <td class="num" data-label="PRs Reviewed">{{ row.pull_requests_reviewed | intfmt }}</td>
+                <td class="num" data-label="Reviewed Lines">{{ row.reviewed_lines | intfmt }}</td>
               </tr>
               {% endfor %}
             </tbody>
@@ -346,7 +350,7 @@
           <article class="repository-focus-card">
             <strong>{{ row.repository_full_name }}</strong>
             <span>{{ row.authored_pull_request_count | intfmt }} authored PRs / {{ row.review_submissions_given | intfmt }} reviews given</span>
-            <span>{{ row.changed_lines_total | intfmt }} changed lines</span>
+            <span>{{ row.changed_lines_total | intfmt }} changed / {{ row.reviewed_lines | intfmt }} reviewed lines</span>
           </article>
           {% endfor %}
         </div>
@@ -361,6 +365,7 @@
                 <th class="num">Changed Lines</th>
                 <th class="num">Reviews Given</th>
                 <th class="num">PRs Reviewed</th>
+                <th class="num">Reviewed Lines</th>
               </tr>
             </thead>
             <tbody>
@@ -373,6 +378,7 @@
                 <td class="num" data-label="Changed Lines">{{ row.changed_lines_total | intfmt }}</td>
                 <td class="num" data-label="Reviews Given">{{ row.review_submissions_given | intfmt }}</td>
                 <td class="num" data-label="PRs Reviewed">{{ row.pull_requests_reviewed | intfmt }}</td>
+                <td class="num" data-label="Reviewed Lines">{{ row.reviewed_lines | intfmt }}</td>
               </tr>
               {% endfor %}
             </tbody>
@@ -387,6 +393,7 @@
                 <td class="num" data-label="Changed Lines">{{ row.changed_lines_total | intfmt }}</td>
                 <td class="num" data-label="Reviews Given">{{ row.review_submissions_given | intfmt }}</td>
                 <td class="num" data-label="PRs Reviewed">{{ row.pull_requests_reviewed | intfmt }}</td>
+                <td class="num" data-label="Reviewed Lines">{{ row.reviewed_lines | intfmt }}</td>
               </tr>
               {% endfor %}
             </tbody>
@@ -680,6 +687,7 @@
           readoutCard(metricLabel(metric), formatMetricValue(selectedRow[metric], metric)),
           readoutCard("Authored PRs", formatMetricValue(selectedRow.authored_pull_request_count, "authored_pull_request_count")),
           readoutCard("Reviews given", formatMetricValue(selectedRow.review_submissions_given, "review_submissions_given")),
+          readoutCard("Reviewed lines", formatMetricValue(selectedRow.reviewed_lines, "reviewed_lines")),
         ].join("");
       }
 
@@ -833,6 +841,7 @@
         return {
           authored_pull_request_count: "Authored PRs",
           review_submissions_given: "Reviews given",
+          reviewed_lines: "Reviewed lines",
           changed_lines_total: "Changed lines",
           commits_total: "Commits",
         }[metric] || metric;

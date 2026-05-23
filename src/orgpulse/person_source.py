@@ -23,6 +23,7 @@ class ReviewFact:
     author_login: str | None
     submitted_at: datetime | None
     pull_request_author_login: str | None
+    pull_request_changed_lines: int
 
 
 @dataclass(frozen=True)
@@ -125,8 +126,11 @@ class PersonSnapshotSource:
         self,
         period: RawSnapshotPeriod,
     ) -> dict[PullRequestKey, list[ReviewFact]]:
-        pull_request_authors = {
-            self._pull_request_key(row): self._optional_str(row["author_login"])
+        pull_request_contexts = {
+            self._pull_request_key(row): (
+                self._optional_str(row["author_login"]),
+                int(row["additions"]) + int(row["deletions"]),
+            )
             for row in read_snapshot_csv_rows(period.pull_requests_path)
         }
         reviews_by_pull_request: dict[PullRequestKey, list[ReviewFact]] = defaultdict(
@@ -134,6 +138,9 @@ class PersonSnapshotSource:
         )
         for row in read_snapshot_csv_rows(period.reviews_path):
             pull_request_key = self._pull_request_key(row)
+            pull_request_author_login, pull_request_changed_lines = (
+                pull_request_contexts.get(pull_request_key, (None, 0))
+            )
             reviews_by_pull_request[pull_request_key].append(
                 ReviewFact(
                     repository_full_name=row["repository_full_name"],
@@ -141,9 +148,8 @@ class PersonSnapshotSource:
                     state=row["state"],
                     author_login=self._optional_str(row["author_login"]),
                     submitted_at=self._optional_datetime(row["submitted_at"]),
-                    pull_request_author_login=pull_request_authors.get(
-                        pull_request_key
-                    ),
+                    pull_request_author_login=pull_request_author_login,
+                    pull_request_changed_lines=pull_request_changed_lines,
                 )
             )
         for reviews in reviews_by_pull_request.values():

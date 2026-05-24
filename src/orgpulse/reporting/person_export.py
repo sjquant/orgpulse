@@ -75,6 +75,9 @@ def _render_markdown(
         "",
         f"- Reviews submitted: {reviewer.review_submissions}",
         f"- PRs reviewed: {reviewer.pull_requests_reviewed}",
+        f"- PRs reviewed per month: {_markdown_number(reviewer.pull_requests_reviewed_per_month)}",
+        f"- Reviewed lines: {reviewer.reviewed_lines}",
+        f"- Reviewed lines per month: {_markdown_number(reviewer.reviewed_lines_per_month)}",
         f"- Approvals: {reviewer.approvals}",
         f"- Changes requested: {reviewer.changes_requested}",
         f"- Comments: {reviewer.comments}",
@@ -83,8 +86,8 @@ def _render_markdown(
         "",
         "## Periods",
         "",
-        "| Period | Authored PRs | Merged | Open | Changed Lines | Commits | Reviews Received | Reviews Given | PRs Reviewed |",
-        "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+        "| Period | Authored PRs | Merged | Open | Changed Lines | Commits | Reviews Received | Reviews Given | PRs Reviewed | Reviewed Lines |",
+        "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
     ]
     for row in result.period_rows:
         lines.append(
@@ -97,15 +100,16 @@ def _render_markdown(
             f"{row.commits_total} | "
             f"{row.reviews_received} | "
             f"{row.review_submissions_given} | "
-            f"{row.pull_requests_reviewed} |"
+            f"{row.pull_requests_reviewed} | "
+            f"{row.reviewed_lines} |"
         )
     lines.extend(
         [
             "",
             "## Repositories",
             "",
-            "| Repository | Authored PRs | Merged | Open | Changed Lines | Reviews Given | PRs Reviewed |",
-            "| --- | ---: | ---: | ---: | ---: | ---: | ---: |",
+            "| Repository | Authored PRs | Merged | Open | Changed Lines | Reviews Given | PRs Reviewed | Reviewed Lines |",
+            "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
         ]
     )
     for row in result.repository_rows:
@@ -117,7 +121,8 @@ def _render_markdown(
             f"{row.open_pull_request_count} | "
             f"{row.changed_lines_total} | "
             f"{row.review_submissions_given} | "
-            f"{row.pull_requests_reviewed} |"
+            f"{row.pull_requests_reviewed} | "
+            f"{row.reviewed_lines} |"
         )
     return "\n".join(lines)
 

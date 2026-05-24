@@ -67,11 +67,11 @@ class TestManualDashboardPayload:
         assert "chart-partial-band" in html
         assert "partial-period-row" in html
         assert "period-state-pill open" in html
-        assert "Yellow band = open or partial period" in html
+        assert "Yellow band = open period" in html
         assert 'rx="8"' not in html
 
-    def test_labels_closed_truncated_dashboard_periods_as_partial(self) -> None:
-        """Label a closed dashboard period as partial when the window starts inside it."""
+    def test_labels_closed_truncated_dashboard_periods_as_open_in_html(self) -> None:
+        """Label a truncated dashboard period as open in the rendered dashboard."""
         # Given
         payload = {
             "overview": {
@@ -119,12 +119,12 @@ class TestManualDashboardPayload:
 
         # Then
         assert prepared.monthly_trends[0]["status"] == "closed"
-        assert prepared.monthly_trends[0]["label"] == "partial month"
+        assert prepared.monthly_trends[0]["label"] == "open month"
         assert prepared.monthly_trends[0]["is_partial"] is True
         assert prepared.monthly_trends[0]["open_month"] is False
-        assert "partial month" in html
-        assert "period-state-pill partial" in html
-        assert "Yellow band = open or partial period" in html
+        assert "open month" in html
+        assert "period-state-pill open" in html
+        assert "Yellow band = open period" in html
         assert 'rx="8"' not in html
 
     def test_renders_theme_switch_with_tokenized_theme_bootstrap(self) -> None:
@@ -885,3 +885,61 @@ class TestManualDashboardPayload:
             "bob",
             "alice",
         ]
+
+    def test_renders_reviewer_monthly_rate_and_reviewed_line_columns(
+        self,
+    ) -> None:
+        """Render reviewer monthly rate and reviewed line columns in the leaderboard and person detail view."""
+        # Given
+        payload = {
+            "overview": {
+                "org": "acme",
+                "generated_at": "2026-04-24T00:00:00+00:00",
+                "since": "2026-04-01",
+                "until": "2026-04-30",
+                "time_anchor": "created_at",
+                "top_repository": "acme/api",
+                "top_author": "alice",
+                "unique_reviewers": 1,
+            },
+            "reviewers": [
+                {
+                    "reviewer_login": "alice",
+                    "review_submissions": 4,
+                    "pull_requests_reviewed": 2,
+                    "reviewed_lines": 120,
+                    "pull_requests_reviewed_per_month": 2.0,
+                    "reviewed_lines_per_month": 120.0,
+                    "approvals": 2,
+                    "changes_requested": 0,
+                    "comments": 2,
+                    "authors_supported": 2,
+                },
+            ],
+            "pull_requests": [
+                _manual_pull_request(
+                    repository_full_name="acme/api",
+                    pull_request_number=1,
+                    author_login="alice",
+                    created_at="2026-04-01T09:00:00+00:00",
+                    merged_at="2026-04-02T09:00:00+00:00",
+                    changed_lines=120,
+                    additions=90,
+                    deletions=30,
+                    first_review_hours=1.0,
+                    merge_hours=24.0,
+                    size_bucket="S",
+                ),
+            ],
+        }
+
+        # When
+        prepared = prepare_dashboard_payload(payload)
+        html = render_dashboard_html(prepared)
+
+        # Then
+        assert "PRs / month" in html
+        assert "Reviewed lines" in html
+        assert "Lines / month" in html
+        assert "Reviewed PRs / month" in html
+        assert "Reviewed lines / month" in html

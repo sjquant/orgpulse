@@ -525,7 +525,11 @@ def _build_dashboard_payload(
         snapshots,
         total_pull_requests=total_pull_requests,
     )
-    reviewer_rows = _reviewer_rows(snapshots)
+    reviewer_rows = _reviewer_rows(
+        snapshots,
+        since=since,
+        until=until,
+    )
     repository_rows = _repository_rows(
         snapshots,
         total_pull_requests=total_pull_requests,
@@ -809,20 +813,26 @@ def _author_rows(
 
 def _reviewer_rows(
     snapshots: list[PullRequestSnapshot],
+    *,
+    since: date,
+    until: date,
 ) -> list[DashboardReviewerPayload]:
     review_records: dict[str, list[PullRequestSnapshot]] = defaultdict(list)
     review_counts: Counter[str] = Counter()
+    reviewed_line_totals: Counter[str] = Counter()
     approval_counts: Counter[str] = Counter()
     change_request_counts: Counter[str] = Counter()
     comment_counts: Counter[str] = Counter()
     prs_reviewed: dict[str, set[str]] = defaultdict(set)
+    month_span_count = PeriodGrain.MONTH.count_periods(since, until)
     for snapshot in snapshots:
+        pull_request_key = f"{snapshot.repository_full_name}#{snapshot.number}"
         for review in snapshot.reviews:
             review_records[review.author_login].append(snapshot)
             review_counts[review.author_login] += 1
-            prs_reviewed[review.author_login].add(
-                f"{snapshot.repository_full_name}#{snapshot.number}"
-            )
+            if pull_request_key not in prs_reviewed[review.author_login]:
+                prs_reviewed[review.author_login].add(pull_request_key)
+                reviewed_line_totals[review.author_login] += snapshot.changed_lines
             if review.state == "APPROVED":
                 approval_counts[review.author_login] += 1
             if review.state == "CHANGES_REQUESTED":
@@ -836,6 +846,13 @@ def _reviewer_rows(
                 reviewer_login=reviewer_login,
                 review_submissions=review_counts[reviewer_login],
                 pull_requests_reviewed=len(prs_reviewed[reviewer_login]),
+                reviewed_lines=reviewed_line_totals[reviewer_login],
+                pull_requests_reviewed_per_month=_round(
+                    len(prs_reviewed[reviewer_login]) / month_span_count
+                ),
+                reviewed_lines_per_month=_round(
+                    reviewed_line_totals[reviewer_login] / month_span_count
+                ),
                 approvals=approval_counts[reviewer_login],
                 changes_requested=change_request_counts[reviewer_login],
                 comments=comment_counts[reviewer_login],

@@ -803,14 +803,8 @@
       if (!period) {
         return "unknown period";
       }
-      if (period.open_week) {
-        return "open week";
-      }
-      if (period.open_month) {
-        return "open month";
-      }
-      if (period.is_partial) {
-        return "partial period";
+      if (period.state_label) {
+        return period.state_label;
       }
       return period.status || "closed";
     }

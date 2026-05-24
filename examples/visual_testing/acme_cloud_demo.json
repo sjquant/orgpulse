@@ -1,0 +1,3173 @@
+{
+  "as_of": "2026-05-22",
+  "description": "Stable synthetic orgpulse visual-testing dataset for acme-cloud reports.",
+  "distribution_percentile": 95,
+  "org": "acme-cloud",
+  "person_login": "alex-rivera",
+  "pull_requests": [
+    {
+      "additions": 794,
+      "author_login": "nora-chen",
+      "changed_files": 13,
+      "closed_at": "2025-10-06T18:03:03.191861+00:00",
+      "commits": 9,
+      "created_at": "2025-10-01T16:12:00+00:00",
+      "deletions": 304,
+      "draft": false,
+      "html_url": "https://github.com/acme-cloud/data-pipeline/pull/1401",
+      "merged": false,
+      "merged_at": null,
+      "number": 1401,
+      "repository_full_name": "acme-cloud/data-pipeline",
+      "reviews": [
+        {
+          "author_login": "sam-patel",
+          "commit_id": "commit-3001",
+          "review_id": 3001,
+          "state": "APPROVED",
+          "submitted_at": "2025-10-03T15:23:20.247908+00:00"
+        }
+      ],
+      "state": "closed",
+      "timeline_events": [
+        {
+          "actor_login": "nora-chen",
+          "created_at": "2025-10-01T19:25:42.453878+00:00",
+          "event": "review_requested",
+          "event_id": 9001,
+          "requested_reviewer_login": "sam-patel",
+          "requested_team_name": null
+        }
+      ],
+      "title": "Add usage metering jobs",
+      "updated_at": "2025-10-06T18:03:03.191861+00:00"
+    },
+    {
+      "additions": 403,
+      "author_login": "diego-santos",
+      "changed_files": 14,
+      "closed_at": "2025-10-06T09:00:25.630224+00:00",
+      "commits": 7,
+      "created_at": "2025-10-03T11:20:00+00:00",
+      "deletions": 353,
+      "draft": false,
+      "html_url": "https://github.com/acme-cloud/admin-console/pull/1402",
+      "merged": true,
+      "merged_at": "2025-10-06T09:00:25.630224+00:00",
+      "number": 1402,
+      "repository_full_name": "acme-cloud/admin-console",
+      "reviews": [
+        {
+          "author_login": "alex-rivera",
+          "commit_id": "commit-3002",
+          "review_id": 3002,
+          "state": "APPROVED",
+          "submitted_at": "2025-10-06T09:39:09.757325+00:00"
+        },
+        {
+          "author_login": "mira-kim",
+          "commit_id": "commit-3003",
+          "review_id": 3003,
+          "state": "APPROVED",
+          "submitted_at": "2025-10-06T09:35:37.103394+00:00"
+        }
+      ],
+      "state": "closed",
+      "timeline_events": [
+        {
+          "actor_login": "diego-santos",
+          "created_at": "2025-10-03T12:53:27.234555+00:00",
+          "event": "review_requested",
+          "event_id": 9002,
+          "requested_reviewer_login": "alex-rivera",
+          "requested_team_name": null
+        },
+        {
+          "actor_login": "diego-santos",
+          "created_at": "2025-10-03T12:53:27.234555+00:00",
+          "event": "review_requested",
+          "event_id": 9003,
+          "requested_reviewer_login": "mira-kim",
+          "requested_team_name": null
+        }
+      ],
+      "title": "Backfill review insights path",
+      "updated_at": "2025-10-06T09:00:25.630224+00:00"
+    },
+    {
+      "additions": 322,
+      "author_login": "mira-kim",
+      "changed_files": 11,
+      "closed_at": "2025-10-13T08:17:42.775678+00:00",
+      "commits": 4,
+      "created_at": "2025-10-09T13:05:00+00:00",
+      "deletions": 22,
+      "draft": false,
+      "html_url": "https://github.com/acme-cloud/data-pipeline/pull/1403",
+      "merged": false,
+      "merged_at": null,
+      "number": 1403,
+      "repository_full_name": "acme-cloud/data-pipeline",
+      "reviews": [
+        {
+          "author_login": "alex-rivera",
+          "commit_id": "commit-3004",
+          "review_id": 3004,
+          "state": "APPROVED",
+          "submitted_at": "2025-10-10T19:58:36.631721+00:00"
+        },
+        {
+          "author_login": "jordan-lee",
+          "commit_id": "commit-3005",
+          "review_id": 3005,
+          "state": "APPROVED",
+          "submitted_at": "2025-10-13T09:18:54.644951+00:00"
+        }
+      ],
+      "state": "closed",
+      "timeline_events": [
+        {
+          "actor_login": "mira-kim",
+          "created_at": "2025-10-09T15:07:40.306829+00:00",
+          "event": "review_requested",
+          "event_id": 9004,
+          "requested_reviewer_login": "alex-rivera",
+          "requested_team_name": null
+        },
+        {
+          "actor_login": "mira-kim",
+          "created_at": "2025-10-09T15:07:40.306829+00:00",
+          "event": "review_requested",
+          "event_id": 9005,
+          "requested_reviewer_login": "jordan-lee",
+          "requested_team_name": null
+        }
+      ],
+      "title": "Reduce billing export path",
+      "updated_at": "2025-10-13T08:17:42.775678+00:00"
+    },
+    {
+      "additions": 196,
+      "author_login": "jordan-lee",
+      "changed_files": 6,
+      "closed_at": "2025-10-23T08:42:51.326121+00:00",
+      "commits": 3,
+      "created_at": "2025-10-13T16:00:00+00:00",
+      "deletions": 171,
+      "draft": false,
+      "html_url": "https://github.com/acme-cloud/infra-ops/pull/1404",
+      "merged": false,
+      "merged_at": null,
+      "number": 1404,
+      "repository_full_name": "acme-cloud/infra-ops",
+      "reviews": [
+        {
+          "author_login": "mira-kim",
+          "commit_id": "commit-3006",
+          "review_id": 3006,
+          "state": "COMMENTED",
+          "submitted_at": "2025-10-15T19:46:49.301064+00:00"
+        },
+        {
+          "author_login": "alex-rivera",
+          "commit_id": "commit-3007",
+          "review_id": 3007,
+          "state": "COMMENTED",
+          "submitted_at": "2025-10-14T10:40:57.407645+00:00"
+        }
+      ],
+      "state": "closed",
+      "timeline_events": [
+        {
+          "actor_login": "jordan-lee",
+          "created_at": "2025-10-13T16:40:10.007685+00:00",
+          "event": "review_requested",
+          "event_id": 9006,
+          "requested_reviewer_login": "mira-kim",
+          "requested_team_name": null
+        },
+        {
+          "actor_login": "jordan-lee",
+          "created_at": "2025-10-13T16:40:10.007685+00:00",
+          "event": "review_requested",
+          "event_id": 9007,
+          "requested_reviewer_login": "alex-rivera",
+          "requested_team_name": null
+        }
+      ],
+      "title": "Backfill repository onboarding jobs",
+      "updated_at": "2025-10-23T08:42:51.326121+00:00"
+    },
+    {
+      "additions": 246,
+      "author_login": "sam-patel",
+      "changed_files": 6,
+      "closed_at": "2025-10-21T10:16:24.556017+00:00",
+      "commits": 3,
+      "created_at": "2025-10-17T13:35:00+00:00",
+      "deletions": 60,
+      "draft": false,
+      "html_url": "https://github.com/acme-cloud/admin-console/pull/1405",
+      "merged": false,
+      "merged_at": null,
+      "number": 1405,
+      "repository_full_name": "acme-cloud/admin-console",
+      "reviews": [
+        {
+          "author_login": "jordan-lee",
+          "commit_id": "commit-3008",
+          "review_id": 3008,
+          "state": "APPROVED",
+          "submitted_at": "2025-10-20T12:36:21.541110+00:00"
+        },
+        {
+          "author_login": "taylor-ng",
+          "commit_id": "commit-3009",
+          "review_id": 3009,
+          "state": "APPROVED",
+          "submitted_at": "2025-10-20T09:30:00.654135+00:00"
+        }
+      ],
+      "state": "closed",
+      "timeline_events": [
+        {
+          "actor_login": "sam-patel",
+          "created_at": "2025-10-17T18:51:04.843846+00:00",
+          "event": "review_requested",
+          "event_id": 9008,
+          "requested_reviewer_login": "jordan-lee",
+          "requested_team_name": null
+        },
+        {
+          "actor_login": "sam-patel",
+          "created_at": "2025-10-17T18:51:04.843846+00:00",
+          "event": "review_requested",
+          "event_id": 9009,
+          "requested_reviewer_login": "taylor-ng",
+          "requested_team_name": null
+        }
+      ],
+      "title": "Retire incident replay panel",
+      "updated_at": "2025-10-21T10:16:24.556017+00:00"
+    },
+    {
+      "additions": 931,
+      "author_login": "alex-rivera",
+      "changed_files": 17,
+      "closed_at": "2025-10-29T16:01:37.729165+00:00",
+      "commits": 6,
+      "created_at": "2025-10-21T13:00:00+00:00",
+      "deletions": 327,
+      "draft": false,
+      "html_url": "https://github.com/acme-cloud/admin-console/pull/1406",
+      "merged": false,
+      "merged_at": null,
+      "number": 1406,
+      "repository_full_name": "acme-cloud/admin-console",
+      "reviews": [
+        {
+          "author_login": "mira-kim",
+          "commit_id": "commit-3010",
+          "review_id": 3010,
+          "state": "COMMENTED",
+          "submitted_at": "2025-10-24T09:04:51.750912+00:00"
+        }
+      ],
+      "state": "closed",
+      "timeline_events": [
+        {
+          "actor_login": "alex-rivera",
+          "created_at": "2025-10-21T13:24:00+00:00",
+          "event": "converted_to_draft",
+          "event_id": 9010,
+          "requested_reviewer_login": null,
+          "requested_team_name": null
+        },
+        {
+          "actor_login": "alex-rivera",
+          "created_at": "2025-10-22T09:44:33.530665+00:00",
+          "event": "ready_for_review",
+          "event_id": 9011,
+          "requested_reviewer_login": null,
+          "requested_team_name": null
+        },
+        {
+          "actor_login": "alex-rivera",
+          "created_at": "2025-10-22T10:15:50.329132+00:00",
+          "event": "review_requested",
+          "event_id": 9012,
+          "requested_reviewer_login": "mira-kim",
+          "requested_team_name": null
+        }
+      ],
+      "title": "Cache incident replay panel",
+      "updated_at": "2025-10-29T16:01:37.729165+00:00"
+    },
+    {
+      "additions": 187,
+      "author_login": "mira-kim",
+      "changed_files": 9,
+      "closed_at": "2025-10-28T09:19:31.915294+00:00",
+      "commits": 5,
+      "created_at": "2025-10-24T10:12:00+00:00",
+      "deletions": 409,
+      "draft": false,
+      "html_url": "https://github.com/acme-cloud/admin-console/pull/1407",
+      "merged": false,
+      "merged_at": null,
+      "number": 1407,
+      "repository_full_name": "acme-cloud/admin-console",
+      "reviews": [
+        {
+          "author_login": "taylor-ng",
+          "commit_id": "commit-3011",
+          "review_id": 3011,
+          "state": "CHANGES_REQUESTED",
+          "submitted_at": "2025-10-27T15:03:58.078834+00:00"
+        },
+        {
+          "author_login": "taylor-ng",
+          "commit_id": "commit-3012",
+          "review_id": 3012,
+          "state": "APPROVED",
+          "submitted_at": "2025-10-31T12:39:54.975749+00:00"
+        },
+        {
+          "author_login": "jordan-lee",
+          "commit_id": "commit-3013",
+          "review_id": 3013,
+          "state": "APPROVED",
+          "submitted_at": "2025-10-24T15:47:38.506248+00:00"
+        }
+      ],
+      "state": "closed",
+      "timeline_events": [
+        {
+          "actor_login": "mira-kim",
+          "created_at": "2025-10-24T11:03:49.735383+00:00",
+          "event": "review_requested",
+          "event_id": 9013,
+          "requested_reviewer_login": "taylor-ng",
+          "requested_team_name": null
+        },
+        {
+          "actor_login": "mira-kim",
+          "created_at": "2025-10-24T11:03:49.735383+00:00",
+          "event": "review_requested",
+          "event_id": 9014,
+          "requested_reviewer_login": "jordan-lee",
+          "requested_team_name": null
+        }
+      ],
+      "title": "Move incident replay contract",
+      "updated_at": "2025-10-28T09:19:31.915294+00:00"
+    },
+    {
+      "additions": 381,
+      "author_login": "alex-rivera",
+      "changed_files": 6,
+      "closed_at": "2025-11-06T09:02:04.611232+00:00",
+      "commits": 5,
+      "created_at": "2025-11-03T15:35:00+00:00",
+      "deletions": 52,
+      "draft": false,
+      "html_url": "https://github.com/acme-cloud/data-pipeline/pull/1408",
+      "merged": true,
+      "merged_at": "2025-11-06T09:02:04.611232+00:00",
+      "number": 1408,
+      "repository_full_name": "acme-cloud/data-pipeline",
+      "reviews": [
+        {
+          "author_login": "sam-patel",
+          "commit_id": "commit-3014",
+          "review_id": 3014,
+          "state": "APPROVED",
+          "submitted_at": "2025-11-05T18:03:25.696466+00:00"
+        },
+        {
+          "author_login": "nora-chen",
+          "commit_id": "commit-3015",
+          "review_id": 3015,
+          "state": "APPROVED",
+          "submitted_at": "2025-11-04T08:44:31.786357+00:00"
+        }
+      ],
+      "state": "closed",
+      "timeline_events": [
+        {
+          "actor_login": "alex-rivera",
+          "created_at": "2025-11-03T17:38:47.196382+00:00",
+          "event": "review_requested",
+          "event_id": 9015,
+          "requested_reviewer_login": "sam-patel",
+          "requested_team_name": null
+        },
+        {
+          "actor_login": "alex-rivera",
+          "created_at": "2025-11-03T17:38:47.196382+00:00",
+          "event": "review_requested",
+          "event_id": 9016,
+          "requested_reviewer_login": "nora-chen",
+          "requested_team_name": null
+        }
+      ],
+      "title": "Normalize identity join guardrails",
+      "updated_at": "2025-11-06T09:02:04.611232+00:00"
+    },
+    {
+      "additions": 222,
+      "author_login": "taylor-ng",
+      "changed_files": 7,
+      "closed_at": "2025-11-10T10:36:26.083652+00:00",
+      "commits": 5,
+      "created_at": "2025-11-06T15:20:00+00:00",
+      "deletions": 255,
+      "draft": false,
+      "html_url": "https://github.com/acme-cloud/data-pipeline/pull/1409",
+      "merged": true,
+      "merged_at": "2025-11-10T10:36:26.083652+00:00",
+      "number": 1409,
+      "repository_full_name": "acme-cloud/data-pipeline",
+      "reviews": [
+        {
+          "author_login": "nora-chen",
+          "commit_id": "commit-3016",
+          "review_id": 3016,
+          "state": "APPROVED",
+          "submitted_at": "2025-11-11T10:09:20.909845+00:00"
+        },
+        {
+          "author_login": "jordan-lee",
+          "commit_id": "commit-3017",
+          "review_id": 3017,
+          "state": "COMMENTED",
+          "submitted_at": "2025-11-10T13:39:11.391210+00:00"
+        }
+      ],
+      "state": "closed",
+      "timeline_events": [
+        {
+          "actor_login": "taylor-ng",
+          "created_at": "2025-11-07T10:18:46.570635+00:00",
+          "event": "review_requested",
+          "event_id": 9017,
+          "requested_reviewer_login": "nora-chen",
+          "requested_team_name": null
+        },
+        {
+          "actor_login": "taylor-ng",
+          "created_at": "2025-11-07T10:18:46.570635+00:00",
+          "event": "review_requested",
+          "event_id": 9018,
+          "requested_reviewer_login": "jordan-lee",
+          "requested_team_name": null
+        }
+      ],
+      "title": "Normalize billing export panel",
+      "updated_at": "2025-11-10T10:36:26.083652+00:00"
+    },
+    {
+      "additions": 420,
+      "author_login": "mira-kim",
+      "changed_files": 9,
+      "closed_at": "2025-11-13T09:29:38.967228+00:00",
+      "commits": 4,
+      "created_at": "2025-11-10T09:12:00+00:00",
+      "deletions": 106,
+      "draft": false,
+      "html_url": "https://github.com/acme-cloud/platform-api/pull/1410",
+      "merged": true,
+      "merged_at": "2025-11-13T09:29:38.967228+00:00",
+      "number": 1410,
+      "repository_full_name": "acme-cloud/platform-api",
+      "reviews": [
+        {
+          "author_login": "alex-rivera",
+          "commit_id": "commit-3018",
+          "review_id": 3018,
+          "state": "APPROVED",
+          "submitted_at": "2025-11-13T10:40:23.451285+00:00"
+        },
+        {
+          "author_login": "taylor-ng",
+          "commit_id": "commit-3019",
+          "review_id": 3019,
+          "state": "APPROVED",
+          "submitted_at": "2025-11-11T10:11:17.438329+00:00"
+        }
+      ],
+      "state": "closed",
+      "timeline_events": [
+        {
+          "actor_login": "mira-kim",
+          "created_at": "2025-11-10T12:08:05.723636+00:00",
+          "event": "review_requested",
+          "event_id": 9019,
+          "requested_reviewer_login": "alex-rivera",
+          "requested_team_name": null
+        },
+        {
+          "actor_login": "mira-kim",
+          "created_at": "2025-11-10T12:08:05.723636+00:00",
+          "event": "review_requested",
+          "event_id": 9020,
+          "requested_reviewer_login": "taylor-ng",
+          "requested_team_name": null
+        }
+      ],
+      "title": "Reduce support inbox contract",
+      "updated_at": "2025-11-13T09:29:38.967228+00:00"
+    },
+    {
+      "additions": 332,
+      "author_login": "sam-patel",
+      "changed_files": 10,
+      "closed_at": "2025-11-13T10:51:15.536337+00:00",
+      "commits": 4,
+      "created_at": "2025-11-11T14:12:00+00:00",
+      "deletions": 218,
+      "draft": false,
+      "html_url": "https://github.com/acme-cloud/admin-console/pull/1411",
+      "merged": true,
+      "merged_at": "2025-11-13T10:51:15.536337+00:00",
+      "number": 1411,
+      "repository_full_name": "acme-cloud/admin-console",
+      "reviews": [],
+      "state": "closed",
+      "timeline_events": [],
+      "title": "Instrument billing export contract",
+      "updated_at": "2025-11-13T10:51:15.536337+00:00"
+    },
+    {
+      "additions": 215,
+      "author_login": "mira-kim",
+      "changed_files": 8,
+      "closed_at": "2025-11-14T18:00:00.494982+00:00",
+      "commits": 6,
+      "created_at": "2025-11-12T13:05:00+00:00",
+      "deletions": 269,
+      "draft": false,
+      "html_url": "https://github.com/acme-cloud/admin-console/pull/1412",
+      "merged": true,
+      "merged_at": "2025-11-14T18:00:00.494982+00:00",
+      "number": 1412,
+      "repository_full_name": "acme-cloud/admin-console",
+      "reviews": [
+        {
+          "author_login": "alex-rivera",
+          "commit_id": "commit-3020",
+          "review_id": 3020,
+          "state": "APPROVED",
+          "submitted_at": "2025-11-13T09:34:55.191576+00:00"
+        }
+      ],
+      "state": "closed",
+      "timeline_events": [
+        {
+          "actor_login": "mira-kim",
+          "created_at": "2025-11-12T15:06:19.353237+00:00",
+          "event": "review_requested",
+          "event_id": 9021,
+          "requested_reviewer_login": "alex-rivera",
+          "requested_team_name": null
+        }
+      ],
+      "title": "Backfill freshness monitor path",
+      "updated_at": "2025-11-14T18:00:00.494982+00:00"
+    },
+    {
+      "additions": 175,
+      "author_login": "taylor-ng",
+      "changed_files": 5,
+      "closed_at": "2025-11-17T09:27:52.928883+00:00",
+      "commits": 3,
+      "created_at": "2025-11-13T13:05:00+00:00",
+      "deletions": 30,
+      "draft": false,
+      "html_url": "https://github.com/acme-cloud/mobile-shell/pull/1413",
+      "merged": true,
+      "merged_at": "2025-11-17T09:27:52.928883+00:00",
+      "number": 1413,
+      "repository_full_name": "acme-cloud/mobile-shell",
+      "reviews": [
+        {
+          "author_login": "sam-patel",
+          "commit_id": "commit-3021",
+          "review_id": 3021,
+          "state": "CHANGES_REQUESTED",
+          "submitted_at": "2025-11-13T16:00:49.306766+00:00"
+        }
+      ],
+      "state": "closed",
+      "timeline_events": [
+        {
+          "actor_login": "taylor-ng",
+          "created_at": "2025-11-13T13:34:07.389521+00:00",
+          "event": "review_requested",
+          "event_id": 9022,
+          "requested_reviewer_login": "sam-patel",
+          "requested_team_name": null
+        }
+      ],
+      "title": "Add mobile session surface",
+      "updated_at": "2025-11-17T09:27:52.928883+00:00"
+    },
+    {
+      "additions": 119,
+      "author_login": "alex-rivera",
+      "changed_files": 4,
+      "closed_at": "2025-11-25T10:11:10.825974+00:00",
+      "commits": 3,
+      "created_at": "2025-11-19T09:05:00+00:00",
+      "deletions": 46,
+      "draft": false,
+      "html_url": "https://github.com/acme-cloud/infra-ops/pull/1414",
+      "merged": true,
+      "merged_at": "2025-11-25T10:11:10.825974+00:00",
+      "number": 1414,
+      "repository_full_name": "acme-cloud/infra-ops",
+      "reviews": [
+        {
+          "author_login": "taylor-ng",
+          "commit_id": "commit-3022",
+          "review_id": 3022,
+          "state": "APPROVED",
+          "submitted_at": "2025-11-21T14:01:10.283019+00:00"
+        }
+      ],
+      "state": "closed",
+      "timeline_events": [
+        {
+          "actor_login": "alex-rivera",
+          "created_at": "2025-11-19T09:29:00+00:00",
+          "event": "converted_to_draft",
+          "event_id": 9023,
+          "requested_reviewer_login": null,
+          "requested_team_name": null
+        },
+        {
+          "actor_login": "alex-rivera",
+          "created_at": "2025-11-21T09:01:39.982065+00:00",
+          "event": "ready_for_review",
+          "event_id": 9024,
+          "requested_reviewer_login": null,
+          "requested_team_name": null
+        },
+        {
+          "actor_login": "alex-rivera",
+          "created_at": "2025-11-21T11:41:42.341383+00:00",
+          "event": "review_requested",
+          "event_id": 9025,
+          "requested_reviewer_login": "taylor-ng",
+          "requested_team_name": null
+        }
+      ],
+      "title": "Backfill dashboard hydration jobs",
+      "updated_at": "2025-11-25T10:11:10.825974+00:00"
+    },
+    {
+      "additions": 755,
+      "author_login": "jordan-lee",
+      "changed_files": 14,
+      "closed_at": "2025-11-25T09:36:04.149842+00:00",
+      "commits": 5,
+      "created_at": "2025-11-21T11:20:00+00:00",
+      "deletions": 47,
+      "draft": false,
+      "html_url": "https://github.com/acme-cloud/admin-console/pull/1415",
+      "merged": true,
+      "merged_at": "2025-11-25T09:36:04.149842+00:00",
+      "number": 1415,
+      "repository_full_name": "acme-cloud/admin-console",
+      "reviews": [
+        {
+          "author_login": "mira-kim",
+          "commit_id": "commit-3023",
+          "review_id": 3023,
+          "state": "CHANGES_REQUESTED",
+          "submitted_at": "2025-11-25T10:40:17.670953+00:00"
+        },
+        {
+          "author_login": "mira-kim",
+          "commit_id": "commit-3024",
+          "review_id": 3024,
+          "state": "APPROVED",
+          "submitted_at": "2025-11-26T10:37:11.927857+00:00"
+        }
+      ],
+      "state": "closed",
+      "timeline_events": [
+        {
+          "actor_login": "jordan-lee",
+          "created_at": "2025-11-21T11:38:30.302681+00:00",
+          "event": "review_requested",
+          "event_id": 9026,
+          "requested_reviewer_login": "mira-kim",
+          "requested_team_name": null
+        }
+      ],
+      "title": "Add identity join contract",
+      "updated_at": "2025-11-25T09:36:04.149842+00:00"
+    },
+    {
+      "additions": 83,
+      "author_login": "pri-iyer",
+      "changed_files": 5,
+      "closed_at": "2025-12-01T09:25:00.531612+00:00",
+      "commits": 3,
+      "created_at": "2025-11-28T15:05:00+00:00",
+      "deletions": 41,
+      "draft": false,
+      "html_url": "https://github.com/acme-cloud/admin-console/pull/1416",
+      "merged": true,
+      "merged_at": "2025-12-01T09:25:00.531612+00:00",
+      "number": 1416,
+      "repository_full_name": "acme-cloud/admin-console",
+      "reviews": [
+        {
+          "author_login": "alex-rivera",
+          "commit_id": "commit-3025",
+          "review_id": 3025,
+          "state": "APPROVED",
+          "submitted_at": "2025-12-01T14:16:03.517706+00:00"
+        }
+      ],
+      "state": "closed",
+      "timeline_events": [
+        {
+          "actor_login": "pri-iyer",
+          "created_at": "2025-11-28T16:42:18.309149+00:00",
+          "event": "review_requested",
+          "event_id": 9027,
+          "requested_reviewer_login": "alex-rivera",
+          "requested_team_name": null
+        }
+      ],
+      "title": "Rework audit evidence contract",
+      "updated_at": "2025-12-01T09:25:00.531612+00:00"
+    },
+    {
+      "additions": 360,
+      "author_login": "taylor-ng",
+      "changed_files": 9,
+      "closed_at": "2025-12-10T10:43:37.416876+00:00",
+      "commits": 5,
+      "created_at": "2025-12-08T13:00:00+00:00",
+      "deletions": 118,
+      "draft": false,
+      "html_url": "https://github.com/acme-cloud/data-pipeline/pull/1417",
+      "merged": true,
+      "merged_at": "2025-12-10T10:43:37.416876+00:00",
+      "number": 1417,
+      "repository_full_name": "acme-cloud/data-pipeline",
+      "reviews": [],
+      "state": "closed",
+      "timeline_events": [],
+      "title": "Collapse dashboard hydration panel",
+      "updated_at": "2025-12-10T10:43:37.416876+00:00"
+    },
+    {
+      "additions": 300,
+      "author_login": "jordan-lee",
+      "changed_files": 8,
+      "closed_at": "2025-12-15T09:02:52.863246+00:00",
+      "commits": 2,
+      "created_at": "2025-12-10T14:05:00+00:00",
+      "deletions": 60,
+      "draft": false,
+      "html_url": "https://github.com/acme-cloud/infra-ops/pull/1418",
+      "merged": true,
+      "merged_at": "2025-12-15T09:02:52.863246+00:00",
+      "number": 1418,
+      "repository_full_name": "acme-cloud/infra-ops",
+      "reviews": [
+        {
+          "author_login": "alex-rivera",
+          "commit_id": "commit-3026",
+          "review_id": 3026,
+          "state": "CHANGES_REQUESTED",
+          "submitted_at": "2025-12-11T10:05:27.864669+00:00"
+        }
+      ],
+      "state": "closed",
+      "timeline_events": [
+        {
+          "actor_login": "jordan-lee",
+          "created_at": "2025-12-10T17:37:53.933938+00:00",
+          "event": "review_requested",
+          "event_id": 9028,
+          "requested_reviewer_login": "alex-rivera",
+          "requested_team_name": null
+        }
+      ],
+      "title": "Move org health path",
+      "updated_at": "2025-12-15T09:02:52.863246+00:00"
+    },
+    {
+      "additions": 490,
+      "author_login": "nora-chen",
+      "changed_files": 9,
+      "closed_at": "2025-12-23T10:43:00.052594+00:00",
+      "commits": 6,
+      "created_at": "2025-12-19T11:52:00+00:00",
+      "deletions": 147,
+      "draft": false,
+      "html_url": "https://github.com/acme-cloud/admin-console/pull/1419",
+      "merged": false,
+      "merged_at": null,
+      "number": 1419,
+      "repository_full_name": "acme-cloud/admin-console",
+      "reviews": [
+        {
+          "author_login": "alex-rivera",
+          "commit_id": "commit-3027",
+          "review_id": 3027,
+          "state": "COMMENTED",
+          "submitted_at": "2025-12-22T09:14:36.481478+00:00"
+        }
+      ],
+      "state": "closed",
+      "timeline_events": [
+        {
+          "actor_login": "nora-chen",
+          "created_at": "2025-12-19T13:07:34.116071+00:00",
+          "event": "review_requested",
+          "event_id": 9029,
+          "requested_reviewer_login": "alex-rivera",
+          "requested_team_name": null
+        }
+      ],
+      "title": "Reduce review insights workflow",
+      "updated_at": "2025-12-23T10:43:00.052594+00:00"
+    },
+    {
+      "additions": 606,
+      "author_login": "alex-rivera",
+      "changed_files": 14,
+      "closed_at": "2025-12-29T09:11:24.227826+00:00",
+      "commits": 6,
+      "created_at": "2025-12-25T13:35:00+00:00",
+      "deletions": 239,
+      "draft": false,
+      "html_url": "https://github.com/acme-cloud/data-pipeline/pull/1420",
+      "merged": true,
+      "merged_at": "2025-12-29T09:11:24.227826+00:00",
+      "number": 1420,
+      "repository_full_name": "acme-cloud/data-pipeline",
+      "reviews": [
+        {
+          "author_login": "mira-kim",
+          "commit_id": "commit-3028",
+          "review_id": 3028,
+          "state": "CHANGES_REQUESTED",
+          "submitted_at": "2025-12-26T10:04:04.649384+00:00"
+        },
+        {
+          "author_login": "mira-kim",
+          "commit_id": "commit-3029",
+          "review_id": 3029,
+          "state": "APPROVED",
+          "submitted_at": "2025-12-30T09:33:46.531724+00:00"
+        },
+        {
+          "author_login": "taylor-ng",
+          "commit_id": "commit-3030",
+          "review_id": 3030,
+          "state": "COMMENTED",
+          "submitted_at": "2025-12-26T09:33:03.239495+00:00"
+        }
+      ],
+      "state": "closed",
+      "timeline_events": [
+        {
+          "actor_login": "alex-rivera",
+          "created_at": "2025-12-25T18:23:17.817234+00:00",
+          "event": "review_requested",
+          "event_id": 9030,
+          "requested_reviewer_login": "mira-kim",
+          "requested_team_name": null
+        },
+        {
+          "actor_login": "alex-rivera",
+          "created_at": "2025-12-25T18:23:17.817234+00:00",
+          "event": "review_requested",
+          "event_id": 9031,
+          "requested_reviewer_login": "taylor-ng",
+          "requested_team_name": null
+        }
+      ],
+      "title": "Add billing export contract",
+      "updated_at": "2025-12-29T09:11:24.227826+00:00"
+    },
+    {
+      "additions": 1009,
+      "author_login": "taylor-ng",
+      "changed_files": 16,
+      "closed_at": "2026-01-05T09:36:09.526697+00:00",
+      "commits": 5,
+      "created_at": "2025-12-30T16:45:00+00:00",
+      "deletions": 41,
+      "draft": false,
+      "html_url": "https://github.com/acme-cloud/admin-console/pull/1421",
+      "merged": true,
+      "merged_at": "2026-01-05T09:36:09.526697+00:00",
+      "number": 1421,
+      "repository_full_name": "acme-cloud/admin-console",
+      "reviews": [
+        {
+          "author_login": "sam-patel",
+          "commit_id": "commit-3031",
+          "review_id": 3031,
+          "state": "APPROVED",
+          "submitted_at": "2025-12-31T09:06:26.917269+00:00"
+        },
+        {
+          "author_login": "diego-santos",
+          "commit_id": "commit-3032",
+          "review_id": 3032,
+          "state": "APPROVED",
+          "submitted_at": "2025-12-31T09:36:48.140848+00:00"
+        }
+      ],
+      "state": "closed",
+      "timeline_events": [
+        {
+          "actor_login": "taylor-ng",
+          "created_at": "2025-12-30T19:28:48.451171+00:00",
+          "event": "review_requested",
+          "event_id": 9032,
+          "requested_reviewer_login": "sam-patel",
+          "requested_team_name": null
+        },
+        {
+          "actor_login": "taylor-ng",
+          "created_at": "2025-12-30T19:28:48.451171+00:00",
+          "event": "review_requested",
+          "event_id": 9033,
+          "requested_reviewer_login": "diego-santos",
+          "requested_team_name": null
+        }
+      ],
+      "title": "Cache tenant access jobs",
+      "updated_at": "2026-01-05T09:36:09.526697+00:00"
+    },
+    {
+      "additions": 706,
+      "author_login": "mira-kim",
+      "changed_files": 18,
+      "closed_at": "2026-01-12T09:11:46.978947+00:00",
+      "commits": 5,
+      "created_at": "2026-01-08T09:20:00+00:00",
+      "deletions": 109,
+      "draft": false,
+      "html_url": "https://github.com/acme-cloud/admin-console/pull/1422",
+      "merged": true,
+      "merged_at": "2026-01-12T09:11:46.978947+00:00",
+      "number": 1422,
+      "repository_full_name": "acme-cloud/admin-console",
+      "reviews": [
+        {
+          "author_login": "nora-chen",
+          "commit_id": "commit-3033",
+          "review_id": 3033,
+          "state": "APPROVED",
+          "submitted_at": "2026-01-12T09:22:33.036833+00:00"
+        },
+        {
+          "author_login": "alex-rivera",
+          "commit_id": "commit-3034",
+          "review_id": 3034,
+          "state": "APPROVED",
+          "submitted_at": "2026-01-09T08:07:02.385389+00:00"
+        }
+      ],
+      "state": "closed",
+      "timeline_events": [
+        {
+          "actor_login": "mira-kim",
+          "created_at": "2026-01-08T10:18:58.745188+00:00",
+          "event": "review_requested",
+          "event_id": 9034,
+          "requested_reviewer_login": "nora-chen",
+          "requested_team_name": null
+        },
+        {
+          "actor_login": "mira-kim",
+          "created_at": "2026-01-08T10:18:58.745188+00:00",
+          "event": "review_requested",
+          "event_id": 9035,
+          "requested_reviewer_login": "alex-rivera",
+          "requested_team_name": null
+        },
+        {
+          "actor_login": "mira-kim",
+          "created_at": "2026-01-08T10:26:58.745188+00:00",
+          "event": "review_requested",
+          "event_id": 9036,
+          "requested_reviewer_login": null,
+          "requested_team_name": "admin-console-maintainers"
+        }
+      ],
+      "title": "Move review insights path",
+      "updated_at": "2026-01-12T09:11:46.978947+00:00"
+    },
+    {
+      "additions": 99,
+      "author_login": "mira-kim",
+      "changed_files": 6,
+      "closed_at": "2026-01-14T09:03:31.433254+00:00",
+      "commits": 3,
+      "created_at": "2026-01-12T16:05:00+00:00",
+      "deletions": 120,
+      "draft": false,
+      "html_url": "https://github.com/acme-cloud/infra-ops/pull/1423",
+      "merged": true,
+      "merged_at": "2026-01-14T09:03:31.433254+00:00",
+      "number": 1423,
+      "repository_full_name": "acme-cloud/infra-ops",
+      "reviews": [
+        {
+          "author_login": "diego-santos",
+          "commit_id": "commit-3035",
+          "review_id": 3035,
+          "state": "CHANGES_REQUESTED",
+          "submitted_at": "2026-01-13T10:11:15.794390+00:00"
+        }
+      ],
+      "state": "closed",
+      "timeline_events": [
+        {
+          "actor_login": "mira-kim",
+          "created_at": "2026-01-12T17:15:29.549823+00:00",
+          "event": "review_requested",
+          "event_id": 9037,
+          "requested_reviewer_login": "diego-santos",
+          "requested_team_name": null
+        }
+      ],
+      "title": "Split policy simulation contract",
+      "updated_at": "2026-01-14T09:03:31.433254+00:00"
+    },
+    {
+      "additions": 463,
+      "author_login": "mira-kim",
+      "changed_files": 13,
+      "closed_at": "2026-01-19T17:45:19.876574+00:00",
+      "commits": 7,
+      "created_at": "2026-01-14T09:12:00+00:00",
+      "deletions": 372,
+      "draft": false,
+      "html_url": "https://github.com/acme-cloud/platform-api/pull/1424",
+      "merged": false,
+      "merged_at": null,
+      "number": 1424,
+      "repository_full_name": "acme-cloud/platform-api",
+      "reviews": [
+        {
+          "author_login": "jordan-lee",
+          "commit_id": "commit-3036",
+          "review_id": 3036,
+          "state": "APPROVED",
+          "submitted_at": "2026-01-15T09:07:30.082689+00:00"
+        },
+        {
+          "author_login": "taylor-ng",
+          "commit_id": "commit-3037",
+          "review_id": 3037,
+          "state": "APPROVED",
+          "submitted_at": "2026-01-19T08:10:41.666610+00:00"
+        },
+        {
+          "author_login": "alex-rivera",
+          "commit_id": "commit-3038",
+          "review_id": 3038,
+          "state": "APPROVED",
+          "submitted_at": "2026-01-16T09:17:57.984452+00:00"
+        }
+      ],
+      "state": "closed",
+      "timeline_events": [
+        {
+          "actor_login": "mira-kim",
+          "created_at": "2026-01-14T13:15:55.384570+00:00",
+          "event": "review_requested",
+          "event_id": 9038,
+          "requested_reviewer_login": "jordan-lee",
+          "requested_team_name": null
+        },
+        {
+          "actor_login": "mira-kim",
+          "created_at": "2026-01-14T13:15:55.384570+00:00",
+          "event": "review_requested",
+          "event_id": 9039,
+          "requested_reviewer_login": "taylor-ng",
+          "requested_team_name": null
+        }
+      ],
+      "title": "Rework org health workflow",
+      "updated_at": "2026-01-19T17:45:19.876574+00:00"
+    },
+    {
+      "additions": 366,
+      "author_login": "taylor-ng",
+      "changed_files": 6,
+      "closed_at": "2026-01-24T10:09:35.986862+00:00",
+      "commits": 5,
+      "created_at": "2026-01-21T14:52:00+00:00",
+      "deletions": 86,
+      "draft": false,
+      "html_url": "https://github.com/acme-cloud/platform-api/pull/1425",
+      "merged": true,
+      "merged_at": "2026-01-24T10:09:35.986862+00:00",
+      "number": 1425,
+      "repository_full_name": "acme-cloud/platform-api",
+      "reviews": [
+        {
+          "author_login": "nora-chen",
+          "commit_id": "commit-3039",
+          "review_id": 3039,
+          "state": "CHANGES_REQUESTED",
+          "submitted_at": "2026-01-22T09:29:57.627762+00:00"
+        },
+        {
+          "author_login": "alex-rivera",
+          "commit_id": "commit-3040",
+          "review_id": 3040,
+          "state": "COMMENTED",
+          "submitted_at": "2026-01-26T16:10:43.721117+00:00"
+        }
+      ],
+      "state": "closed",
+      "timeline_events": [
+        {
+          "actor_login": "taylor-ng",
+          "created_at": "2026-01-21T19:20:12.092309+00:00",
+          "event": "review_requested",
+          "event_id": 9040,
+          "requested_reviewer_login": "nora-chen",
+          "requested_team_name": null
+        },
+        {
+          "actor_login": "taylor-ng",
+          "created_at": "2026-01-21T19:20:12.092309+00:00",
+          "event": "review_requested",
+          "event_id": 9041,
+          "requested_reviewer_login": "alex-rivera",
+          "requested_team_name": null
+        }
+      ],
+      "title": "Move dashboard hydration guardrails",
+      "updated_at": "2026-01-24T10:09:35.986862+00:00"
+    },
+    {
+      "additions": 375,
+      "author_login": "jordan-lee",
+      "changed_files": 12,
+      "closed_at": "2026-01-30T09:22:33.014854+00:00",
+      "commits": 3,
+      "created_at": "2026-01-22T09:20:00+00:00",
+      "deletions": 117,
+      "draft": false,
+      "html_url": "https://github.com/acme-cloud/platform-api/pull/1426",
+      "merged": true,
+      "merged_at": "2026-01-30T09:22:33.014854+00:00",
+      "number": 1426,
+      "repository_full_name": "acme-cloud/platform-api",
+      "reviews": [
+        {
+          "author_login": "alex-rivera",
+          "commit_id": "commit-3041",
+          "review_id": 3041,
+          "state": "COMMENTED",
+          "submitted_at": "2026-01-28T09:00:29.333347+00:00"
+        },
+        {
+          "author_login": "diego-santos",
+          "commit_id": "commit-3042",
+          "review_id": 3042,
+          "state": "COMMENTED",
+          "submitted_at": "2026-01-28T11:15:53.105897+00:00"
+        }
+      ],
+      "state": "closed",
+      "timeline_events": [
+        {
+          "actor_login": "jordan-lee",
+          "created_at": "2026-01-22T09:44:00+00:00",
+          "event": "converted_to_draft",
+          "event_id": 9042,
+          "requested_reviewer_login": null,
+          "requested_team_name": null
+        },
+        {
+          "actor_login": "jordan-lee",
+          "created_at": "2026-01-27T10:07:47.521091+00:00",
+          "event": "ready_for_review",
+          "event_id": 9043,
+          "requested_reviewer_login": null,
+          "requested_team_name": null
+        },
+        {
+          "actor_login": "jordan-lee",
+          "created_at": "2026-01-27T13:33:11.470206+00:00",
+          "event": "review_requested",
+          "event_id": 9044,
+          "requested_reviewer_login": "alex-rivera",
+          "requested_team_name": null
+        },
+        {
+          "actor_login": "jordan-lee",
+          "created_at": "2026-01-27T13:33:11.470206+00:00",
+          "event": "review_requested",
+          "event_id": 9045,
+          "requested_reviewer_login": "diego-santos",
+          "requested_team_name": null
+        },
+        {
+          "actor_login": "jordan-lee",
+          "created_at": "2026-01-27T13:41:11.470206+00:00",
+          "event": "review_requested",
+          "event_id": 9046,
+          "requested_reviewer_login": null,
+          "requested_team_name": "platform-api-maintainers"
+        }
+      ],
+      "title": "Split repository onboarding panel",
+      "updated_at": "2026-01-30T09:22:33.014854+00:00"
+    },
+    {
+      "additions": 497,
+      "author_login": "mira-kim",
+      "changed_files": 7,
+      "closed_at": "2026-01-29T10:36:51.014909+00:00",
+      "commits": 3,
+      "created_at": "2026-01-26T10:00:00+00:00",
+      "deletions": 64,
+      "draft": false,
+      "html_url": "https://github.com/acme-cloud/admin-console/pull/1427",
+      "merged": true,
+      "merged_at": "2026-01-29T10:36:51.014909+00:00",
+      "number": 1427,
+      "repository_full_name": "acme-cloud/admin-console",
+      "reviews": [
+        {
+          "author_login": "jordan-lee",
+          "commit_id": "commit-3043",
+          "review_id": 3043,
+          "state": "CHANGES_REQUESTED",
+          "submitted_at": "2026-01-26T15:02:54.719237+00:00"
+        },
+        {
+          "author_login": "jordan-lee",
+          "commit_id": "commit-3044",
+          "review_id": 3044,
+          "state": "APPROVED",
+          "submitted_at": "2026-01-28T15:43:25.997245+00:00"
+        }
+      ],
+      "state": "closed",
+      "timeline_events": [
+        {
+          "actor_login": "mira-kim",
+          "created_at": "2026-01-26T11:21:09.795571+00:00",
+          "event": "review_requested",
+          "event_id": 9047,
+          "requested_reviewer_login": "jordan-lee",
+          "requested_team_name": null
+        }
+      ],
+      "title": "Tighten org health workflow",
+      "updated_at": "2026-01-29T10:36:51.014909+00:00"
+    },
+    {
+      "additions": 721,
+      "author_login": "mira-kim",
+      "changed_files": 11,
+      "closed_at": "2026-02-02T13:02:32.210053+00:00",
+      "commits": 8,
+      "created_at": "2026-01-28T13:05:00+00:00",
+      "deletions": 42,
+      "draft": false,
+      "html_url": "https://github.com/acme-cloud/admin-console/pull/1428",
+      "merged": true,
+      "merged_at": "2026-02-02T13:02:32.210053+00:00",
+      "number": 1428,
+      "repository_full_name": "acme-cloud/admin-console",
+      "reviews": [
+        {
+          "author_login": "nora-chen",
+          "commit_id": "commit-3045",
+          "review_id": 3045,
+          "state": "COMMENTED",
+          "submitted_at": "2026-01-29T09:58:14.355015+00:00"
+        },
+        {
+          "author_login": "jordan-lee",
+          "commit_id": "commit-3046",
+          "review_id": 3046,
+          "state": "APPROVED",
+          "submitted_at": "2026-01-29T17:54:03.923244+00:00"
+        },
+        {
+          "author_login": "alex-rivera",
+          "commit_id": "commit-3047",
+          "review_id": 3047,
+          "state": "APPROVED",
+          "submitted_at": "2026-01-29T15:32:09.662034+00:00"
+        }
+      ],
+      "state": "closed",
+      "timeline_events": [
+        {
+          "actor_login": "mira-kim",
+          "created_at": "2026-01-28T16:56:01.491542+00:00",
+          "event": "review_requested",
+          "event_id": 9048,
+          "requested_reviewer_login": "nora-chen",
+          "requested_team_name": null
+        },
+        {
+          "actor_login": "mira-kim",
+          "created_at": "2026-01-28T16:56:01.491542+00:00",
+          "event": "review_requested",
+          "event_id": 9049,
+          "requested_reviewer_login": "jordan-lee",
+          "requested_team_name": null
+        }
+      ],
+      "title": "Normalize dashboard hydration guardrails",
+      "updated_at": "2026-02-02T13:02:32.210053+00:00"
+    },
+    {
+      "additions": 248,
+      "author_login": "taylor-ng",
+      "changed_files": 4,
+      "closed_at": "2026-02-02T15:49:11.186694+00:00",
+      "commits": 3,
+      "created_at": "2026-01-30T16:12:00+00:00",
+      "deletions": 33,
+      "draft": false,
+      "html_url": "https://github.com/acme-cloud/infra-ops/pull/1429",
+      "merged": true,
+      "merged_at": "2026-02-02T15:49:11.186694+00:00",
+      "number": 1429,
+      "repository_full_name": "acme-cloud/infra-ops",
+      "reviews": [
+        {
+          "author_login": "alex-rivera",
+          "commit_id": "commit-3048",
+          "review_id": 3048,
+          "state": "CHANGES_REQUESTED",
+          "submitted_at": "2026-02-03T10:39:47.149025+00:00"
+        },
+        {
+          "author_login": "alex-rivera",
+          "commit_id": "commit-3049",
+          "review_id": 3049,
+          "state": "APPROVED",
+          "submitted_at": "2026-02-04T19:30:09.322848+00:00"
+        }
+      ],
+      "state": "closed",
+      "timeline_events": [
+        {
+          "actor_login": "taylor-ng",
+          "created_at": "2026-01-30T16:54:28.681021+00:00",
+          "event": "review_requested",
+          "event_id": 9050,
+          "requested_reviewer_login": "alex-rivera",
+          "requested_team_name": null
+        }
+      ],
+      "title": "Retire billing export path",
+      "updated_at": "2026-02-02T15:49:11.186694+00:00"
+    },
+    {
+      "additions": 180,
+      "author_login": "alex-rivera",
+      "changed_files": 7,
+      "closed_at": "2026-02-09T09:38:56.265157+00:00",
+      "commits": 5,
+      "created_at": "2026-02-05T09:12:00+00:00",
+      "deletions": 121,
+      "draft": false,
+      "html_url": "https://github.com/acme-cloud/data-pipeline/pull/1430",
+      "merged": true,
+      "merged_at": "2026-02-09T09:38:56.265157+00:00",
+      "number": 1430,
+      "repository_full_name": "acme-cloud/data-pipeline",
+      "reviews": [
+        {
+          "author_login": "sam-patel",
+          "commit_id": "commit-3050",
+          "review_id": 3050,
+          "state": "APPROVED",
+          "submitted_at": "2026-02-05T13:03:17.145346+00:00"
+        }
+      ],
+      "state": "closed",
+      "timeline_events": [
+        {
+          "actor_login": "alex-rivera",
+          "created_at": "2026-02-05T11:32:59.415838+00:00",
+          "event": "review_requested",
+          "event_id": 9051,
+          "requested_reviewer_login": "sam-patel",
+          "requested_team_name": null
+        }
+      ],
+      "title": "Rework audit evidence surface",
+      "updated_at": "2026-02-09T09:38:56.265157+00:00"
+    },
+    {
+      "additions": 1591,
+      "author_login": "diego-santos",
+      "changed_files": 34,
+      "closed_at": "2026-02-13T19:36:40.053444+00:00",
+      "commits": 7,
+      "created_at": "2026-02-06T08:35:00+00:00",
+      "deletions": 108,
+      "draft": false,
+      "html_url": "https://github.com/acme-cloud/platform-api/pull/1431",
+      "merged": false,
+      "merged_at": null,
+      "number": 1431,
+      "repository_full_name": "acme-cloud/platform-api",
+      "reviews": [
+        {
+          "author_login": "alex-rivera",
+          "commit_id": "commit-3051",
+          "review_id": 3051,
+          "state": "CHANGES_REQUESTED",
+          "submitted_at": "2026-02-09T09:02:15.559583+00:00"
+        },
+        {
+          "author_login": "taylor-ng",
+          "commit_id": "commit-3052",
+          "review_id": 3052,
+          "state": "APPROVED",
+          "submitted_at": "2026-02-09T09:30:56.510991+00:00"
+        }
+      ],
+      "state": "closed",
+      "timeline_events": [
+        {
+          "actor_login": "diego-santos",
+          "created_at": "2026-02-06T10:17:36.627874+00:00",
+          "event": "review_requested",
+          "event_id": 9052,
+          "requested_reviewer_login": "alex-rivera",
+          "requested_team_name": null
+        },
+        {
+          "actor_login": "diego-santos",
+          "created_at": "2026-02-06T10:17:36.627874+00:00",
+          "event": "review_requested",
+          "event_id": 9053,
+          "requested_reviewer_login": "taylor-ng",
+          "requested_team_name": null
+        }
+      ],
+      "title": "Retire mobile session path",
+      "updated_at": "2026-02-13T19:36:40.053444+00:00"
+    },
+    {
+      "additions": 350,
+      "author_login": "sam-patel",
+      "changed_files": 7,
+      "closed_at": "2026-02-12T09:38:01.868349+00:00",
+      "commits": 3,
+      "created_at": "2026-02-10T09:05:00+00:00",
+      "deletions": 40,
+      "draft": false,
+      "html_url": "https://github.com/acme-cloud/platform-api/pull/1432",
+      "merged": true,
+      "merged_at": "2026-02-12T09:38:01.868349+00:00",
+      "number": 1432,
+      "repository_full_name": "acme-cloud/platform-api",
+      "reviews": [],
+      "state": "closed",
+      "timeline_events": [],
+      "title": "Reduce audit evidence guardrails",
+      "updated_at": "2026-02-12T09:38:01.868349+00:00"
+    },
+    {
+      "additions": 576,
+      "author_login": "alex-rivera",
+      "changed_files": 17,
+      "closed_at": "2026-02-20T09:14:16.548322+00:00",
+      "commits": 7,
+      "created_at": "2026-02-13T08:00:00+00:00",
+      "deletions": 327,
+      "draft": false,
+      "html_url": "https://github.com/acme-cloud/admin-console/pull/1433",
+      "merged": true,
+      "merged_at": "2026-02-20T09:14:16.548322+00:00",
+      "number": 1433,
+      "repository_full_name": "acme-cloud/admin-console",
+      "reviews": [
+        {
+          "author_login": "taylor-ng",
+          "commit_id": "commit-3053",
+          "review_id": 3053,
+          "state": "COMMENTED",
+          "submitted_at": "2026-02-16T17:09:05.925204+00:00"
+        },
+        {
+          "author_login": "mira-kim",
+          "commit_id": "commit-3054",
+          "review_id": 3054,
+          "state": "APPROVED",
+          "submitted_at": "2026-02-17T16:06:06.493348+00:00"
+        }
+      ],
+      "state": "closed",
+      "timeline_events": [
+        {
+          "actor_login": "alex-rivera",
+          "created_at": "2026-02-13T08:24:00+00:00",
+          "event": "converted_to_draft",
+          "event_id": 9054,
+          "requested_reviewer_login": null,
+          "requested_team_name": null
+        },
+        {
+          "actor_login": "alex-rivera",
+          "created_at": "2026-02-16T13:19:09.909250+00:00",
+          "event": "ready_for_review",
+          "event_id": 9055,
+          "requested_reviewer_login": null,
+          "requested_team_name": null
+        },
+        {
+          "actor_login": "alex-rivera",
+          "created_at": "2026-02-16T16:08:42.870479+00:00",
+          "event": "review_requested",
+          "event_id": 9056,
+          "requested_reviewer_login": "taylor-ng",
+          "requested_team_name": null
+        },
+        {
+          "actor_login": "alex-rivera",
+          "created_at": "2026-02-16T16:08:42.870479+00:00",
+          "event": "review_requested",
+          "event_id": 9057,
+          "requested_reviewer_login": "mira-kim",
+          "requested_team_name": null
+        }
+      ],
+      "title": "Collapse incident replay guardrails",
+      "updated_at": "2026-02-20T09:14:16.548322+00:00"
+    },
+    {
+      "additions": 708,
+      "author_login": "diego-santos",
+      "changed_files": 15,
+      "closed_at": "2026-02-20T09:00:43.178638+00:00",
+      "commits": 9,
+      "created_at": "2026-02-16T10:00:00+00:00",
+      "deletions": 96,
+      "draft": false,
+      "html_url": "https://github.com/acme-cloud/admin-console/pull/1434",
+      "merged": true,
+      "merged_at": "2026-02-20T09:00:43.178638+00:00",
+      "number": 1434,
+      "repository_full_name": "acme-cloud/admin-console",
+      "reviews": [
+        {
+          "author_login": "taylor-ng",
+          "commit_id": "commit-3055",
+          "review_id": 3055,
+          "state": "APPROVED",
+          "submitted_at": "2026-02-17T08:40:37.702771+00:00"
+        }
+      ],
+      "state": "closed",
+      "timeline_events": [
+        {
+          "actor_login": "diego-santos",
+          "created_at": "2026-02-16T12:55:35.229171+00:00",
+          "event": "review_requested",
+          "event_id": 9058,
+          "requested_reviewer_login": "taylor-ng",
+          "requested_team_name": null
+        }
+      ],
+      "title": "Reduce freshness monitor contract",
+      "updated_at": "2026-02-20T09:00:43.178638+00:00"
+    },
+    {
+      "additions": 424,
+      "author_login": "mira-kim",
+      "changed_files": 8,
+      "closed_at": "2026-02-20T10:10:17.860397+00:00",
+      "commits": 3,
+      "created_at": "2026-02-17T08:45:00+00:00",
+      "deletions": 110,
+      "draft": false,
+      "html_url": "https://github.com/acme-cloud/platform-api/pull/1435",
+      "merged": false,
+      "merged_at": null,
+      "number": 1435,
+      "repository_full_name": "acme-cloud/platform-api",
+      "reviews": [
+        {
+          "author_login": "alex-rivera",
+          "commit_id": "commit-3056",
+          "review_id": 3056,
+          "state": "CHANGES_REQUESTED",
+          "submitted_at": "2026-02-17T16:32:38.677413+00:00"
+        },
+        {
+          "author_login": "taylor-ng",
+          "commit_id": "commit-3057",
+          "review_id": 3057,
+          "state": "APPROVED",
+          "submitted_at": "2026-02-20T13:51:22.807029+00:00"
+        }
+      ],
+      "state": "closed",
+      "timeline_events": [
+        {
+          "actor_login": "mira-kim",
+          "created_at": "2026-02-17T12:51:25.988211+00:00",
+          "event": "review_requested",
+          "event_id": 9059,
+          "requested_reviewer_login": "alex-rivera",
+          "requested_team_name": null
+        },
+        {
+          "actor_login": "mira-kim",
+          "created_at": "2026-02-17T12:51:25.988211+00:00",
+          "event": "review_requested",
+          "event_id": 9060,
+          "requested_reviewer_login": "taylor-ng",
+          "requested_team_name": null
+        }
+      ],
+      "title": "Move identity join path",
+      "updated_at": "2026-02-20T10:10:17.860397+00:00"
+    },
+    {
+      "additions": 511,
+      "author_login": "pri-iyer",
+      "changed_files": 20,
+      "closed_at": "2026-02-23T15:59:07.993273+00:00",
+      "commits": 5,
+      "created_at": "2026-02-18T11:45:00+00:00",
+      "deletions": 374,
+      "draft": false,
+      "html_url": "https://github.com/acme-cloud/data-pipeline/pull/1436",
+      "merged": true,
+      "merged_at": "2026-02-23T15:59:07.993273+00:00",
+      "number": 1436,
+      "repository_full_name": "acme-cloud/data-pipeline",
+      "reviews": [
+        {
+          "author_login": "alex-rivera",
+          "commit_id": "commit-3058",
+          "review_id": 3058,
+          "state": "CHANGES_REQUESTED",
+          "submitted_at": "2026-02-19T10:24:40.785955+00:00"
+        },
+        {
+          "author_login": "alex-rivera",
+          "commit_id": "commit-3059",
+          "review_id": 3059,
+          "state": "APPROVED",
+          "submitted_at": "2026-02-23T09:03:04.592281+00:00"
+        },
+        {
+          "author_login": "nora-chen",
+          "commit_id": "commit-3060",
+          "review_id": 3060,
+          "state": "APPROVED",
+          "submitted_at": "2026-02-19T10:24:52.033354+00:00"
+        }
+      ],
+      "state": "closed",
+      "timeline_events": [
+        {
+          "actor_login": "pri-iyer",
+          "created_at": "2026-02-18T17:08:23.220261+00:00",
+          "event": "review_requested",
+          "event_id": 9061,
+          "requested_reviewer_login": "alex-rivera",
+          "requested_team_name": null
+        },
+        {
+          "actor_login": "pri-iyer",
+          "created_at": "2026-02-18T17:08:23.220261+00:00",
+          "event": "review_requested",
+          "event_id": 9062,
+          "requested_reviewer_login": "nora-chen",
+          "requested_team_name": null
+        }
+      ],
+      "title": "Rework repository onboarding path",
+      "updated_at": "2026-02-23T15:59:07.993273+00:00"
+    },
+    {
+      "additions": 240,
+      "author_login": "mira-kim",
+      "changed_files": 5,
+      "closed_at": "2026-02-23T09:06:07.713359+00:00",
+      "commits": 3,
+      "created_at": "2026-02-20T09:35:00+00:00",
+      "deletions": 57,
+      "draft": false,
+      "html_url": "https://github.com/acme-cloud/platform-api/pull/1437",
+      "merged": true,
+      "merged_at": "2026-02-23T09:06:07.713359+00:00",
+      "number": 1437,
+      "repository_full_name": "acme-cloud/platform-api",
+      "reviews": [
+        {
+          "author_login": "taylor-ng",
+          "commit_id": "commit-3061",
+          "review_id": 3061,
+          "state": "COMMENTED",
+          "submitted_at": "2026-02-20T13:48:14.627871+00:00"
+        }
+      ],
+      "state": "closed",
+      "timeline_events": [
+        {
+          "actor_login": "mira-kim",
+          "created_at": "2026-02-20T12:22:16.086578+00:00",
+          "event": "review_requested",
+          "event_id": 9063,
+          "requested_reviewer_login": "taylor-ng",
+          "requested_team_name": null
+        }
+      ],
+      "title": "Instrument dashboard hydration panel",
+      "updated_at": "2026-02-23T09:06:07.713359+00:00"
+    },
+    {
+      "additions": 137,
+      "author_login": "jordan-lee",
+      "changed_files": 6,
+      "closed_at": "2026-02-27T08:46:36.861123+00:00",
+      "commits": 2,
+      "created_at": "2026-02-25T16:20:00+00:00",
+      "deletions": 74,
+      "draft": false,
+      "html_url": "https://github.com/acme-cloud/infra-ops/pull/1438",
+      "merged": true,
+      "merged_at": "2026-02-27T08:46:36.861123+00:00",
+      "number": 1438,
+      "repository_full_name": "acme-cloud/infra-ops",
+      "reviews": [
+        {
+          "author_login": "taylor-ng",
+          "commit_id": "commit-3062",
+          "review_id": 3062,
+          "state": "APPROVED",
+          "submitted_at": "2026-03-02T09:01:15.524296+00:00"
+        }
+      ],
+      "state": "closed",
+      "timeline_events": [
+        {
+          "actor_login": "jordan-lee",
+          "created_at": "2026-02-25T18:50:59.652063+00:00",
+          "event": "review_requested",
+          "event_id": 9064,
+          "requested_reviewer_login": "taylor-ng",
+          "requested_team_name": null
+        }
+      ],
+      "title": "Instrument freshness monitor guardrails",
+      "updated_at": "2026-02-27T08:46:36.861123+00:00"
+    },
+    {
+      "additions": 722,
+      "author_login": "jordan-lee",
+      "changed_files": 13,
+      "closed_at": "2026-03-02T09:26:02.019195+00:00",
+      "commits": 6,
+      "created_at": "2026-02-26T13:35:00+00:00",
+      "deletions": 158,
+      "draft": false,
+      "html_url": "https://github.com/acme-cloud/mobile-shell/pull/1439",
+      "merged": true,
+      "merged_at": "2026-03-02T09:26:02.019195+00:00",
+      "number": 1439,
+      "repository_full_name": "acme-cloud/mobile-shell",
+      "reviews": [
+        {
+          "author_login": "alex-rivera",
+          "commit_id": "commit-3063",
+          "review_id": 3063,
+          "state": "APPROVED",
+          "submitted_at": "2026-02-27T10:32:48.956929+00:00"
+        }
+      ],
+      "state": "closed",
+      "timeline_events": [
+        {
+          "actor_login": "jordan-lee",
+          "created_at": "2026-02-26T18:13:59.374146+00:00",
+          "event": "review_requested",
+          "event_id": 9065,
+          "requested_reviewer_login": "alex-rivera",
+          "requested_team_name": null
+        }
+      ],
+      "title": "Normalize support inbox surface",
+      "updated_at": "2026-03-02T09:26:02.019195+00:00"
+    },
+    {
+      "additions": 40,
+      "author_login": "alex-rivera",
+      "changed_files": 5,
+      "closed_at": "2026-03-02T09:24:38.888286+00:00",
+      "commits": 1,
+      "created_at": "2026-02-27T11:45:00+00:00",
+      "deletions": 84,
+      "draft": false,
+      "html_url": "https://github.com/acme-cloud/infra-ops/pull/1440",
+      "merged": true,
+      "merged_at": "2026-03-02T09:24:38.888286+00:00",
+      "number": 1440,
+      "repository_full_name": "acme-cloud/infra-ops",
+      "reviews": [
+        {
+          "author_login": "mira-kim",
+          "commit_id": "commit-3064",
+          "review_id": 3064,
+          "state": "APPROVED",
+          "submitted_at": "2026-03-02T12:26:17.692795+00:00"
+        },
+        {
+          "author_login": "jordan-lee",
+          "commit_id": "commit-3065",
+          "review_id": 3065,
+          "state": "APPROVED",
+          "submitted_at": "2026-03-02T09:38:18.840689+00:00"
+        }
+      ],
+      "state": "closed",
+      "timeline_events": [
+        {
+          "actor_login": "alex-rivera",
+          "created_at": "2026-02-27T12:51:34.114562+00:00",
+          "event": "review_requested",
+          "event_id": 9066,
+          "requested_reviewer_login": "mira-kim",
+          "requested_team_name": null
+        },
+        {
+          "actor_login": "alex-rivera",
+          "created_at": "2026-02-27T12:51:34.114562+00:00",
+          "event": "review_requested",
+          "event_id": 9067,
+          "requested_reviewer_login": "jordan-lee",
+          "requested_team_name": null
+        }
+      ],
+      "title": "Move identity join workflow",
+      "updated_at": "2026-03-02T09:24:38.888286+00:00"
+    },
+    {
+      "additions": 424,
+      "author_login": "alex-rivera",
+      "changed_files": 7,
+      "closed_at": "2026-03-05T13:36:51.894165+00:00",
+      "commits": 3,
+      "created_at": "2026-03-02T15:52:00+00:00",
+      "deletions": 71,
+      "draft": false,
+      "html_url": "https://github.com/acme-cloud/platform-api/pull/1441",
+      "merged": true,
+      "merged_at": "2026-03-05T13:36:51.894165+00:00",
+      "number": 1441,
+      "repository_full_name": "acme-cloud/platform-api",
+      "reviews": [
+        {
+          "author_login": "nora-chen",
+          "commit_id": "commit-3066",
+          "review_id": 3066,
+          "state": "APPROVED",
+          "submitted_at": "2026-03-05T09:03:13.057651+00:00"
+        }
+      ],
+      "state": "closed",
+      "timeline_events": [
+        {
+          "actor_login": "alex-rivera",
+          "created_at": "2026-03-02T19:26:21.114026+00:00",
+          "event": "review_requested",
+          "event_id": 9068,
+          "requested_reviewer_login": "nora-chen",
+          "requested_team_name": null
+        },
+        {
+          "actor_login": "alex-rivera",
+          "created_at": "2026-03-02T19:34:21.114026+00:00",
+          "event": "review_requested",
+          "event_id": 9069,
+          "requested_reviewer_login": null,
+          "requested_team_name": "platform-api-maintainers"
+        }
+      ],
+      "title": "Tighten dashboard hydration panel",
+      "updated_at": "2026-03-05T13:36:51.894165+00:00"
+    },
+    {
+      "additions": 164,
+      "author_login": "nora-chen",
+      "changed_files": 8,
+      "closed_at": "2026-03-05T08:52:19.256213+00:00",
+      "commits": 4,
+      "created_at": "2026-03-03T11:45:00+00:00",
+      "deletions": 149,
+      "draft": false,
+      "html_url": "https://github.com/acme-cloud/mobile-shell/pull/1442",
+      "merged": true,
+      "merged_at": "2026-03-05T08:52:19.256213+00:00",
+      "number": 1442,
+      "repository_full_name": "acme-cloud/mobile-shell",
+      "reviews": [
+        {
+          "author_login": "jordan-lee",
+          "commit_id": "commit-3067",
+          "review_id": 3067,
+          "state": "APPROVED",
+          "submitted_at": "2026-03-04T12:00:31.704320+00:00"
+        },
+        {
+          "author_login": "mira-kim",
+          "commit_id": "commit-3068",
+          "review_id": 3068,
+          "state": "APPROVED",
+          "submitted_at": "2026-03-06T10:02:45.441686+00:00"
+        }
+      ],
+      "state": "closed",
+      "timeline_events": [
+        {
+          "actor_login": "nora-chen",
+          "created_at": "2026-03-03T15:25:48.004164+00:00",
+          "event": "review_requested",
+          "event_id": 9070,
+          "requested_reviewer_login": "jordan-lee",
+          "requested_team_name": null
+        },
+        {
+          "actor_login": "nora-chen",
+          "created_at": "2026-03-03T15:25:48.004164+00:00",
+          "event": "review_requested",
+          "event_id": 9071,
+          "requested_reviewer_login": "mira-kim",
+          "requested_team_name": null
+        }
+      ],
+      "title": "Cache org health workflow",
+      "updated_at": "2026-03-05T08:52:19.256213+00:00"
+    },
+    {
+      "additions": 1927,
+      "author_login": "sam-patel",
+      "changed_files": 40,
+      "closed_at": "2026-03-10T09:17:04.987325+00:00",
+      "commits": 11,
+      "created_at": "2026-03-05T13:00:00+00:00",
+      "deletions": 74,
+      "draft": false,
+      "html_url": "https://github.com/acme-cloud/data-pipeline/pull/1443",
+      "merged": false,
+      "merged_at": null,
+      "number": 1443,
+      "repository_full_name": "acme-cloud/data-pipeline",
+      "reviews": [],
+      "state": "closed",
+      "timeline_events": [],
+      "title": "Rework billing export path",
+      "updated_at": "2026-03-10T09:17:04.987325+00:00"
+    },
+    {
+      "additions": 237,
+      "author_login": "nora-chen",
+      "changed_files": 8,
+      "closed_at": "2026-03-09T10:37:38.111289+00:00",
+      "commits": 5,
+      "created_at": "2026-03-06T14:05:00+00:00",
+      "deletions": 73,
+      "draft": false,
+      "html_url": "https://github.com/acme-cloud/mobile-shell/pull/1444",
+      "merged": true,
+      "merged_at": "2026-03-09T10:37:38.111289+00:00",
+      "number": 1444,
+      "repository_full_name": "acme-cloud/mobile-shell",
+      "reviews": [
+        {
+          "author_login": "alex-rivera",
+          "commit_id": "commit-3069",
+          "review_id": 3069,
+          "state": "APPROVED",
+          "submitted_at": "2026-03-06T16:07:08.636341+00:00"
+        }
+      ],
+      "state": "closed",
+      "timeline_events": [
+        {
+          "actor_login": "nora-chen",
+          "created_at": "2026-03-06T14:30:43.989565+00:00",
+          "event": "review_requested",
+          "event_id": 9072,
+          "requested_reviewer_login": "alex-rivera",
+          "requested_team_name": null
+        }
+      ],
+      "title": "Backfill mobile session workflow",
+      "updated_at": "2026-03-09T10:37:38.111289+00:00"
+    },
+    {
+      "additions": 189,
+      "author_login": "mira-kim",
+      "changed_files": 7,
+      "closed_at": "2026-03-12T18:11:24.409473+00:00",
+      "commits": 4,
+      "created_at": "2026-03-10T11:05:00+00:00",
+      "deletions": 37,
+      "draft": false,
+      "html_url": "https://github.com/acme-cloud/infra-ops/pull/1445",
+      "merged": false,
+      "merged_at": null,
+      "number": 1445,
+      "repository_full_name": "acme-cloud/infra-ops",
+      "reviews": [
+        {
+          "author_login": "alex-rivera",
+          "commit_id": "commit-3070",
+          "review_id": 3070,
+          "state": "APPROVED",
+          "submitted_at": "2026-03-11T10:17:21.006010+00:00"
+        }
+      ],
+      "state": "closed",
+      "timeline_events": [
+        {
+          "actor_login": "mira-kim",
+          "created_at": "2026-03-10T15:08:29.388984+00:00",
+          "event": "review_requested",
+          "event_id": 9073,
+          "requested_reviewer_login": "alex-rivera",
+          "requested_team_name": null
+        }
+      ],
+      "title": "Instrument org health contract",
+      "updated_at": "2026-03-12T18:11:24.409473+00:00"
+    },
+    {
+      "additions": 425,
+      "author_login": "nora-chen",
+      "changed_files": 10,
+      "closed_at": "2026-03-16T14:19:45.364835+00:00",
+      "commits": 4,
+      "created_at": "2026-03-12T14:52:00+00:00",
+      "deletions": 30,
+      "draft": false,
+      "html_url": "https://github.com/acme-cloud/platform-api/pull/1446",
+      "merged": true,
+      "merged_at": "2026-03-16T14:19:45.364835+00:00",
+      "number": 1446,
+      "repository_full_name": "acme-cloud/platform-api",
+      "reviews": [
+        {
+          "author_login": "alex-rivera",
+          "commit_id": "commit-3071",
+          "review_id": 3071,
+          "state": "APPROVED",
+          "submitted_at": "2026-03-13T15:43:53.706913+00:00"
+        }
+      ],
+      "state": "closed",
+      "timeline_events": [
+        {
+          "actor_login": "nora-chen",
+          "created_at": "2026-03-12T19:11:17.350431+00:00",
+          "event": "review_requested",
+          "event_id": 9074,
+          "requested_reviewer_login": "alex-rivera",
+          "requested_team_name": null
+        }
+      ],
+      "title": "Normalize audit evidence surface",
+      "updated_at": "2026-03-16T14:19:45.364835+00:00"
+    },
+    {
+      "additions": 56,
+      "author_login": "diego-santos",
+      "changed_files": 7,
+      "closed_at": "2026-03-16T10:06:07.232210+00:00",
+      "commits": 2,
+      "created_at": "2026-03-13T13:35:00+00:00",
+      "deletions": 252,
+      "draft": false,
+      "html_url": "https://github.com/acme-cloud/platform-api/pull/1447",
+      "merged": true,
+      "merged_at": "2026-03-16T10:06:07.232210+00:00",
+      "number": 1447,
+      "repository_full_name": "acme-cloud/platform-api",
+      "reviews": [
+        {
+          "author_login": "alex-rivera",
+          "commit_id": "commit-3072",
+          "review_id": 3072,
+          "state": "APPROVED",
+          "submitted_at": "2026-03-17T10:14:02.574716+00:00"
+        }
+      ],
+      "state": "closed",
+      "timeline_events": [
+        {
+          "actor_login": "diego-santos",
+          "created_at": "2026-03-13T15:38:57.862711+00:00",
+          "event": "review_requested",
+          "event_id": 9075,
+          "requested_reviewer_login": "alex-rivera",
+          "requested_team_name": null
+        }
+      ],
+      "title": "Retire org health panel",
+      "updated_at": "2026-03-16T10:06:07.232210+00:00"
+    },
+    {
+      "additions": 1272,
+      "author_login": "taylor-ng",
+      "changed_files": 18,
+      "closed_at": "2026-03-25T09:04:35.248471+00:00",
+      "commits": 10,
+      "created_at": "2026-03-19T13:12:00+00:00",
+      "deletions": 88,
+      "draft": false,
+      "html_url": "https://github.com/acme-cloud/admin-console/pull/1448",
+      "merged": true,
+      "merged_at": "2026-03-25T09:04:35.248471+00:00",
+      "number": 1448,
+      "repository_full_name": "acme-cloud/admin-console",
+      "reviews": [
+        {
+          "author_login": "mira-kim",
+          "commit_id": "commit-3073",
+          "review_id": 3073,
+          "state": "APPROVED",
+          "submitted_at": "2026-03-23T15:46:00.036335+00:00"
+        },
+        {
+          "author_login": "alex-rivera",
+          "commit_id": "commit-3074",
+          "review_id": 3074,
+          "state": "COMMENTED",
+          "submitted_at": "2026-03-20T09:11:15.241077+00:00"
+        }
+      ],
+      "state": "closed",
+      "timeline_events": [
+        {
+          "actor_login": "taylor-ng",
+          "created_at": "2026-03-19T15:51:37.223940+00:00",
+          "event": "review_requested",
+          "event_id": 9076,
+          "requested_reviewer_login": "mira-kim",
+          "requested_team_name": null
+        },
+        {
+          "actor_login": "taylor-ng",
+          "created_at": "2026-03-19T15:51:37.223940+00:00",
+          "event": "review_requested",
+          "event_id": 9077,
+          "requested_reviewer_login": "alex-rivera",
+          "requested_team_name": null
+        }
+      ],
+      "title": "Tighten mobile session workflow",
+      "updated_at": "2026-03-25T09:04:35.248471+00:00"
+    },
+    {
+      "additions": 92,
+      "author_login": "alex-rivera",
+      "changed_files": 6,
+      "closed_at": "2026-03-23T19:37:48.882144+00:00",
+      "commits": 2,
+      "created_at": "2026-03-20T11:35:00+00:00",
+      "deletions": 58,
+      "draft": false,
+      "html_url": "https://github.com/acme-cloud/platform-api/pull/1449",
+      "merged": true,
+      "merged_at": "2026-03-23T19:37:48.882144+00:00",
+      "number": 1449,
+      "repository_full_name": "acme-cloud/platform-api",
+      "reviews": [
+        {
+          "author_login": "jordan-lee",
+          "commit_id": "commit-3075",
+          "review_id": 3075,
+          "state": "APPROVED",
+          "submitted_at": "2026-03-23T18:48:11.085079+00:00"
+        }
+      ],
+      "state": "closed",
+      "timeline_events": [
+        {
+          "actor_login": "alex-rivera",
+          "created_at": "2026-03-20T13:08:36.160891+00:00",
+          "event": "review_requested",
+          "event_id": 9078,
+          "requested_reviewer_login": "jordan-lee",
+          "requested_team_name": null
+        },
+        {
+          "actor_login": "alex-rivera",
+          "created_at": "2026-03-20T13:16:36.160891+00:00",
+          "event": "review_requested",
+          "event_id": 9079,
+          "requested_reviewer_login": null,
+          "requested_team_name": "platform-api-maintainers"
+        }
+      ],
+      "title": "Normalize support inbox workflow",
+      "updated_at": "2026-03-23T19:37:48.882144+00:00"
+    },
+    {
+      "additions": 402,
+      "author_login": "mira-kim",
+      "changed_files": 5,
+      "closed_at": "2026-03-25T12:32:58.501310+00:00",
+      "commits": 5,
+      "created_at": "2026-03-23T13:20:00+00:00",
+      "deletions": 46,
+      "draft": false,
+      "html_url": "https://github.com/acme-cloud/data-pipeline/pull/1450",
+      "merged": true,
+      "merged_at": "2026-03-25T12:32:58.501310+00:00",
+      "number": 1450,
+      "repository_full_name": "acme-cloud/data-pipeline",
+      "reviews": [
+        {
+          "author_login": "alex-rivera",
+          "commit_id": "commit-3076",
+          "review_id": 3076,
+          "state": "APPROVED",
+          "submitted_at": "2026-03-25T17:07:18.163617+00:00"
+        }
+      ],
+      "state": "closed",
+      "timeline_events": [
+        {
+          "actor_login": "mira-kim",
+          "created_at": "2026-03-23T18:05:20.671557+00:00",
+          "event": "review_requested",
+          "event_id": 9080,
+          "requested_reviewer_login": "alex-rivera",
+          "requested_team_name": null
+        }
+      ],
+      "title": "Ship mobile session workflow",
+      "updated_at": "2026-03-25T12:32:58.501310+00:00"
+    },
+    {
+      "additions": 239,
+      "author_login": "sam-patel",
+      "changed_files": 3,
+      "closed_at": "2026-03-26T09:37:03.907872+00:00",
+      "commits": 5,
+      "created_at": "2026-03-24T13:45:00+00:00",
+      "deletions": 37,
+      "draft": false,
+      "html_url": "https://github.com/acme-cloud/admin-console/pull/1451",
+      "merged": true,
+      "merged_at": "2026-03-26T09:37:03.907872+00:00",
+      "number": 1451,
+      "repository_full_name": "acme-cloud/admin-console",
+      "reviews": [
+        {
+          "author_login": "mira-kim",
+          "commit_id": "commit-3077",
+          "review_id": 3077,
+          "state": "APPROVED",
+          "submitted_at": "2026-03-26T11:05:39.929250+00:00"
+        },
+        {
+          "author_login": "jordan-lee",
+          "commit_id": "commit-3078",
+          "review_id": 3078,
+          "state": "APPROVED",
+          "submitted_at": "2026-03-27T18:32:55.995768+00:00"
+        }
+      ],
+      "state": "closed",
+      "timeline_events": [
+        {
+          "actor_login": "sam-patel",
+          "created_at": "2026-03-24T15:16:45.707238+00:00",
+          "event": "review_requested",
+          "event_id": 9081,
+          "requested_reviewer_login": "mira-kim",
+          "requested_team_name": null
+        },
+        {
+          "actor_login": "sam-patel",
+          "created_at": "2026-03-24T15:16:45.707238+00:00",
+          "event": "review_requested",
+          "event_id": 9082,
+          "requested_reviewer_login": "jordan-lee",
+          "requested_team_name": null
+        }
+      ],
+      "title": "Cache usage metering panel",
+      "updated_at": "2026-03-26T09:37:03.907872+00:00"
+    },
+    {
+      "additions": 406,
+      "author_login": "sam-patel",
+      "changed_files": 19,
+      "closed_at": "2026-03-31T10:29:03.604139+00:00",
+      "commits": 7,
+      "created_at": "2026-03-26T15:00:00+00:00",
+      "deletions": 390,
+      "draft": false,
+      "html_url": "https://github.com/acme-cloud/platform-api/pull/1452",
+      "merged": true,
+      "merged_at": "2026-03-31T10:29:03.604139+00:00",
+      "number": 1452,
+      "repository_full_name": "acme-cloud/platform-api",
+      "reviews": [
+        {
+          "author_login": "alex-rivera",
+          "commit_id": "commit-3079",
+          "review_id": 3079,
+          "state": "CHANGES_REQUESTED",
+          "submitted_at": "2026-03-30T09:15:27.009351+00:00"
+        },
+        {
+          "author_login": "alex-rivera",
+          "commit_id": "commit-3080",
+          "review_id": 3080,
+          "state": "APPROVED",
+          "submitted_at": "2026-04-01T09:41:55.895883+00:00"
+        },
+        {
+          "author_login": "mira-kim",
+          "commit_id": "commit-3081",
+          "review_id": 3081,
+          "state": "COMMENTED",
+          "submitted_at": "2026-03-27T09:21:10.784879+00:00"
+        }
+      ],
+      "state": "closed",
+      "timeline_events": [
+        {
+          "actor_login": "sam-patel",
+          "created_at": "2026-03-26T15:26:47.219161+00:00",
+          "event": "review_requested",
+          "event_id": 9083,
+          "requested_reviewer_login": "alex-rivera",
+          "requested_team_name": null
+        },
+        {
+          "actor_login": "sam-patel",
+          "created_at": "2026-03-26T15:26:47.219161+00:00",
+          "event": "review_requested",
+          "event_id": 9084,
+          "requested_reviewer_login": "mira-kim",
+          "requested_team_name": null
+        }
+      ],
+      "title": "Split identity join jobs",
+      "updated_at": "2026-03-31T10:29:03.604139+00:00"
+    },
+    {
+      "additions": 185,
+      "author_login": "nora-chen",
+      "changed_files": 4,
+      "closed_at": "2026-04-01T13:36:30.356259+00:00",
+      "commits": 4,
+      "created_at": "2026-03-30T16:05:00+00:00",
+      "deletions": 66,
+      "draft": false,
+      "html_url": "https://github.com/acme-cloud/mobile-shell/pull/1453",
+      "merged": true,
+      "merged_at": "2026-04-01T13:36:30.356259+00:00",
+      "number": 1453,
+      "repository_full_name": "acme-cloud/mobile-shell",
+      "reviews": [
+        {
+          "author_login": "mira-kim",
+          "commit_id": "commit-3082",
+          "review_id": 3082,
+          "state": "APPROVED",
+          "submitted_at": "2026-03-31T09:08:33.831755+00:00"
+        }
+      ],
+      "state": "closed",
+      "timeline_events": [
+        {
+          "actor_login": "nora-chen",
+          "created_at": "2026-03-30T17:19:22.729945+00:00",
+          "event": "review_requested",
+          "event_id": 9085,
+          "requested_reviewer_login": "mira-kim",
+          "requested_team_name": null
+        }
+      ],
+      "title": "Instrument review insights guardrails",
+      "updated_at": "2026-04-01T13:36:30.356259+00:00"
+    },
+    {
+      "additions": 338,
+      "author_login": "alex-rivera",
+      "changed_files": 12,
+      "closed_at": "2026-04-06T09:40:48.903300+00:00",
+      "commits": 7,
+      "created_at": "2026-04-01T13:20:00+00:00",
+      "deletions": 186,
+      "draft": false,
+      "html_url": "https://github.com/acme-cloud/admin-console/pull/1454",
+      "merged": true,
+      "merged_at": "2026-04-06T09:40:48.903300+00:00",
+      "number": 1454,
+      "repository_full_name": "acme-cloud/admin-console",
+      "reviews": [
+        {
+          "author_login": "sam-patel",
+          "commit_id": "commit-3083",
+          "review_id": 3083,
+          "state": "APPROVED",
+          "submitted_at": "2026-04-02T10:09:50.836265+00:00"
+        },
+        {
+          "author_login": "taylor-ng",
+          "commit_id": "commit-3084",
+          "review_id": 3084,
+          "state": "APPROVED",
+          "submitted_at": "2026-04-02T13:45:56.258103+00:00"
+        }
+      ],
+      "state": "closed",
+      "timeline_events": [
+        {
+          "actor_login": "alex-rivera",
+          "created_at": "2026-04-01T18:13:58.821995+00:00",
+          "event": "review_requested",
+          "event_id": 9086,
+          "requested_reviewer_login": "sam-patel",
+          "requested_team_name": null
+        },
+        {
+          "actor_login": "alex-rivera",
+          "created_at": "2026-04-01T18:13:58.821995+00:00",
+          "event": "review_requested",
+          "event_id": 9087,
+          "requested_reviewer_login": "taylor-ng",
+          "requested_team_name": null
+        },
+        {
+          "actor_login": "alex-rivera",
+          "created_at": "2026-04-01T18:21:58.821995+00:00",
+          "event": "review_requested",
+          "event_id": 9088,
+          "requested_reviewer_login": null,
+          "requested_team_name": "admin-console-maintainers"
+        }
+      ],
+      "title": "Retire tenant access contract",
+      "updated_at": "2026-04-06T09:40:48.903300+00:00"
+    },
+    {
+      "additions": 1122,
+      "author_login": "pri-iyer",
+      "changed_files": 13,
+      "closed_at": "2026-04-08T08:00:44.110178+00:00",
+      "commits": 10,
+      "created_at": "2026-04-02T15:20:00+00:00",
+      "deletions": 172,
+      "draft": false,
+      "html_url": "https://github.com/acme-cloud/data-pipeline/pull/1455",
+      "merged": true,
+      "merged_at": "2026-04-08T08:00:44.110178+00:00",
+      "number": 1455,
+      "repository_full_name": "acme-cloud/data-pipeline",
+      "reviews": [
+        {
+          "author_login": "sam-patel",
+          "commit_id": "commit-3085",
+          "review_id": 3085,
+          "state": "APPROVED",
+          "submitted_at": "2026-04-03T13:12:07.973942+00:00"
+        },
+        {
+          "author_login": "taylor-ng",
+          "commit_id": "commit-3086",
+          "review_id": 3086,
+          "state": "APPROVED",
+          "submitted_at": "2026-04-03T09:04:49.036106+00:00"
+        }
+      ],
+      "state": "closed",
+      "timeline_events": [
+        {
+          "actor_login": "pri-iyer",
+          "created_at": "2026-04-02T19:35:05.932602+00:00",
+          "event": "review_requested",
+          "event_id": 9089,
+          "requested_reviewer_login": "sam-patel",
+          "requested_team_name": null
+        },
+        {
+          "actor_login": "pri-iyer",
+          "created_at": "2026-04-02T19:35:05.932602+00:00",
+          "event": "review_requested",
+          "event_id": 9090,
+          "requested_reviewer_login": "taylor-ng",
+          "requested_team_name": null
+        },
+        {
+          "actor_login": "pri-iyer",
+          "created_at": "2026-04-02T19:43:05.932602+00:00",
+          "event": "review_requested",
+          "event_id": 9091,
+          "requested_reviewer_login": null,
+          "requested_team_name": "data-pipeline-maintainers"
+        }
+      ],
+      "title": "Move repository onboarding path",
+      "updated_at": "2026-04-08T08:00:44.110178+00:00"
+    },
+    {
+      "additions": 315,
+      "author_login": "sam-patel",
+      "changed_files": 7,
+      "closed_at": "2026-04-10T18:26:32.949543+00:00",
+      "commits": 2,
+      "created_at": "2026-04-08T08:00:00+00:00",
+      "deletions": 109,
+      "draft": false,
+      "html_url": "https://github.com/acme-cloud/admin-console/pull/1456",
+      "merged": true,
+      "merged_at": "2026-04-10T18:26:32.949543+00:00",
+      "number": 1456,
+      "repository_full_name": "acme-cloud/admin-console",
+      "reviews": [
+        {
+          "author_login": "alex-rivera",
+          "commit_id": "commit-3087",
+          "review_id": 3087,
+          "state": "APPROVED",
+          "submitted_at": "2026-04-10T17:41:11.332435+00:00"
+        }
+      ],
+      "state": "closed",
+      "timeline_events": [
+        {
+          "actor_login": "sam-patel",
+          "created_at": "2026-04-08T10:12:57.129521+00:00",
+          "event": "review_requested",
+          "event_id": 9092,
+          "requested_reviewer_login": "alex-rivera",
+          "requested_team_name": null
+        }
+      ],
+      "title": "Ship billing export panel",
+      "updated_at": "2026-04-10T18:26:32.949543+00:00"
+    },
+    {
+      "additions": 1233,
+      "author_login": "taylor-ng",
+      "changed_files": 19,
+      "closed_at": "2026-04-15T14:34:50.582167+00:00",
+      "commits": 11,
+      "created_at": "2026-04-09T15:35:00+00:00",
+      "deletions": 179,
+      "draft": false,
+      "html_url": "https://github.com/acme-cloud/data-pipeline/pull/1457",
+      "merged": true,
+      "merged_at": "2026-04-15T14:34:50.582167+00:00",
+      "number": 1457,
+      "repository_full_name": "acme-cloud/data-pipeline",
+      "reviews": [
+        {
+          "author_login": "alex-rivera",
+          "commit_id": "commit-3088",
+          "review_id": 3088,
+          "state": "CHANGES_REQUESTED",
+          "submitted_at": "2026-04-10T10:14:33.072089+00:00"
+        },
+        {
+          "author_login": "alex-rivera",
+          "commit_id": "commit-3089",
+          "review_id": 3089,
+          "state": "APPROVED",
+          "submitted_at": "2026-04-14T10:30:53.168893+00:00"
+        },
+        {
+          "author_login": "nora-chen",
+          "commit_id": "commit-3090",
+          "review_id": 3090,
+          "state": "COMMENTED",
+          "submitted_at": "2026-04-10T09:20:15.757063+00:00"
+        }
+      ],
+      "state": "closed",
+      "timeline_events": [
+        {
+          "actor_login": "taylor-ng",
+          "created_at": "2026-04-09T17:19:08.003583+00:00",
+          "event": "review_requested",
+          "event_id": 9093,
+          "requested_reviewer_login": "alex-rivera",
+          "requested_team_name": null
+        },
+        {
+          "actor_login": "taylor-ng",
+          "created_at": "2026-04-09T17:19:08.003583+00:00",
+          "event": "review_requested",
+          "event_id": 9094,
+          "requested_reviewer_login": "nora-chen",
+          "requested_team_name": null
+        }
+      ],
+      "title": "Harden incident replay surface",
+      "updated_at": "2026-04-15T14:34:50.582167+00:00"
+    },
+    {
+      "additions": 365,
+      "author_login": "taylor-ng",
+      "changed_files": 6,
+      "closed_at": "2026-04-16T15:49:19.052776+00:00",
+      "commits": 4,
+      "created_at": "2026-04-13T15:20:00+00:00",
+      "deletions": 139,
+      "draft": false,
+      "html_url": "https://github.com/acme-cloud/admin-console/pull/1458",
+      "merged": true,
+      "merged_at": "2026-04-16T15:49:19.052776+00:00",
+      "number": 1458,
+      "repository_full_name": "acme-cloud/admin-console",
+      "reviews": [
+        {
+          "author_login": "alex-rivera",
+          "commit_id": "commit-3091",
+          "review_id": 3091,
+          "state": "APPROVED",
+          "submitted_at": "2026-04-14T09:31:32.537299+00:00"
+        },
+        {
+          "author_login": "diego-santos",
+          "commit_id": "commit-3092",
+          "review_id": 3092,
+          "state": "COMMENTED",
+          "submitted_at": "2026-04-14T10:04:07.297428+00:00"
+        }
+      ],
+      "state": "closed",
+      "timeline_events": [
+        {
+          "actor_login": "taylor-ng",
+          "created_at": "2026-04-13T16:16:41.082454+00:00",
+          "event": "review_requested",
+          "event_id": 9095,
+          "requested_reviewer_login": "alex-rivera",
+          "requested_team_name": null
+        },
+        {
+          "actor_login": "taylor-ng",
+          "created_at": "2026-04-13T16:16:41.082454+00:00",
+          "event": "review_requested",
+          "event_id": 9096,
+          "requested_reviewer_login": "diego-santos",
+          "requested_team_name": null
+        }
+      ],
+      "title": "Move audit evidence panel",
+      "updated_at": "2026-04-16T15:49:19.052776+00:00"
+    },
+    {
+      "additions": 110,
+      "author_login": "taylor-ng",
+      "changed_files": 7,
+      "closed_at": "2026-04-22T09:20:36.550639+00:00",
+      "commits": 5,
+      "created_at": "2026-04-20T09:20:00+00:00",
+      "deletions": 104,
+      "draft": false,
+      "html_url": "https://github.com/acme-cloud/infra-ops/pull/1459",
+      "merged": true,
+      "merged_at": "2026-04-22T09:20:36.550639+00:00",
+      "number": 1459,
+      "repository_full_name": "acme-cloud/infra-ops",
+      "reviews": [
+        {
+          "author_login": "alex-rivera",
+          "commit_id": "commit-3093",
+          "review_id": 3093,
+          "state": "APPROVED",
+          "submitted_at": "2026-04-23T10:18:33.709544+00:00"
+        }
+      ],
+      "state": "closed",
+      "timeline_events": [
+        {
+          "actor_login": "taylor-ng",
+          "created_at": "2026-04-20T12:59:42.584490+00:00",
+          "event": "review_requested",
+          "event_id": 9097,
+          "requested_reviewer_login": "alex-rivera",
+          "requested_team_name": null
+        }
+      ],
+      "title": "Harden billing export contract",
+      "updated_at": "2026-04-22T09:20:36.550639+00:00"
+    },
+    {
+      "additions": 117,
+      "author_login": "taylor-ng",
+      "changed_files": 5,
+      "closed_at": "2026-04-23T18:13:55.575155+00:00",
+      "commits": 5,
+      "created_at": "2026-04-21T10:35:00+00:00",
+      "deletions": 30,
+      "draft": false,
+      "html_url": "https://github.com/acme-cloud/platform-api/pull/1460",
+      "merged": true,
+      "merged_at": "2026-04-23T18:13:55.575155+00:00",
+      "number": 1460,
+      "repository_full_name": "acme-cloud/platform-api",
+      "reviews": [
+        {
+          "author_login": "mira-kim",
+          "commit_id": "commit-3094",
+          "review_id": 3094,
+          "state": "CHANGES_REQUESTED",
+          "submitted_at": "2026-04-21T19:00:46.140131+00:00"
+        },
+        {
+          "author_login": "mira-kim",
+          "commit_id": "commit-3095",
+          "review_id": 3095,
+          "state": "APPROVED",
+          "submitted_at": "2026-04-27T09:29:48.673533+00:00"
+        }
+      ],
+      "state": "closed",
+      "timeline_events": [
+        {
+          "actor_login": "taylor-ng",
+          "created_at": "2026-04-21T12:01:58.889277+00:00",
+          "event": "review_requested",
+          "event_id": 9098,
+          "requested_reviewer_login": "mira-kim",
+          "requested_team_name": null
+        }
+      ],
+      "title": "Reduce usage metering panel",
+      "updated_at": "2026-04-23T18:13:55.575155+00:00"
+    },
+    {
+      "additions": 265,
+      "author_login": "diego-santos",
+      "changed_files": 13,
+      "closed_at": "2026-04-30T18:16:30.495061+00:00",
+      "commits": 3,
+      "created_at": "2026-04-28T15:05:00+00:00",
+      "deletions": 135,
+      "draft": false,
+      "html_url": "https://github.com/acme-cloud/admin-console/pull/1461",
+      "merged": true,
+      "merged_at": "2026-04-30T18:16:30.495061+00:00",
+      "number": 1461,
+      "repository_full_name": "acme-cloud/admin-console",
+      "reviews": [
+        {
+          "author_login": "alex-rivera",
+          "commit_id": "commit-3096",
+          "review_id": 3096,
+          "state": "CHANGES_REQUESTED",
+          "submitted_at": "2026-04-28T16:56:09.993889+00:00"
+        },
+        {
+          "author_login": "alex-rivera",
+          "commit_id": "commit-3097",
+          "review_id": 3097,
+          "state": "APPROVED",
+          "submitted_at": "2026-05-02T10:35:39.239502+00:00"
+        }
+      ],
+      "state": "closed",
+      "timeline_events": [
+        {
+          "actor_login": "diego-santos",
+          "created_at": "2026-04-28T15:32:34.516049+00:00",
+          "event": "review_requested",
+          "event_id": 9099,
+          "requested_reviewer_login": "alex-rivera",
+          "requested_team_name": null
+        }
+      ],
+      "title": "Rework usage metering path",
+      "updated_at": "2026-04-30T18:16:30.495061+00:00"
+    },
+    {
+      "additions": 103,
+      "author_login": "alex-rivera",
+      "changed_files": 6,
+      "closed_at": "2026-05-01T16:24:13.383936+00:00",
+      "commits": 2,
+      "created_at": "2026-04-30T13:12:00+00:00",
+      "deletions": 38,
+      "draft": false,
+      "html_url": "https://github.com/acme-cloud/admin-console/pull/1462",
+      "merged": true,
+      "merged_at": "2026-05-01T16:24:13.383936+00:00",
+      "number": 1462,
+      "repository_full_name": "acme-cloud/admin-console",
+      "reviews": [],
+      "state": "closed",
+      "timeline_events": [],
+      "title": "Instrument billing export contract",
+      "updated_at": "2026-05-01T16:24:13.383936+00:00"
+    },
+    {
+      "additions": 1176,
+      "author_login": "jordan-lee",
+      "changed_files": 17,
+      "closed_at": "2026-05-11T14:05:58.278051+00:00",
+      "commits": 8,
+      "created_at": "2026-05-06T13:20:00+00:00",
+      "deletions": 39,
+      "draft": false,
+      "html_url": "https://github.com/acme-cloud/admin-console/pull/1463",
+      "merged": true,
+      "merged_at": "2026-05-11T14:05:58.278051+00:00",
+      "number": 1463,
+      "repository_full_name": "acme-cloud/admin-console",
+      "reviews": [
+        {
+          "author_login": "alex-rivera",
+          "commit_id": "commit-3098",
+          "review_id": 3098,
+          "state": "COMMENTED",
+          "submitted_at": "2026-05-06T18:12:47.760813+00:00"
+        }
+      ],
+      "state": "closed",
+      "timeline_events": [
+        {
+          "actor_login": "jordan-lee",
+          "created_at": "2026-05-06T17:02:11.824970+00:00",
+          "event": "review_requested",
+          "event_id": 9100,
+          "requested_reviewer_login": "alex-rivera",
+          "requested_team_name": null
+        }
+      ],
+      "title": "Add audit evidence panel",
+      "updated_at": "2026-05-11T14:05:58.278051+00:00"
+    },
+    {
+      "additions": 172,
+      "author_login": "jordan-lee",
+      "changed_files": 9,
+      "closed_at": "2026-05-14T16:48:44.474031+00:00",
+      "commits": 2,
+      "created_at": "2026-05-12T16:52:00+00:00",
+      "deletions": 175,
+      "draft": false,
+      "html_url": "https://github.com/acme-cloud/admin-console/pull/1464",
+      "merged": true,
+      "merged_at": "2026-05-14T16:48:44.474031+00:00",
+      "number": 1464,
+      "repository_full_name": "acme-cloud/admin-console",
+      "reviews": [
+        {
+          "author_login": "sam-patel",
+          "commit_id": "commit-3099",
+          "review_id": 3099,
+          "state": "CHANGES_REQUESTED",
+          "submitted_at": "2026-05-14T18:46:06.945243+00:00"
+        }
+      ],
+      "state": "closed",
+      "timeline_events": [
+        {
+          "actor_login": "jordan-lee",
+          "created_at": "2026-05-12T19:39:32.490494+00:00",
+          "event": "review_requested",
+          "event_id": 9101,
+          "requested_reviewer_login": "sam-patel",
+          "requested_team_name": null
+        },
+        {
+          "actor_login": "jordan-lee",
+          "created_at": "2026-05-12T19:47:32.490494+00:00",
+          "event": "review_requested",
+          "event_id": 9102,
+          "requested_reviewer_login": null,
+          "requested_team_name": "admin-console-maintainers"
+        }
+      ],
+      "title": "Backfill support inbox contract",
+      "updated_at": "2026-05-14T16:48:44.474031+00:00"
+    },
+    {
+      "additions": 149,
+      "author_login": "mira-kim",
+      "changed_files": 8,
+      "closed_at": null,
+      "commits": 5,
+      "created_at": "2026-05-14T10:35:00+00:00",
+      "deletions": 171,
+      "draft": false,
+      "html_url": "https://github.com/acme-cloud/data-pipeline/pull/1465",
+      "merged": false,
+      "merged_at": null,
+      "number": 1465,
+      "repository_full_name": "acme-cloud/data-pipeline",
+      "reviews": [
+        {
+          "author_login": "alex-rivera",
+          "commit_id": "commit-3100",
+          "review_id": 3100,
+          "state": "APPROVED",
+          "submitted_at": "2026-05-15T09:19:23.896341+00:00"
+        },
+        {
+          "author_login": "taylor-ng",
+          "commit_id": "commit-3101",
+          "review_id": 3101,
+          "state": "APPROVED",
+          "submitted_at": "2026-05-15T09:35:40.248758+00:00"
+        }
+      ],
+      "state": "open",
+      "timeline_events": [
+        {
+          "actor_login": "mira-kim",
+          "created_at": "2026-05-14T13:40:36.296625+00:00",
+          "event": "review_requested",
+          "event_id": 9103,
+          "requested_reviewer_login": "alex-rivera",
+          "requested_team_name": null
+        },
+        {
+          "actor_login": "mira-kim",
+          "created_at": "2026-05-14T13:40:36.296625+00:00",
+          "event": "review_requested",
+          "event_id": 9104,
+          "requested_reviewer_login": "taylor-ng",
+          "requested_team_name": null
+        }
+      ],
+      "title": "Instrument usage metering surface",
+      "updated_at": "2026-05-22T15:20:00+00:00"
+    },
+    {
+      "additions": 847,
+      "author_login": "jordan-lee",
+      "changed_files": 11,
+      "closed_at": null,
+      "commits": 6,
+      "created_at": "2026-05-18T09:45:00+00:00",
+      "deletions": 108,
+      "draft": true,
+      "html_url": "https://github.com/acme-cloud/data-pipeline/pull/1466",
+      "merged": false,
+      "merged_at": null,
+      "number": 1466,
+      "repository_full_name": "acme-cloud/data-pipeline",
+      "reviews": [
+        {
+          "author_login": "mira-kim",
+          "commit_id": "commit-3102",
+          "review_id": 3102,
+          "state": "APPROVED",
+          "submitted_at": "2026-05-22T10:44:01.484138+00:00"
+        },
+        {
+          "author_login": "alex-rivera",
+          "commit_id": "commit-3103",
+          "review_id": 3103,
+          "state": "COMMENTED",
+          "submitted_at": "2026-05-22T09:00:59.604594+00:00"
+        }
+      ],
+      "state": "open",
+      "timeline_events": [
+        {
+          "actor_login": "jordan-lee",
+          "created_at": "2026-05-18T10:09:00+00:00",
+          "event": "converted_to_draft",
+          "event_id": 9105,
+          "requested_reviewer_login": null,
+          "requested_team_name": null
+        },
+        {
+          "actor_login": "jordan-lee",
+          "created_at": "2026-05-20T10:18:11.229429+00:00",
+          "event": "ready_for_review",
+          "event_id": 9106,
+          "requested_reviewer_login": null,
+          "requested_team_name": null
+        },
+        {
+          "actor_login": "jordan-lee",
+          "created_at": "2026-05-20T12:08:27.952995+00:00",
+          "event": "review_requested",
+          "event_id": 9107,
+          "requested_reviewer_login": "mira-kim",
+          "requested_team_name": null
+        },
+        {
+          "actor_login": "jordan-lee",
+          "created_at": "2026-05-20T12:08:27.952995+00:00",
+          "event": "review_requested",
+          "event_id": 9108,
+          "requested_reviewer_login": "alex-rivera",
+          "requested_team_name": null
+        },
+        {
+          "actor_login": "jordan-lee",
+          "created_at": "2026-05-20T12:16:27.952995+00:00",
+          "event": "review_requested",
+          "event_id": 9109,
+          "requested_reviewer_login": null,
+          "requested_team_name": "data-pipeline-maintainers"
+        }
+      ],
+      "title": "Rework repository onboarding panel",
+      "updated_at": "2026-05-22T15:20:00+00:00"
+    },
+    {
+      "additions": 480,
+      "author_login": "mira-kim",
+      "changed_files": 8,
+      "closed_at": null,
+      "commits": 6,
+      "created_at": "2026-05-19T15:35:00+00:00",
+      "deletions": 105,
+      "draft": false,
+      "html_url": "https://github.com/acme-cloud/admin-console/pull/1467",
+      "merged": false,
+      "merged_at": null,
+      "number": 1467,
+      "repository_full_name": "acme-cloud/admin-console",
+      "reviews": [
+        {
+          "author_login": "sam-patel",
+          "commit_id": "commit-3104",
+          "review_id": 3104,
+          "state": "APPROVED",
+          "submitted_at": "2026-05-20T17:01:00.720084+00:00"
+        },
+        {
+          "author_login": "alex-rivera",
+          "commit_id": "commit-3105",
+          "review_id": 3105,
+          "state": "APPROVED",
+          "submitted_at": "2026-05-21T17:16:02.247447+00:00"
+        }
+      ],
+      "state": "open",
+      "timeline_events": [
+        {
+          "actor_login": "mira-kim",
+          "created_at": "2026-05-20T10:14:19.982783+00:00",
+          "event": "review_requested",
+          "event_id": 9110,
+          "requested_reviewer_login": "sam-patel",
+          "requested_team_name": null
+        },
+        {
+          "actor_login": "mira-kim",
+          "created_at": "2026-05-20T10:14:19.982783+00:00",
+          "event": "review_requested",
+          "event_id": 9111,
+          "requested_reviewer_login": "alex-rivera",
+          "requested_team_name": null
+        }
+      ],
+      "title": "Tighten audit evidence surface",
+      "updated_at": "2026-05-22T15:20:00+00:00"
+    },
+    {
+      "additions": 303,
+      "author_login": "sam-patel",
+      "changed_files": 8,
+      "closed_at": null,
+      "commits": 5,
+      "created_at": "2026-05-20T11:52:00+00:00",
+      "deletions": 49,
+      "draft": false,
+      "html_url": "https://github.com/acme-cloud/admin-console/pull/1468",
+      "merged": false,
+      "merged_at": null,
+      "number": 1468,
+      "repository_full_name": "acme-cloud/admin-console",
+      "reviews": [
+        {
+          "author_login": "diego-santos",
+          "commit_id": "commit-3106",
+          "review_id": 3106,
+          "state": "APPROVED",
+          "submitted_at": "2026-05-22T19:20:13.748076+00:00"
+        }
+      ],
+      "state": "open",
+      "timeline_events": [
+        {
+          "actor_login": "sam-patel",
+          "created_at": "2026-05-20T12:45:13.712481+00:00",
+          "event": "review_requested",
+          "event_id": 9112,
+          "requested_reviewer_login": "diego-santos",
+          "requested_team_name": null
+        }
+      ],
+      "title": "Cache policy simulation jobs",
+      "updated_at": "2026-05-22T15:20:00+00:00"
+    },
+    {
+      "additions": 114,
+      "author_login": "mira-kim",
+      "changed_files": 6,
+      "closed_at": null,
+      "commits": 5,
+      "created_at": "2026-05-21T10:12:00+00:00",
+      "deletions": 89,
+      "draft": false,
+      "html_url": "https://github.com/acme-cloud/platform-api/pull/1469",
+      "merged": false,
+      "merged_at": null,
+      "number": 1469,
+      "repository_full_name": "acme-cloud/platform-api",
+      "reviews": [
+        {
+          "author_login": "alex-rivera",
+          "commit_id": "commit-3107",
+          "review_id": 3107,
+          "state": "APPROVED",
+          "submitted_at": "2026-05-22T11:11:47.186455+00:00"
+        }
+      ],
+      "state": "open",
+      "timeline_events": [
+        {
+          "actor_login": "mira-kim",
+          "created_at": "2026-05-21T15:39:06.299366+00:00",
+          "event": "review_requested",
+          "event_id": 9113,
+          "requested_reviewer_login": "alex-rivera",
+          "requested_team_name": null
+        }
+      ],
+      "title": "Normalize identity join guardrails",
+      "updated_at": "2026-05-22T15:20:00+00:00"
+    }
+  ],
+  "repository_count": 5,
+  "since": "2025-10-01",
+  "until": "2026-05-22"
+}

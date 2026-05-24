@@ -110,8 +110,6 @@ def _period_state_label(
     closed: bool,
     is_partial: bool,
 ) -> str:
-    if not closed:
-        return f"open {period_grain}"
     if is_partial:
-        return f"partial {period_grain}"
+        return f"open {period_grain}"
     return f"closed {period_grain}"

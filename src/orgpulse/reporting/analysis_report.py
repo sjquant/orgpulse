@@ -132,6 +132,7 @@ def build_analysis_report_payload(
                         "end_date": period_report["end_date"],
                         "closed": period_report["closed"],
                         "status": period_report["status"],
+                        "state_label": period_report["state_label"],
                         "is_open": period_report["is_open"],
                         "is_closed": period_report["is_closed"],
                         "is_partial": period_report["is_partial"],
@@ -337,26 +338,31 @@ def _period_catalog(
     until: date | None,
 ) -> list[dict[str, object]]:
     included_periods = set(metric.period_key for metric in filtered_metrics)
-    return [
-        {
-            "key": period.key,
-            "start_date": period.start_date.isoformat(),
-            "end_date": period.end_date.isoformat(),
-            "closed": period.closed,
-            **build_period_state_payload(
-                period_grain=grain,
-                start_date=period.start_date,
-                end_date=period.end_date,
-                closed=period.closed,
-                as_of=as_of,
-                since=since,
-                until=until,
-            ).model_dump(mode="json"),
-            "label": period.key,
-        }
-        for period in raw_snapshot.periods
-        if period.key in included_periods
-    ]
+    rows: list[dict[str, object]] = []
+    for period in raw_snapshot.periods:
+        if period.key not in included_periods:
+            continue
+        period_state = build_period_state_payload(
+            period_grain=grain,
+            start_date=period.start_date,
+            end_date=period.end_date,
+            closed=period.closed,
+            as_of=as_of,
+            since=since,
+            until=until,
+        ).model_dump(mode="json")
+        rows.append(
+            {
+                "key": period.key,
+                "start_date": period.start_date.isoformat(),
+                "end_date": period.end_date.isoformat(),
+                "closed": period.closed,
+                **period_state,
+                "state_label": period_state["label"],
+                "label": period.key,
+            }
+        )
+    return rows
 
 
 def _metrics_by_period(
@@ -502,7 +508,7 @@ def _build_period_diagnostics(
     ]
     return {
         "period_status": period_descriptor["status"],
-        "period_state_label": _period_state_label(period_descriptor),
+        "period_state_label": period_descriptor["state_label"],
         "period_partial": period_descriptor["is_partial"],
         "period_observed_through_date": period_descriptor["observed_through_date"],
         "open_week": period_descriptor["open_week"],
@@ -717,17 +723,6 @@ def _author_identity(author_login: str | None) -> tuple[str, str]:
     if author_login is None or not author_login.strip():
         return "unknown", "Unknown author"
     return author_login.lower(), author_login
-
-
-def _period_state_label(period_descriptor: dict[str, object]) -> str:
-    grain = "week" if "-W" in cast(str, period_descriptor["key"]) else "month"
-    if period_descriptor["open_week"]:
-        return "open week"
-    if period_descriptor["open_month"]:
-        return "open month"
-    if period_descriptor["is_partial"]:
-        return f"partial {grain}"
-    return f"closed {grain}"
 
 
 def _safe_ratio(numerator: int, denominator: int) -> float | None:

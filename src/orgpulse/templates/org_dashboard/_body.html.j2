@@ -144,7 +144,7 @@
           <span id="trend-chart-title">PR throughput by week</span>
           <div class="chart-legend">
             <span class="legend-chip"><span class="legend-dot" style="background: var(--accent)"></span>Selected metric</span>
-            <span class="legend-chip"><span class="legend-band" aria-hidden="true"></span>Yellow band = open or partial period</span>
+            <span class="legend-chip"><span class="legend-band" aria-hidden="true"></span>Yellow band = open period</span>
           </div>
         </div>
         <div id="trend-chart-readout" class="chart-readout"></div>
@@ -256,7 +256,7 @@
               <span id="author-chart-title">Author chart</span>
               <div class="chart-legend">
                 <span class="legend-chip"><span class="legend-dot" style="background: var(--accent-2)"></span>Selected person</span>
-                <span class="legend-chip"><span class="legend-band" aria-hidden="true"></span>Yellow band = open or partial period</span>
+                <span class="legend-chip"><span class="legend-band" aria-hidden="true"></span>Yellow band = open period</span>
               </div>
             </div>
             <div id="author-chart-readout" class="chart-readout"></div>
@@ -282,6 +282,9 @@
                 <th class="rank">#</th>
                 <th>Reviewer</th>
                 <th class="num">PRs reviewed</th>
+                <th class="num">PRs / month</th>
+                <th class="num">Reviewed lines</th>
+                <th class="num tablet-hide">Lines / month</th>
                 <th class="num">Submissions</th>
                 <th class="num">Approvals</th>
                 <th class="num tablet-hide">Changes requested</th>
@@ -295,9 +298,12 @@
                 <td class="rank" data-label="Rank">{{ loop.index }}</td>
                 <td class="leader" data-label="Reviewer">
                   <strong>{{ row.reviewer_login }}</strong>
-                  <span>{{ row.pull_requests_reviewed | intfmt }} PRs touched</span>
+                  <span>{{ row.pull_requests_reviewed | intfmt }} PRs touched · {{ row.pull_requests_reviewed_per_month | numfmt }} PRs/mo</span>
                 </td>
                 <td class="num" data-label="PRs reviewed">{{ row.pull_requests_reviewed | intfmt }}</td>
+                <td class="num" data-label="PRs / month">{{ row.pull_requests_reviewed_per_month | numfmt }}</td>
+                <td class="num" data-label="Reviewed lines">{{ row.reviewed_lines | intfmt }}</td>
+                <td class="num tablet-hide" data-label="Lines / month">{{ row.reviewed_lines_per_month | numfmt }}</td>
                 <td class="num" data-label="Submissions">{{ row.review_submissions | intfmt }}</td>
                 <td class="num" data-label="Approvals">{{ row.approvals | intfmt }}</td>
                 <td class="num tablet-hide" data-label="Changes requested">{{ row.changes_requested | intfmt }}</td>
@@ -313,9 +319,12 @@
                 <td class="rank" data-label="Rank">{{ loop.index + 10 }}</td>
                 <td class="leader" data-label="Reviewer">
                   <strong>{{ row.reviewer_login }}</strong>
-                  <span>{{ row.pull_requests_reviewed | intfmt }} PRs touched</span>
+                  <span>{{ row.pull_requests_reviewed | intfmt }} PRs touched · {{ row.pull_requests_reviewed_per_month | numfmt }} PRs/mo</span>
                 </td>
                 <td class="num" data-label="PRs reviewed">{{ row.pull_requests_reviewed | intfmt }}</td>
+                <td class="num" data-label="PRs / month">{{ row.pull_requests_reviewed_per_month | numfmt }}</td>
+                <td class="num" data-label="Reviewed lines">{{ row.reviewed_lines | intfmt }}</td>
+                <td class="num tablet-hide" data-label="Lines / month">{{ row.reviewed_lines_per_month | numfmt }}</td>
                 <td class="num" data-label="Submissions">{{ row.review_submissions | intfmt }}</td>
                 <td class="num" data-label="Approvals">{{ row.approvals | intfmt }}</td>
                 <td class="num tablet-hide" data-label="Changes requested">{{ row.changes_requested | intfmt }}</td>
@@ -520,7 +529,7 @@
                         <strong>{{ row.period_key }}</strong>
                         <span>created_at basis</span>
                       </td>
-                      <td data-label="State"><span class="period-state-pill {% if row.is_open %}open{% elif row.is_partial %}partial{% endif %}">{{ row.label }}</span></td>
+                      <td data-label="State"><span class="period-state-pill {% if row.is_open or row.is_partial %}open{% endif %}">{{ row.label }}</span></td>
                       <td class="num" data-label="PRs">{{ row.pull_requests | intfmt }}</td>
                       <td class="num" data-label="Merged">{{ row.merged_pull_requests | intfmt }}</td>
                       <td class="num tablet-hide" data-label="Open">{{ row.open_pull_requests | intfmt }}</td>
@@ -539,7 +548,7 @@
                         <strong>{{ row.period_key }}</strong>
                         <span>created_at basis</span>
                       </td>
-                      <td data-label="State"><span class="period-state-pill {% if row.is_open %}open{% elif row.is_partial %}partial{% endif %}">{{ row.label }}</span></td>
+                      <td data-label="State"><span class="period-state-pill {% if row.is_open or row.is_partial %}open{% endif %}">{{ row.label }}</span></td>
                       <td class="num" data-label="PRs">{{ row.pull_requests | intfmt }}</td>
                       <td class="num" data-label="Merged">{{ row.merged_pull_requests | intfmt }}</td>
                       <td class="num tablet-hide" data-label="Open">{{ row.open_pull_requests | intfmt }}</td>
@@ -588,7 +597,7 @@
                         <strong>{{ row.period_key }}</strong>
                         <span>created_at basis</span>
                       </td>
-                      <td data-label="State"><span class="period-state-pill {% if row.is_open %}open{% elif row.is_partial %}partial{% endif %}">{{ row.label }}</span></td>
+                      <td data-label="State"><span class="period-state-pill {% if row.is_open or row.is_partial %}open{% endif %}">{{ row.label }}</span></td>
                       <td class="num" data-label="PRs">{{ row.pull_requests | intfmt }}</td>
                       <td class="num" data-label="Merged">{{ row.merged_pull_requests | intfmt }}</td>
                       <td class="num tablet-hide" data-label="Open">{{ row.open_pull_requests | intfmt }}</td>
@@ -607,7 +616,7 @@
                         <strong>{{ row.period_key }}</strong>
                         <span>created_at basis</span>
                       </td>
-                      <td data-label="State"><span class="period-state-pill {% if row.is_open %}open{% elif row.is_partial %}partial{% endif %}">{{ row.label }}</span></td>
+                      <td data-label="State"><span class="period-state-pill {% if row.is_open or row.is_partial %}open{% endif %}">{{ row.label }}</span></td>
                       <td class="num" data-label="PRs">{{ row.pull_requests | intfmt }}</td>
                       <td class="num" data-label="Merged">{{ row.merged_pull_requests | intfmt }}</td>
                       <td class="num tablet-hide" data-label="Open">{{ row.open_pull_requests | intfmt }}</td>

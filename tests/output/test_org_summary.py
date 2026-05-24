@@ -180,7 +180,7 @@ class TestOrgSummaryWriter:
             "pull_request.created_at."
         ) in markdown
         assert "- Period status: open month" in markdown
-        assert "- Partial period: true" in markdown
+        assert "- Open period: true" in markdown
         assert "- Observed through: 2026-04-18" in markdown
         assert "- Pull request count (pull_request.created_at): 3" in markdown
         assert "- Merged pull request count (pull_request.created_at): 2" in markdown

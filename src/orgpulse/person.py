@@ -37,6 +37,7 @@ from orgpulse.person_source import (
     TimelineEventFact,
 )
 from orgpulse.raw_snapshot_source import LocalSnapshotSource
+from orgpulse.reporting.contracts import build_period_state_payload
 
 Login = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
 
@@ -176,6 +177,9 @@ class PersonReviewerSummary(BaseModel):
 
     review_submissions: int
     pull_requests_reviewed: int
+    reviewed_lines: int
+    pull_requests_reviewed_per_month: float | None
+    reviewed_lines_per_month: float | None
     approvals: int
     changes_requested: int
     comments: int
@@ -191,6 +195,14 @@ class PersonPeriodRow(BaseModel):
     period_key: str
     period_start_date: date
     period_end_date: date
+    status: str
+    label: str
+    is_open: bool
+    is_closed: bool
+    is_partial: bool
+    observed_through_date: str
+    open_week: bool
+    open_month: bool
     authored_pull_request_count: int
     merged_pull_request_count: int
     open_pull_request_count: int
@@ -199,6 +211,7 @@ class PersonPeriodRow(BaseModel):
     reviews_received: int
     review_submissions_given: int
     pull_requests_reviewed: int
+    reviewed_lines: int
     approvals_given: int
     changes_requested_given: int
     comments_given: int
@@ -218,6 +231,7 @@ class PersonRepositoryRow(BaseModel):
     reviews_received: int
     review_submissions_given: int
     pull_requests_reviewed: int
+    reviewed_lines: int
 
 
 class PersonMetricsResult(BaseModel):
@@ -306,13 +320,25 @@ class PersonMetricsService:
                 authored_pull_requests,
                 distribution_percentile=config.distribution_percentile,
             ),
-            reviewer_summary=self._reviewer_summary(review_submissions),
+            reviewer_summary=self._reviewer_summary(
+                review_submissions,
+                month_count=self._review_month_count(config, monthly_period_rows),
+            ),
             period_rows=period_rows,
             weekly_period_rows=weekly_period_rows,
             monthly_period_rows=monthly_period_rows,
             repository_rows=repository_rows,
             export_format=config.export_format,
         )
+
+    def _review_month_count(
+        self,
+        config: PersonConfig,
+        monthly_period_rows: tuple[PersonPeriodRow, ...],
+    ) -> int:
+        if config.since is not None and config.until is not None:
+            return PeriodGrain.MONTH.count_periods(config.since, config.until)
+        return max(1, len(monthly_period_rows))
 
     def _authored_pull_requests(
         self,
@@ -434,7 +460,10 @@ class PersonMetricsService:
         )
         return tuple(
             self._period_row(
+                config=config,
+                grain=grain,
                 period=period,
+                source_as_of=source_as_of,
                 authored_pull_requests=tuple(authored_by_period.get(period.key, ())),
                 review_submissions=tuple(reviews_by_period.get(period.key, ())),
             )
@@ -553,14 +582,34 @@ class PersonMetricsService:
     def _period_row(
         self,
         *,
+        config: PersonConfig,
+        grain: PeriodGrain,
         period: RawSnapshotPeriod,
+        source_as_of: date,
         authored_pull_requests: tuple[PullRequestFact, ...],
         review_submissions: tuple[ReviewFact, ...],
     ) -> PersonPeriodRow:
+        period_state = build_period_state_payload(
+            period_grain=grain.value,
+            start_date=period.start_date,
+            end_date=period.end_date,
+            closed=period.closed,
+            as_of=source_as_of,
+            since=config.since,
+            until=config.until,
+        )
         return PersonPeriodRow(
             period_key=period.key,
             period_start_date=period.start_date,
             period_end_date=period.end_date,
+            status=period_state.status,
+            label=period_state.label,
+            is_open=period_state.is_open,
+            is_closed=period_state.is_closed,
+            is_partial=period_state.is_partial,
+            observed_through_date=period_state.observed_through_date,
+            open_week=period_state.open_week,
+            open_month=period_state.open_month,
             authored_pull_request_count=len(authored_pull_requests),
             merged_pull_request_count=sum(
                 1 for pull_request in authored_pull_requests if pull_request.merged
@@ -584,6 +633,7 @@ class PersonMetricsService:
             pull_requests_reviewed=len(
                 {self._review_pull_request_key(review) for review in review_submissions}
             ),
+            reviewed_lines=self._reviewed_lines(review_submissions),
             approvals_given=sum(
                 1 for review in review_submissions if review.state == "APPROVED"
             ),
@@ -659,6 +709,7 @@ class PersonMetricsService:
             pull_requests_reviewed=len(
                 {self._review_pull_request_key(review) for review in review_submissions}
             ),
+            reviewed_lines=self._reviewed_lines(review_submissions),
         )
 
     def _summary(
@@ -722,12 +773,21 @@ class PersonMetricsService:
     def _reviewer_summary(
         self,
         review_submissions: tuple[ReviewFact, ...],
+        *,
+        month_count: int,
     ) -> PersonReviewerSummary:
+        pull_requests_reviewed = len(
+            {self._review_pull_request_key(review) for review in review_submissions}
+        )
+        reviewed_lines = self._reviewed_lines(review_submissions)
         return PersonReviewerSummary(
             review_submissions=len(review_submissions),
-            pull_requests_reviewed=len(
-                {self._review_pull_request_key(review) for review in review_submissions}
+            pull_requests_reviewed=pull_requests_reviewed,
+            reviewed_lines=reviewed_lines,
+            pull_requests_reviewed_per_month=_round_metric(
+                pull_requests_reviewed / month_count
             ),
+            reviewed_lines_per_month=_round_metric(reviewed_lines / month_count),
             approvals=sum(
                 1 for review in review_submissions if review.state == "APPROVED"
             ),
@@ -750,6 +810,18 @@ class PersonMetricsService:
                 {review.repository_full_name for review in review_submissions}
             ),
         )
+
+    def _reviewed_lines(
+        self,
+        review_submissions: tuple[ReviewFact, ...],
+    ) -> int:
+        reviewed_pull_requests: dict[PullRequestKey, int] = {}
+        for review in review_submissions:
+            reviewed_pull_requests.setdefault(
+                self._review_pull_request_key(review),
+                review.pull_request_changed_lines,
+            )
+        return sum(reviewed_pull_requests.values())
 
     def _anchor_datetime(
         self,

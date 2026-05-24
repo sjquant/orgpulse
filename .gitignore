@@ -5,3 +5,5 @@ __pycache__/
 *.pyc
 !tests/output/
 !tests/output/**
+**/__pycache__/
+**/*.pyc

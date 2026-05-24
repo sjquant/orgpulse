@@ -133,7 +133,10 @@ class TestPersonCommand:
             "changes_requested": 1,
             "comments": 0,
             "pull_requests_reviewed": 1,
+            "pull_requests_reviewed_per_month": 1.0,
             "repositories_reviewed": 1,
+            "reviewed_lines": 10,
+            "reviewed_lines_per_month": 10.0,
             "review_submissions": 1,
         }
         assert payload["period_rows"] == [
@@ -144,14 +147,23 @@ class TestPersonCommand:
                 "changes_requested_given": 1,
                 "comments_given": 0,
                 "commits_total": 3,
+                "is_closed": False,
+                "is_open": True,
+                "is_partial": True,
+                "label": "open month",
                 "merged_pull_request_count": 1,
+                "observed_through_date": "2026-04-30",
+                "open_month": True,
                 "open_pull_request_count": 0,
+                "open_week": False,
                 "period_end_date": "2026-04-30",
                 "period_key": "2026-04",
                 "period_start_date": "2026-04-01",
                 "pull_requests_reviewed": 1,
+                "reviewed_lines": 10,
                 "review_submissions_given": 1,
                 "reviews_received": 1,
+                "status": "open",
             }
         ]
 
@@ -244,15 +256,150 @@ class TestPersonCommand:
                 "changes_requested_given": "0",
                 "comments_given": "0",
                 "commits_total": "0",
+                "is_closed": "True",
+                "is_open": "False",
+                "is_partial": "False",
+                "label": "closed month",
                 "merged_pull_request_count": "0",
+                "observed_through_date": "2026-04-30",
+                "open_month": "False",
                 "open_pull_request_count": "0",
+                "open_week": "False",
                 "period_end_date": "2026-04-30",
                 "period_key": "2026-04",
                 "period_start_date": "2026-04-01",
                 "pull_requests_reviewed": "1",
+                "reviewed_lines": "10",
                 "review_submissions_given": "1",
                 "reviews_received": "0",
+                "status": "closed",
             }
+        ]
+
+    def test_calculates_person_reviewer_monthly_rates_and_reviewed_lines(
+        self,
+        runner: CliRunner,
+        github_auth_service: None,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path,
+        pull_request_factory,
+        review_factory,
+    ) -> None:
+        """Calculate person reviewer monthly rates and reviewed lines from unique reviewed PRs."""
+        # Given
+        collection = PullRequestCollection(
+            window=CollectionWindow(
+                scope=RunScope.FULL_HISTORY,
+                start_date=None,
+                end_date=datetime.fromisoformat("2026-06-30T00:00:00").date(),
+            ),
+            pull_requests=(
+                pull_request_factory(
+                    repository_full_name="acme/api",
+                    number=81,
+                    title="April API work",
+                    author_login="bob",
+                    created_at=datetime.fromisoformat("2026-04-12T09:00:00"),
+                    updated_at=datetime.fromisoformat("2026-04-13T10:00:00"),
+                    additions=25,
+                    deletions=5,
+                    reviews=(
+                        review_factory(
+                            review_id=801,
+                            author_login="alice",
+                            state="COMMENTED",
+                            submitted_at=datetime.fromisoformat("2026-04-13T09:00:00"),
+                        ),
+                        review_factory(
+                            review_id=802,
+                            author_login="alice",
+                            state="APPROVED",
+                            submitted_at=datetime.fromisoformat("2026-04-14T09:00:00"),
+                        ),
+                        review_factory(
+                            review_id=804,
+                            author_login="alice",
+                            state="COMMENTED",
+                            submitted_at=datetime.fromisoformat("2026-05-05T09:00:00"),
+                        ),
+                    ),
+                ),
+                pull_request_factory(
+                    repository_full_name="acme/web",
+                    number=82,
+                    title="May web work",
+                    author_login="carol",
+                    created_at=datetime.fromisoformat("2026-05-03T09:00:00"),
+                    updated_at=datetime.fromisoformat("2026-05-04T10:00:00"),
+                    additions=12,
+                    deletions=3,
+                    reviews=(
+                        review_factory(
+                            review_id=803,
+                            author_login="alice",
+                            state="CHANGES_REQUESTED",
+                            submitted_at=datetime.fromisoformat("2026-05-04T09:00:00"),
+                        ),
+                    ),
+                ),
+            ),
+            failures=(),
+        )
+        _configure_production_cli_runtime(
+            monkeypatch,
+            collection=collection,
+        )
+        run_result = runner.invoke(
+            app,
+            [
+                "run",
+                "--org",
+                "acme",
+                "--mode",
+                "full",
+                "--as-of",
+                "2026-06-30",
+                "--output-dir",
+                str(tmp_path),
+            ],
+        )
+        assert run_result.exit_code == 0
+
+        # When
+        result = runner.invoke(
+            app,
+            [
+                "person",
+                "--org",
+                "acme",
+                "--login",
+                "alice",
+                "--grain",
+                "month",
+                "--since",
+                "2026-04-01",
+                "--until",
+                "2026-06-30",
+                "--output-dir",
+                str(tmp_path),
+                "--format",
+                "json",
+            ],
+        )
+
+        # Then
+        assert result.exit_code == 0
+        payload = json.loads(result.stdout)
+        assert payload["reviewer_summary"]["pull_requests_reviewed"] == 2
+        assert payload["reviewer_summary"]["reviewed_lines"] == 45
+        assert payload["reviewer_summary"]["pull_requests_reviewed_per_month"] == 0.67
+        assert payload["reviewer_summary"]["reviewed_lines_per_month"] == 15.0
+        assert [
+            (row["period_key"], row["pull_requests_reviewed"], row["reviewed_lines"])
+            for row in payload["period_rows"]
+        ] == [
+            ("2026-04", 1, 30),
+            ("2026-05", 2, 45),
         ]
 
     def test_renders_only_existing_local_periods_for_requested_window(
@@ -439,6 +586,7 @@ class TestPersonCommand:
                 "merged_pull_request_count": 0,
                 "open_pull_request_count": 1,
                 "pull_requests_reviewed": 1,
+                "reviewed_lines": 15,
                 "repository_full_name": "acme/api",
                 "review_submissions_given": 1,
                 "reviews_received": 1,
@@ -530,18 +678,30 @@ class TestPersonCommand:
         # Then
         assert markdown_result.exit_code == 0
         assert "# orgpulse person metrics: alice" in markdown_result.stdout
-        assert "| 2026-04 | 1 | 0 | 1 | 10 | 1 | 0 | 0 | 0 |" in markdown_result.stdout
+        assert (
+            "| 2026-04 | 1 | 0 | 1 | 10 | 1 | 0 | 0 | 0 | 0 |" in markdown_result.stdout
+        )
         assert html_result.exit_code == 0
         assert "<title>orgpulse person metrics: alice</title>" in html_result.stdout
         assert '<div class="shell person-report">' in html_result.stdout
         assert 'data-theme-option="dark"' in html_result.stdout
         assert 'id="person-trend-chart-root"' in html_result.stdout
         assert 'id="person-trend-chart-readout"' in html_result.stdout
-        assert 'data-person-trend-metric="authored_pull_request_count"' in html_result.stdout
-        assert 'data-person-trend-metric="review_submissions_given"' in html_result.stdout
+        assert (
+            'data-person-trend-metric="authored_pull_request_count"'
+            in html_result.stdout
+        )
+        assert (
+            'data-person-trend-metric="review_submissions_given"' in html_result.stdout
+        )
+        assert 'data-person-trend-metric="reviewed_lines"' in html_result.stdout
         assert 'data-person-trend-metric="changed_lines_total"' in html_result.stdout
         assert 'data-person-trend-metric="commits_total"' in html_result.stdout
-        assert '<script id="person-report-data" type="application/json">' in html_result.stdout
+        assert "Yellow band = open period" in html_result.stdout
+        assert (
+            '<script id="person-report-data" type="application/json">'
+            in html_result.stdout
+        )
         report_payload_match = re.search(
             r'<script id="person-report-data" type="application/json">(.*?)</script>',
             html_result.stdout,
@@ -550,18 +710,24 @@ class TestPersonCommand:
         report_payload = json.loads(report_payload_match.group(1))
         assert report_payload["login"] == "alice"
         assert report_payload["period_rows"][0]["period_key"] == "2026-04"
+        assert report_payload["period_rows"][0]["label"] == "open month"
+        assert report_payload["period_rows"][0]["is_partial"] is True
         assert [row["period_key"] for row in report_payload["monthly_period_rows"]] == [
             "2026-04"
         ]
         assert report_payload["weekly_period_rows"][0]["period_key"] == "2026-W14"
         assert report_payload["weekly_period_rows"][-1]["period_key"] == "2026-W18"
         assert 'data-label="Period">2026-04</td>' in html_result.stdout
+        assert 'data-label="State">' in html_result.stdout
         assert 'data-label="Authored PRs">1</td>' in html_result.stdout
         assert 'id="person-trend-grain-tabs"' in html_result.stdout
         assert 'data-person-trend-grain="weekly"' in html_result.stdout
         assert 'data-person-trend-grain="monthly"' in html_result.stdout
         assert '<div class="two-col">' in html_result.stdout
-        assert '<nav class="section-nav" aria-label="Report sections">' in html_result.stdout
+        assert (
+            '<nav class="section-nav" aria-label="Report sections">'
+            in html_result.stdout
+        )
         assert '<a href="#charts">Charts</a>' in html_result.stdout
         assert '<a href="#periods">Periods</a>' in html_result.stdout
         assert '<a href="#repositories">Repositories</a>' in html_result.stdout
@@ -650,10 +816,16 @@ class TestPersonCommand:
         assert result.exit_code == 0
         assert 'id="period-extra" class="hidden"' in result.stdout
         assert "Show 3 more older month rows" in result.stdout
-        assert 'id="period-toggle" class="ghost-button" aria-expanded="false"' in result.stdout
+        assert (
+            'id="period-toggle" class="ghost-button" aria-expanded="false"'
+            in result.stdout
+        )
         assert 'id="repository-extra" class="hidden"' in result.stdout
         assert "Show 5 more repositories" in result.stdout
-        assert 'id="repository-toggle" class="ghost-button" aria-expanded="false"' in result.stdout
+        assert (
+            'id="repository-toggle" class="ghost-button" aria-expanded="false"'
+            in result.stdout
+        )
 
     def test_writes_zero_result_for_unknown_login(
         self,

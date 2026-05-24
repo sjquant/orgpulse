@@ -525,6 +525,9 @@ class DashboardReviewerPayload(BaseModel):
     reviewer_login: str
     review_submissions: int
     pull_requests_reviewed: int
+    reviewed_lines: int = 0
+    pull_requests_reviewed_per_month: float | None = None
+    reviewed_lines_per_month: float | None = None
     approvals: int
     changes_requested: int
     comments: int
@@ -828,6 +831,7 @@ class AnalysisReportPeriodDescriptor(BaseModel):
     end_date: str
     closed: bool
     status: str
+    state_label: str
     is_open: bool
     is_closed: bool
     is_partial: bool
@@ -847,6 +851,7 @@ class AnalysisReportPeriodValues(BaseModel):
     end_date: str
     closed: bool
     status: str
+    state_label: str
     is_open: bool
     is_closed: bool
     is_partial: bool

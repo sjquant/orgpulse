@@ -147,8 +147,15 @@ class TestPersonCommand:
                 "changes_requested_given": 1,
                 "comments_given": 0,
                 "commits_total": 3,
+                "is_closed": False,
+                "is_open": True,
+                "is_partial": True,
+                "label": "open month",
                 "merged_pull_request_count": 1,
+                "observed_through_date": "2026-04-30",
+                "open_month": True,
                 "open_pull_request_count": 0,
+                "open_week": False,
                 "period_end_date": "2026-04-30",
                 "period_key": "2026-04",
                 "period_start_date": "2026-04-01",
@@ -156,6 +163,7 @@ class TestPersonCommand:
                 "reviewed_lines": 10,
                 "review_submissions_given": 1,
                 "reviews_received": 1,
+                "status": "open",
             }
         ]
 
@@ -248,8 +256,15 @@ class TestPersonCommand:
                 "changes_requested_given": "0",
                 "comments_given": "0",
                 "commits_total": "0",
+                "is_closed": "True",
+                "is_open": "False",
+                "is_partial": "False",
+                "label": "closed month",
                 "merged_pull_request_count": "0",
+                "observed_through_date": "2026-04-30",
+                "open_month": "False",
                 "open_pull_request_count": "0",
+                "open_week": "False",
                 "period_end_date": "2026-04-30",
                 "period_key": "2026-04",
                 "period_start_date": "2026-04-01",
@@ -257,6 +272,7 @@ class TestPersonCommand:
                 "reviewed_lines": "10",
                 "review_submissions_given": "1",
                 "reviews_received": "0",
+                "status": "closed",
             }
         ]
 
@@ -682,8 +698,6 @@ class TestPersonCommand:
         assert 'data-person-trend-metric="changed_lines_total"' in html_result.stdout
         assert 'data-person-trend-metric="commits_total"' in html_result.stdout
         assert "Yellow band = open period" in html_result.stdout
-        assert 'class="chart-partial-band"' in html_result.stdout
-        assert "function isOpenPeriod(row)" in html_result.stdout
         assert (
             '<script id="person-report-data" type="application/json">'
             in html_result.stdout
@@ -696,6 +710,8 @@ class TestPersonCommand:
         report_payload = json.loads(report_payload_match.group(1))
         assert report_payload["login"] == "alice"
         assert report_payload["period_rows"][0]["period_key"] == "2026-04"
+        assert report_payload["period_rows"][0]["label"] == "open month"
+        assert report_payload["period_rows"][0]["is_partial"] is True
         assert [row["period_key"] for row in report_payload["monthly_period_rows"]] == [
             "2026-04"
         ]

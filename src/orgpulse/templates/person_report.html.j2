@@ -298,11 +298,7 @@
               <tr>
                 <td data-label="Period">{{ row.period_key }}</td>
                 <td data-label="State">
-                  {% if result.until is not none and row.period_start_date <= result.until and row.period_end_date > result.until %}
-                  <span class="period-state-pill open">open {{ result.grain.value }}</span>
-                  {% else %}
-                  <span class="period-state-pill">closed {{ result.grain.value }}</span>
-                  {% endif %}
+                  <span class="period-state-pill{% if row.is_open or row.is_partial %} open{% endif %}">{{ row.label }}</span>
                 </td>
                 <td class="num" data-label="Authored PRs">{{ row.authored_pull_request_count | intfmt }}</td>
                 <td class="num" data-label="Merged">{{ row.merged_pull_request_count | intfmt }}</td>
@@ -322,11 +318,7 @@
               <tr>
                 <td data-label="Period">{{ row.period_key }}</td>
                 <td data-label="State">
-                  {% if result.until is not none and row.period_start_date <= result.until and row.period_end_date > result.until %}
-                  <span class="period-state-pill open">open {{ result.grain.value }}</span>
-                  {% else %}
-                  <span class="period-state-pill">closed {{ result.grain.value }}</span>
-                  {% endif %}
+                  <span class="period-state-pill{% if row.is_open or row.is_partial %} open{% endif %}">{{ row.label }}</span>
                 </td>
                 <td class="num" data-label="Authored PRs">{{ row.authored_pull_request_count | intfmt }}</td>
                 <td class="num" data-label="Merged">{{ row.merged_pull_request_count | intfmt }}</td>
@@ -751,7 +743,7 @@
         const averageLineY = yFor(averageValue);
         const labelInterval = chartLabelInterval(rows.length);
         const partialBands = rows.map((row, index) => {
-          if (!isOpenPeriod(row)) {
+          if (!row.is_partial) {
             return "";
           }
           return `<rect class="chart-partial-band" x="${bandStart(index)}" y="${padding.top}" width="${Math.max(8, bandEnd(index) - bandStart(index))}" height="${plotHeight}"></rect>`;
@@ -771,11 +763,11 @@
           }
           const isSelected = index === selectedIndex;
           const showLabel = index === 0 || index === rows.length - 1 || index % labelInterval === 0;
-          const stateSuffix = isOpenPeriod(row) ? ", open period" : "";
+          const stateSuffix = row.is_partial ? ", open period" : "";
           return `
-            <g class="chart-node ${isOpenPeriod(row) ? "partial-period" : ""}" data-point-index="${index}" data-point-label="${escapeAttribute(row.period_key || "-")}" data-point-value="${escapeAttribute(formatMetricValue(value, metric))}" tabindex="0" role="button" aria-label="${escapeAttribute(`${row.period_key || "Period"} ${formatMetricValue(value, metric)}${stateSuffix}`)}">
+            <g class="chart-node ${row.is_partial ? "partial-period" : ""}" data-point-index="${index}" data-point-label="${escapeAttribute(row.period_key || "-")}" data-point-value="${escapeAttribute(formatMetricValue(value, metric))}" tabindex="0" role="button" aria-label="${escapeAttribute(`${row.period_key || "Period"} ${formatMetricValue(value, metric)}${stateSuffix}`)}">
               <circle cx="${xFor(index)}" cy="${yFor(value)}" r="${isSelected ? 6 : 4}" fill="${cssVar("--accent")}" stroke="${isSelected ? cssVar("--text") : "transparent"}" stroke-width="${isSelected ? 2 : 0}">
-                <title>${escapeHtml(row.period_key || "-")}: ${escapeHtml(formatMetricValue(value, metric))}${isOpenPeriod(row) ? " (open period)" : ""}</title>
+                <title>${escapeHtml(row.period_key || "-")}: ${escapeHtml(formatMetricValue(value, metric))}${row.is_partial ? " (open period)" : ""}</title>
               </circle>
             </g>
             ${showLabel ? `<text x="${xFor(index)}" y="${height - 12}" text-anchor="middle" class="chart-axis">${escapeHtml(shortLabel(row.period_key || ""))}</text>` : ""}
@@ -868,13 +860,6 @@
           }
         }
         return rows.length - 1;
-      }
-
-      function isOpenPeriod(row) {
-        if (!report.until || !row.period_start_date || !row.period_end_date) {
-          return false;
-        }
-        return row.period_start_date <= report.until && row.period_end_date > report.until;
       }
 
       function metricLabel(metric) {

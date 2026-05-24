@@ -824,10 +824,7 @@ def _reviewer_rows(
     change_request_counts: Counter[str] = Counter()
     comment_counts: Counter[str] = Counter()
     prs_reviewed: dict[str, set[str]] = defaultdict(set)
-    month_span_count = _month_span_count(
-        since=since,
-        until=until,
-    )
+    month_span_count = PeriodGrain.MONTH.count_periods(since, until)
     for snapshot in snapshots:
         pull_request_key = f"{snapshot.repository_full_name}#{snapshot.number}"
         for review in snapshot.reviews:
@@ -872,14 +869,6 @@ def _reviewer_rows(
             row.reviewer_login,
         ),
     )
-
-
-def _month_span_count(
-    *,
-    since: date,
-    until: date,
-) -> int:
-    return ((until.year - since.year) * 12) + (until.month - since.month) + 1
 
 
 def _repository_rows(

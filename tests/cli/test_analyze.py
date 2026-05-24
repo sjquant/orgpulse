@@ -322,7 +322,7 @@ class TestAnalyzeCommand:
         assert payload["periods"][0]["is_partial"] is True
         assert payload["periods"][0]["open_month"] is False
         assert payload["periods"][0]["diagnostics"]["period_state_label"] == (
-            "partial month"
+            "open month"
         )
         assert "partial-period-row" in result.stdout
 
@@ -961,6 +961,7 @@ class TestAnalyzeCommand:
                         "open_month": False,
                         "open_week": False,
                         "start_date": "2026-01-01",
+                        "state_label": "closed month",
                         "status": "closed",
                         "values": {
                             "median_time_to_first_review_hours": None,
@@ -982,6 +983,7 @@ class TestAnalyzeCommand:
                         "open_month": True,
                         "open_week": False,
                         "start_date": "2026-02-01",
+                        "state_label": "open month",
                         "status": "open",
                         "values": {
                             "median_time_to_first_review_hours": None,

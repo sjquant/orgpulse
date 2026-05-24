@@ -717,7 +717,7 @@ class OrgSummaryWriter:
                 f"- Period start: {period.start_date.isoformat()}",
                 f"- Period end: {period.end_date.isoformat()}",
                 f"- Period status: {period_state.label}",
-                f"- Partial period: {_bool_text(period_state.is_partial)}",
+                f"- Open period: {_bool_text(period_state.is_partial)}",
                 (
                     "- Observed through: "
                     f"{period_state.observed_through_date}"

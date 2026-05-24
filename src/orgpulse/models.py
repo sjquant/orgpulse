@@ -831,6 +831,7 @@ class AnalysisReportPeriodDescriptor(BaseModel):
     end_date: str
     closed: bool
     status: str
+    state_label: str
     is_open: bool
     is_closed: bool
     is_partial: bool
@@ -850,6 +851,7 @@ class AnalysisReportPeriodValues(BaseModel):
     end_date: str
     closed: bool
     status: str
+    state_label: str
     is_open: bool
     is_closed: bool
     is_partial: bool

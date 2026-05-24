@@ -529,7 +529,7 @@
                         <strong>{{ row.period_key }}</strong>
                         <span>created_at basis</span>
                       </td>
-                      <td data-label="State"><span class="period-state-pill {% if row.is_open or row.is_partial %}open{% endif %}">{% if row.is_open %}{{ row.label }}{% elif row.is_partial %}open week{% else %}{{ row.label }}{% endif %}</span></td>
+                      <td data-label="State"><span class="period-state-pill {% if row.is_open or row.is_partial %}open{% endif %}">{{ row.label }}</span></td>
                       <td class="num" data-label="PRs">{{ row.pull_requests | intfmt }}</td>
                       <td class="num" data-label="Merged">{{ row.merged_pull_requests | intfmt }}</td>
                       <td class="num tablet-hide" data-label="Open">{{ row.open_pull_requests | intfmt }}</td>
@@ -548,7 +548,7 @@
                         <strong>{{ row.period_key }}</strong>
                         <span>created_at basis</span>
                       </td>
-                      <td data-label="State"><span class="period-state-pill {% if row.is_open or row.is_partial %}open{% endif %}">{% if row.is_open %}{{ row.label }}{% elif row.is_partial %}open week{% else %}{{ row.label }}{% endif %}</span></td>
+                      <td data-label="State"><span class="period-state-pill {% if row.is_open or row.is_partial %}open{% endif %}">{{ row.label }}</span></td>
                       <td class="num" data-label="PRs">{{ row.pull_requests | intfmt }}</td>
                       <td class="num" data-label="Merged">{{ row.merged_pull_requests | intfmt }}</td>
                       <td class="num tablet-hide" data-label="Open">{{ row.open_pull_requests | intfmt }}</td>
@@ -597,7 +597,7 @@
                         <strong>{{ row.period_key }}</strong>
                         <span>created_at basis</span>
                       </td>
-                      <td data-label="State"><span class="period-state-pill {% if row.is_open or row.is_partial %}open{% endif %}">{% if row.is_open %}{{ row.label }}{% elif row.is_partial %}open month{% else %}{{ row.label }}{% endif %}</span></td>
+                      <td data-label="State"><span class="period-state-pill {% if row.is_open or row.is_partial %}open{% endif %}">{{ row.label }}</span></td>
                       <td class="num" data-label="PRs">{{ row.pull_requests | intfmt }}</td>
                       <td class="num" data-label="Merged">{{ row.merged_pull_requests | intfmt }}</td>
                       <td class="num tablet-hide" data-label="Open">{{ row.open_pull_requests | intfmt }}</td>
@@ -616,7 +616,7 @@
                         <strong>{{ row.period_key }}</strong>
                         <span>created_at basis</span>
                       </td>
-                      <td data-label="State"><span class="period-state-pill {% if row.is_open or row.is_partial %}open{% endif %}">{% if row.is_open %}{{ row.label }}{% elif row.is_partial %}open month{% else %}{{ row.label }}{% endif %}</span></td>
+                      <td data-label="State"><span class="period-state-pill {% if row.is_open or row.is_partial %}open{% endif %}">{{ row.label }}</span></td>
                       <td class="num" data-label="PRs">{{ row.pull_requests | intfmt }}</td>
                       <td class="num" data-label="Merged">{{ row.merged_pull_requests | intfmt }}</td>
                       <td class="num tablet-hide" data-label="Open">{{ row.open_pull_requests | intfmt }}</td>

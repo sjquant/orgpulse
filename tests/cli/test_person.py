@@ -147,13 +147,15 @@ class TestPersonCommand:
                 "changes_requested_given": 1,
                 "comments_given": 0,
                 "commits_total": 3,
-                "is_closed": False,
-                "is_open": True,
-                "is_partial": True,
-                "label": "open month",
+                "is_closed": True,
+                "is_open": False,
+                "is_partial": False,
+                "label": "closed month",
+                "median_first_review_hours": 24.0,
+                "median_merge_hours": 51.0,
                 "merged_pull_request_count": 1,
                 "observed_through_date": "2026-04-30",
-                "open_month": True,
+                "open_month": False,
                 "open_pull_request_count": 0,
                 "open_week": False,
                 "period_end_date": "2026-04-30",
@@ -163,7 +165,7 @@ class TestPersonCommand:
                 "reviewed_lines": 10,
                 "review_submissions_given": 1,
                 "reviews_received": 1,
-                "status": "open",
+                "status": "closed",
             }
         ]
 
@@ -260,6 +262,8 @@ class TestPersonCommand:
                 "is_open": "False",
                 "is_partial": "False",
                 "label": "closed month",
+                "median_first_review_hours": "",
+                "median_merge_hours": "",
                 "merged_pull_request_count": "0",
                 "observed_through_date": "2026-04-30",
                 "open_month": "False",
@@ -583,6 +587,8 @@ class TestPersonCommand:
                 "authored_pull_request_count": 1,
                 "changed_lines_total": 15,
                 "commits_total": 1,
+                "median_first_review_hours": None,
+                "median_merge_hours": None,
                 "merged_pull_request_count": 0,
                 "open_pull_request_count": 1,
                 "pull_requests_reviewed": 1,
@@ -695,6 +701,8 @@ class TestPersonCommand:
             'data-person-trend-metric="review_submissions_given"' in html_result.stdout
         )
         assert 'data-person-trend-metric="reviewed_lines"' in html_result.stdout
+        assert 'data-person-trend-metric="median_merge_hours"' in html_result.stdout
+        assert 'data-person-trend-metric="median_first_review_hours"' in html_result.stdout
         assert 'data-person-trend-metric="changed_lines_total"' in html_result.stdout
         assert 'data-person-trend-metric="commits_total"' in html_result.stdout
         assert "Yellow band = open period" in html_result.stdout
@@ -712,6 +720,7 @@ class TestPersonCommand:
         assert report_payload["period_rows"][0]["period_key"] == "2026-04"
         assert report_payload["period_rows"][0]["label"] == "open month"
         assert report_payload["period_rows"][0]["is_partial"] is True
+        assert report_payload["period_rows"][0]["median_merge_hours"] is None
         assert [row["period_key"] for row in report_payload["monthly_period_rows"]] == [
             "2026-04"
         ]
@@ -733,6 +742,139 @@ class TestPersonCommand:
         assert '<a href="#repositories">Repositories</a>' in html_result.stdout
         assert '<a href="#methodology">Methodology</a>' in html_result.stdout
         assert str(tmp_path) not in html_result.stdout
+
+    def test_applies_distribution_percentile_to_person_latency_metrics(
+        self,
+        runner: CliRunner,
+        github_auth_service: None,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path,
+        pull_request_factory,
+        review_factory,
+    ) -> None:
+        """Trim upper-tail latency outliers from person summary, period, and repository metrics."""
+        # Given
+        collection = PullRequestCollection(
+            window=CollectionWindow(
+                scope=RunScope.FULL_HISTORY,
+                start_date=None,
+                end_date=datetime.fromisoformat("2026-01-31T00:00:00").date(),
+            ),
+            pull_requests=(
+                pull_request_factory(
+                    repository_full_name="acme/api",
+                    number=101,
+                    title="Fast Alice work",
+                    state="closed",
+                    author_login="alice",
+                    created_at=datetime.fromisoformat("2026-01-01T00:00:00"),
+                    updated_at=datetime.fromisoformat("2026-01-01T01:00:00"),
+                    closed_at=datetime.fromisoformat("2026-01-01T01:00:00"),
+                    merged=True,
+                    merged_at=datetime.fromisoformat("2026-01-01T01:00:00"),
+                    reviews=(
+                        review_factory(
+                            review_id=1001,
+                            author_login="bob",
+                            submitted_at=datetime.fromisoformat("2026-01-01T01:00:00"),
+                        ),
+                    ),
+                ),
+                pull_request_factory(
+                    repository_full_name="acme/api",
+                    number=102,
+                    title="Normal Alice work",
+                    state="closed",
+                    author_login="alice",
+                    created_at=datetime.fromisoformat("2026-01-02T00:00:00"),
+                    updated_at=datetime.fromisoformat("2026-01-02T02:00:00"),
+                    closed_at=datetime.fromisoformat("2026-01-02T02:00:00"),
+                    merged=True,
+                    merged_at=datetime.fromisoformat("2026-01-02T02:00:00"),
+                    reviews=(
+                        review_factory(
+                            review_id=1002,
+                            author_login="bob",
+                            submitted_at=datetime.fromisoformat("2026-01-02T02:00:00"),
+                        ),
+                    ),
+                ),
+                pull_request_factory(
+                    repository_full_name="acme/api",
+                    number=103,
+                    title="Outlier Alice work",
+                    state="closed",
+                    author_login="alice",
+                    created_at=datetime.fromisoformat("2026-01-03T00:00:00"),
+                    updated_at=datetime.fromisoformat("2026-02-13T16:00:00"),
+                    closed_at=datetime.fromisoformat("2026-02-13T16:00:00"),
+                    merged=True,
+                    merged_at=datetime.fromisoformat("2026-02-13T16:00:00"),
+                    reviews=(
+                        review_factory(
+                            review_id=1003,
+                            author_login="bob",
+                            submitted_at=datetime.fromisoformat("2026-02-13T16:00:00"),
+                        ),
+                    ),
+                ),
+            ),
+            failures=(),
+        )
+        _configure_production_cli_runtime(
+            monkeypatch,
+            collection=collection,
+        )
+        run_result = runner.invoke(
+            app,
+            [
+                "run",
+                "--org",
+                "acme",
+                "--mode",
+                "full",
+                "--as-of",
+                "2026-02-28",
+                "--output-dir",
+                str(tmp_path),
+            ],
+        )
+        assert run_result.exit_code == 0
+
+        # When
+        result = runner.invoke(
+            app,
+            [
+                "person",
+                "--org",
+                "acme",
+                "--login",
+                "alice",
+                "--grain",
+                "month",
+                "--since",
+                "2026-01-01",
+                "--until",
+                "2026-01-31",
+                "--output-dir",
+                str(tmp_path),
+                "--distribution-percentile",
+                "99",
+                "--format",
+                "json",
+            ],
+        )
+
+        # Then
+        assert result.exit_code == 0
+        payload = json.loads(result.stdout)
+        assert payload["distribution_percentile"] == 99
+        assert payload["summary"]["median_first_review_hours"] == 1.5
+        assert payload["summary"]["median_merge_hours"] == 1.5
+        assert payload["period_rows"][0]["median_first_review_hours"] == 1.5
+        assert payload["period_rows"][0]["median_merge_hours"] == 1.5
+        assert payload["repository_rows"][0]["median_first_review_hours"] == 1.5
+        assert payload["repository_rows"][0]["median_merge_hours"] == 1.5
 
     def test_writes_person_html_with_progressive_tables(
         self,
@@ -1085,3 +1227,12 @@ class TestPersonCommand:
         ]
         assert payload["weekly_period_rows"][-1]["period_start_date"] == "2026-04-13"
         assert payload["weekly_period_rows"][-1]["period_end_date"] == "2026-04-19"
+        assert payload["weekly_period_rows"][-1]["label"] == "open week"
+        assert payload["weekly_period_rows"][-1]["is_open"] is True
+        assert payload["weekly_period_rows"][-1]["is_partial"] is True
+        assert payload["weekly_period_rows"][-1]["observed_through_date"] == (
+            "2026-04-18"
+        )
+        assert payload["weekly_period_rows"][-1]["open_week"] is True
+        assert payload["monthly_period_rows"][-1]["label"] == "open month"
+        assert payload["monthly_period_rows"][-1]["open_month"] is True

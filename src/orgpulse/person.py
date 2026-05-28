@@ -209,6 +209,8 @@ class PersonPeriodRow(BaseModel):
     changed_lines_total: int
     commits_total: int
     reviews_received: int
+    median_first_review_hours: float | None
+    median_merge_hours: float | None
     review_submissions_given: int
     pull_requests_reviewed: int
     reviewed_lines: int
@@ -229,6 +231,8 @@ class PersonRepositoryRow(BaseModel):
     changed_lines_total: int
     commits_total: int
     reviews_received: int
+    median_first_review_hours: float | None
+    median_merge_hours: float | None
     review_submissions_given: int
     pull_requests_reviewed: int
     reviewed_lines: int
@@ -303,6 +307,7 @@ class PersonMetricsService:
             review_submissions=review_submissions,
         )
         repository_rows = self._repository_rows(
+            config=config,
             authored_pull_requests=authored_pull_requests,
             review_submissions=review_submissions,
         )
@@ -569,7 +574,7 @@ class PersonMetricsService:
             key=period_key,
             start_date=start_date,
             end_date=grain.end_for(start_date),
-            closed=True,
+            closed=False,
             directory=Path(),
             pull_requests_path=Path(),
             pull_request_count=0,
@@ -593,7 +598,7 @@ class PersonMetricsService:
             period_grain=grain.value,
             start_date=period.start_date,
             end_date=period.end_date,
-            closed=period.closed,
+            closed=self._period_closed(period, source_as_of=source_as_of),
             as_of=source_as_of,
             since=config.since,
             until=config.until,
@@ -629,6 +634,23 @@ class PersonMetricsService:
                 self._review_count(pull_request)
                 for pull_request in authored_pull_requests
             ),
+            median_first_review_hours=self._median_metric(
+                tuple(
+                    first_review_hours
+                    for pull_request in authored_pull_requests
+                    if (first_review_hours := self._first_review_hours(pull_request))
+                    is not None
+                ),
+                distribution_percentile=config.distribution_percentile,
+            ),
+            median_merge_hours=self._median_metric(
+                tuple(
+                    merge_hours
+                    for pull_request in authored_pull_requests
+                    if (merge_hours := self._merge_hours(pull_request)) is not None
+                ),
+                distribution_percentile=config.distribution_percentile,
+            ),
             review_submissions_given=len(review_submissions),
             pull_requests_reviewed=len(
                 {self._review_pull_request_key(review) for review in review_submissions}
@@ -647,9 +669,20 @@ class PersonMetricsService:
             ),
         )
 
+    def _period_closed(
+        self,
+        period: RawSnapshotPeriod,
+        *,
+        source_as_of: date,
+    ) -> bool:
+        if period.closed:
+            return True
+        return source_as_of >= period.end_date
+
     def _repository_rows(
         self,
         *,
+        config: PersonConfig,
         authored_pull_requests: tuple[PullRequestFact, ...],
         review_submissions: tuple[ReviewFact, ...],
     ) -> tuple[PersonRepositoryRow, ...]:
@@ -666,6 +699,7 @@ class PersonMetricsService:
         )
         return tuple(
             self._repository_row(
+                config=config,
                 repository_full_name=repository_name,
                 authored_pull_requests=tuple(
                     authored_by_repository.get(repository_name, ())
@@ -680,6 +714,7 @@ class PersonMetricsService:
     def _repository_row(
         self,
         *,
+        config: PersonConfig,
         repository_full_name: str,
         authored_pull_requests: tuple[PullRequestFact, ...],
         review_submissions: tuple[ReviewFact, ...],
@@ -704,6 +739,23 @@ class PersonMetricsService:
             reviews_received=sum(
                 self._review_count(pull_request)
                 for pull_request in authored_pull_requests
+            ),
+            median_first_review_hours=self._median_metric(
+                tuple(
+                    first_review_hours
+                    for pull_request in authored_pull_requests
+                    if (first_review_hours := self._first_review_hours(pull_request))
+                    is not None
+                ),
+                distribution_percentile=config.distribution_percentile,
+            ),
+            median_merge_hours=self._median_metric(
+                tuple(
+                    merge_hours
+                    for pull_request in authored_pull_requests
+                    if (merge_hours := self._merge_hours(pull_request)) is not None
+                ),
+                distribution_percentile=config.distribution_percentile,
             ),
             review_submissions_given=len(review_submissions),
             pull_requests_reviewed=len(

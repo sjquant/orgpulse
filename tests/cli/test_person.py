@@ -781,6 +781,13 @@ class TestPersonCommand:
                             ),
                         ),
                         review_factory(
+                            review_id=1005,
+                            author_login="alice",
+                            submitted_at=datetime.fromisoformat(
+                                "2026-02-01T00:30:00"
+                            ),
+                        ),
+                        review_factory(
                             review_id=1001,
                             author_login="bob",
                             submitted_at=datetime.fromisoformat("2026-01-01T01:00:00"),
@@ -824,6 +831,44 @@ class TestPersonCommand:
                             review_id=1003,
                             author_login="bob",
                             submitted_at=datetime.fromisoformat("2026-02-13T16:00:00"),
+                        ),
+                    ),
+                ),
+                pull_request_factory(
+                    repository_full_name="acme/api",
+                    number=105,
+                    title="Draft Alice work",
+                    state="open",
+                    draft=True,
+                    author_login="alice",
+                    created_at=datetime.fromisoformat("2026-01-04T00:00:00"),
+                    updated_at=datetime.fromisoformat("2026-01-04T01:00:00"),
+                    reviews=(
+                        review_factory(
+                            review_id=1006,
+                            author_login="bob",
+                            submitted_at=datetime.fromisoformat("2026-01-04T01:00:00"),
+                        ),
+                    ),
+                ),
+                pull_request_factory(
+                    repository_full_name="acme/web",
+                    number=104,
+                    title="Older Bob work reviewed in window",
+                    state="closed",
+                    author_login="bob",
+                    created_at=datetime.fromisoformat("2025-12-31T00:00:00"),
+                    updated_at=datetime.fromisoformat("2026-01-15T02:00:00"),
+                    closed_at=datetime.fromisoformat("2026-01-15T02:00:00"),
+                    merged=True,
+                    merged_at=datetime.fromisoformat("2026-01-15T02:00:00"),
+                    additions=30,
+                    deletions=10,
+                    reviews=(
+                        review_factory(
+                            review_id=1004,
+                            author_login="alice",
+                            submitted_at=datetime.fromisoformat("2026-01-15T02:00:00"),
                         ),
                     ),
                 ),
@@ -930,6 +975,18 @@ class TestPersonCommand:
         )
         assert alice_detail["summary"]["median_merge_hours"] == (
             payload["summary"]["median_merge_hours"]
+        )
+        assert alice_detail["summary"]["review_submissions_given"] == (
+            payload["reviewer_summary"]["review_submissions"]
+        )
+        assert alice_detail["summary"]["pull_requests_reviewed"] == (
+            payload["reviewer_summary"]["pull_requests_reviewed"]
+        )
+        assert alice_detail["summary"]["reviewed_lines"] == (
+            payload["reviewer_summary"]["reviewed_lines"]
+        )
+        assert alice_detail["summary"]["authors_supported"] == (
+            payload["reviewer_summary"]["authors_supported"]
         )
         assert alice_month["changed_lines"] == person_month["changed_lines_total"]
         assert alice_month["median_first_review_hours"] == (

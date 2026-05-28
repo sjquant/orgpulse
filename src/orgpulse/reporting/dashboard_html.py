@@ -508,13 +508,13 @@ def _author_row(
         pull_requests,
         "first_review_hours",
         distribution_percentile=distribution_percentile,
-        distribution_thresholds={},
+        distribution_thresholds=None,
     )
     merge_values = _trimmed_values(
         pull_requests,
         "merge_hours",
         distribution_percentile=distribution_percentile,
-        distribution_thresholds={},
+        distribution_thresholds=None,
     )
     return {
         "author_login": author_login,
@@ -662,7 +662,7 @@ def _build_trend_rows(
     until: date,
     source_as_of: date,
     distribution_percentile: int,
-    distribution_thresholds: dict[str, float | None],
+    distribution_thresholds: dict[str, float | None] | None,
     trim_changed_lines: bool = True,
 ) -> list[DashboardTrendRowPayload]:
     grouped = _group_pull_requests_by_period(pull_requests, grain=grain)
@@ -682,16 +682,16 @@ def _build_trend_rows(
         ).model_dump(mode="json")
         period_rows = grouped[period_key]
         pull_request_count = len(period_rows)
-        changed_lines = (
-            _trimmed_summary(
+        if trim_changed_lines:
+            assert distribution_thresholds is not None
+            changed_lines = _trimmed_summary(
                 period_rows,
                 "changed_lines",
                 distribution_percentile=distribution_percentile,
                 distribution_thresholds=distribution_thresholds,
             )
-            if trim_changed_lines
-            else _untrimmed_summary(period_rows, "changed_lines")
-        )
+        else:
+            changed_lines = _untrimmed_summary(period_rows, "changed_lines")
         review_submissions = _review_submission_count(period_rows)
         active_authors = _unique_value_count(
             period_rows,
@@ -897,7 +897,7 @@ def _build_author_details(
                     until=until,
                     source_as_of=source_as_of,
                     distribution_percentile=distribution_percentile,
-                    distribution_thresholds={},
+                    distribution_thresholds=None,
                     trim_changed_lines=False,
                 )
             ],
@@ -910,7 +910,7 @@ def _build_author_details(
                     until=until,
                     source_as_of=source_as_of,
                     distribution_percentile=distribution_percentile,
-                    distribution_thresholds={},
+                    distribution_thresholds=None,
                     trim_changed_lines=False,
                 )
             ],
@@ -936,13 +936,13 @@ def _build_author_size_mix_rows(
             bucket_pull_requests,
             "first_review_hours",
             distribution_percentile=distribution_percentile,
-            distribution_thresholds={},
+            distribution_thresholds=None,
         )
         merge_values = _trimmed_values(
             bucket_pull_requests,
             "merge_hours",
             distribution_percentile=distribution_percentile,
-            distribution_thresholds={},
+            distribution_thresholds=None,
         )
         review_submissions = sum(
             int(pull_request["review_count"]) for pull_request in bucket_pull_requests
@@ -1187,10 +1187,10 @@ def _stale_open_pull_requests(
         1
         for pull_request in pull_requests
         if pull_request["state"] == "open"
-        and (
-            as_of_datetime - _parse_datetime(str(pull_request["created_at"]))
-        ).total_seconds()
-        / 3600
+        and _hours_between_datetimes(
+            _parse_datetime(str(pull_request["created_at"])),
+            as_of_datetime,
+        )
         >= threshold_hours
     )
 
@@ -1200,10 +1200,12 @@ def _trimmed_values(
     key: str,
     *,
     distribution_percentile: int,
-    distribution_thresholds: dict[str, float | None],
+    distribution_thresholds: dict[str, float | None] | None,
 ) -> list[float]:
-    threshold = distribution_thresholds.get(key)
     values: list[float] = []
+    threshold = (
+        None if distribution_thresholds is None else distribution_thresholds.get(key)
+    )
     for pull_request in pull_requests:
         raw_value = pull_request[key]
         if raw_value is None:
@@ -1212,7 +1214,7 @@ def _trimmed_values(
         if threshold is not None and numeric_value > threshold:
             continue
         values.append(numeric_value)
-    if key in distribution_thresholds:
+    if distribution_thresholds is not None:
         return values
     return list(trim_upper_tail(values, percentile=distribution_percentile))
 
@@ -1399,6 +1401,25 @@ def _month_end(current: date) -> date:
 
 def _parse_datetime(value: str) -> datetime:
     return datetime.fromisoformat(value)
+
+
+def _hours_between_datetimes(
+    start_at: datetime,
+    end_at: datetime,
+) -> float:
+    start_at, end_at = _matching_datetime_awareness(start_at, end_at)
+    return (end_at - start_at).total_seconds() / 3600
+
+
+def _matching_datetime_awareness(
+    start_at: datetime,
+    end_at: datetime,
+) -> tuple[datetime, datetime]:
+    if start_at.tzinfo is None and end_at.tzinfo is not None:
+        return start_at, end_at.replace(tzinfo=None)
+    if start_at.tzinfo is not None and end_at.tzinfo is None:
+        return start_at.replace(tzinfo=None), end_at
+    return start_at, end_at
 
 
 def _round(value: float | None) -> float | None:

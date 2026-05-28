@@ -774,6 +774,13 @@ class TestPersonCommand:
                     merged_at=datetime.fromisoformat("2026-01-01T01:00:00"),
                     reviews=(
                         review_factory(
+                            review_id=1000,
+                            author_login="alice",
+                            submitted_at=datetime.fromisoformat(
+                                "2026-01-01T00:30:00"
+                            ),
+                        ),
+                        review_factory(
                             review_id=1001,
                             author_login="bob",
                             submitted_at=datetime.fromisoformat("2026-01-01T01:00:00"),
@@ -810,6 +817,8 @@ class TestPersonCommand:
                     closed_at=datetime.fromisoformat("2026-02-13T16:00:00"),
                     merged=True,
                     merged_at=datetime.fromisoformat("2026-02-13T16:00:00"),
+                    additions=1000,
+                    deletions=0,
                     reviews=(
                         review_factory(
                             review_id=1003,
@@ -864,6 +873,25 @@ class TestPersonCommand:
                 "json",
             ],
         )
+        dashboard_result = runner.invoke(
+            app,
+            [
+                "dashboard",
+                "--org",
+                "acme",
+                "--since",
+                "2026-01-01",
+                "--until",
+                "2026-01-31",
+                "--source-output-dir",
+                str(tmp_path),
+                "--output-dir",
+                str(tmp_path / "dashboard-report"),
+                "--no-refresh",
+                "--distribution-percentile",
+                "99",
+            ],
+        )
 
         # Then
         assert result.exit_code == 0
@@ -875,6 +903,38 @@ class TestPersonCommand:
         assert payload["period_rows"][0]["median_merge_hours"] == 1.5
         assert payload["repository_rows"][0]["median_first_review_hours"] == 1.5
         assert payload["repository_rows"][0]["median_merge_hours"] == 1.5
+        assert dashboard_result.exit_code == 0
+        dashboard_payload = json.loads(dashboard_result.stdout)
+        dashboard_html = Path(dashboard_payload["html_path"]).read_text(
+            encoding="utf-8"
+        )
+        author_details_match = re.search(
+            r'<script id="author-details-data" type="application/json">(.*?)</script>',
+            dashboard_html,
+            re.S,
+        )
+        assert author_details_match is not None
+        author_details = json.loads(author_details_match.group(1))
+        alice_detail = author_details["alice"]
+        alice_month = alice_detail["monthly_trends"][0]
+        person_month = payload["monthly_period_rows"][0]
+        assert alice_detail["summary"]["pull_requests"] == (
+            payload["summary"]["authored_pull_request_count"]
+        )
+        assert alice_detail["summary"]["changed_lines"] == (
+            payload["summary"]["changed_lines_total"]
+        )
+        assert alice_detail["summary"]["commits"] == payload["summary"]["commits_total"]
+        assert alice_detail["summary"]["median_first_review_hours"] == (
+            payload["summary"]["median_first_review_hours"]
+        )
+        assert alice_detail["summary"]["median_merge_hours"] == (
+            payload["summary"]["median_merge_hours"]
+        )
+        assert alice_month["changed_lines"] == person_month["changed_lines_total"]
+        assert alice_month["median_first_review_hours"] == (
+            person_month["median_first_review_hours"]
+        )
 
     def test_writes_person_html_with_progressive_tables(
         self,

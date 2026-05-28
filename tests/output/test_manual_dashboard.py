@@ -306,11 +306,15 @@ class TestManualDashboardPayload:
             },
         ]
         author_details = json.loads(prepared.author_details_json)
+        assert prepared.authors[0]["author_login"] == "carol"
+        assert prepared.authors[0]["changed_lines"] == 1000
+        assert prepared.authors[0]["median_first_review_hours"] == 3.0
+        assert author_details["carol"]["summary"]["changed_lines"] == 1000
         assert author_details["carol"]["size_mix"][-1] == {
             "bucket": "XL",
             "pull_requests": 1,
-            "changed_lines": 0,
-            "median_first_review_hours": None,
+            "changed_lines": 1000,
+            "median_first_review_hours": 3.0,
             "median_merge_hours": 24.0,
             "average_reviews_per_pr": 1.0,
         }

@@ -64,9 +64,11 @@ class PullRequestReview:
 class PullRequestTimelineEvent:
     """Represent one normalized timeline event attached to a pull request."""
 
+    event_id: int
     event: str
     created_at: datetime | None
     requested_reviewer_login: str | None
+    requested_team_name: str | None
 
 
 @dataclass(frozen=True)
@@ -397,11 +399,13 @@ def _timeline_events_by_pull_request(
             )
         ].append(
             PullRequestTimelineEvent(
+                event_id=int(timeline_row["event_id"]),
                 event=timeline_row["event"],
                 created_at=_parse_optional_datetime(timeline_row["created_at"]),
                 requested_reviewer_login=(
                     timeline_row["requested_reviewer_login"] or None
                 ),
+                requested_team_name=timeline_row["requested_team_name"] or None,
             )
         )
     for timeline_events in grouped.values():
@@ -440,10 +444,13 @@ def _snapshot_from_local_rows(
     merged_at = _parse_optional_datetime(pull_request_row["merged_at"])
     additions = int(pull_request_row["additions"])
     deletions = int(pull_request_row["deletions"])
-    review_ready_at, review_requested_at, first_review_at = _review_cycle_markers(
-        created_at=created_at,
-        timeline_events=timeline_events,
-        reviews=reviews,
+    review_ready_at, review_requested_at, first_review_started_at, first_review_at = (
+        _review_cycle_markers(
+            author_login=pull_request_row["author_login"] or "ghost",
+            created_at=created_at,
+            timeline_events=timeline_events,
+            reviews=reviews,
+        )
     )
     return PullRequestSnapshot(
         repository_full_name=pull_request_row["repository_full_name"],
@@ -472,7 +479,7 @@ def _snapshot_from_local_rows(
         reviewer_count=len({review.author_login for review in reviews}),
         first_review_at=first_review_at,
         first_review_hours=_hours_between(
-            review_requested_at or review_ready_at,
+            first_review_started_at,
             first_review_at,
         ),
         merge_hours=_hours_between(created_at, merged_at),
@@ -636,45 +643,160 @@ def _write_outputs(
 
 def _review_cycle_markers(
     *,
+    author_login: str,
     created_at: datetime,
     timeline_events: list[PullRequestTimelineEvent],
     reviews: list[PullRequestReview],
-) -> tuple[datetime, datetime | None, datetime | None]:
-    review_ready_at = created_at
-    review_requested_at: datetime | None = None
-    first_review_at: datetime | None = None
-    markers = [
-        ("event", event.created_at, event)
+) -> tuple[datetime, datetime | None, datetime | None, datetime | None]:
+    first_review_at = _first_external_review_at(
+        author_login=author_login,
+        reviews=reviews,
+    )
+    reference_at = first_review_at or _last_review_cycle_reference(
+        created_at=created_at,
+        timeline_events=timeline_events,
+    )
+    review_ready_at = _review_ready_at(
+        created_at=created_at,
+        timeline_events=timeline_events,
+        reference_at=reference_at,
+    )
+    review_requested_at = _review_requested_at(
+        timeline_events=timeline_events,
+        reference_at=reference_at,
+    )
+    first_review_started_at = _review_started_at(
+        review_ready_at=review_ready_at,
+        review_requested_at=review_requested_at,
+    )
+    return (
+        review_ready_at or created_at,
+        review_requested_at,
+        first_review_started_at,
+        first_review_at,
+    )
+
+
+def _first_external_review_at(
+    *,
+    author_login: str,
+    reviews: list[PullRequestReview],
+) -> datetime | None:
+    for review in reviews:
+        if review.author_login == author_login:
+            continue
+        return review.submitted_at
+    return None
+
+
+def _last_review_cycle_reference(
+    *,
+    created_at: datetime,
+    timeline_events: list[PullRequestTimelineEvent],
+) -> datetime:
+    event_times = [
+        event.created_at
         for event in timeline_events
         if event.created_at is not None
-    ] + [("review", review.submitted_at, review) for review in reviews]
-    markers.sort(
-        key=lambda marker: (
-            marker[1].isoformat(),
-            0 if marker[0] == "event" else 1,
-        )
+    ]
+    return max(event_times, default=created_at)
+
+
+def _review_ready_at(
+    *,
+    created_at: datetime,
+    timeline_events: list[PullRequestTimelineEvent],
+    reference_at: datetime,
+) -> datetime | None:
+    review_ready_at = _initial_review_ready_at(
+        created_at=created_at,
+        timeline_events=timeline_events,
     )
-    for marker_type, marker_at, marker in markers:
-        if marker_type == "event":
-            assert isinstance(marker, PullRequestTimelineEvent)
-            event = marker
-            if event.event in {"converted_to_draft", "ready_for_review"}:
-                review_ready_at = marker_at
-                review_requested_at = None
-                first_review_at = None
-                continue
-            if (
-                event.event == "review_requested"
-                and marker_at >= review_ready_at
-                and first_review_at is None
-                and review_requested_at is None
-            ):
-                review_requested_at = marker_at
+    for event in timeline_events:
+        if event.created_at is None:
             continue
-        assert isinstance(marker, PullRequestReview)
-        if marker_at >= review_ready_at and first_review_at is None:
-            first_review_at = marker_at
-    return review_ready_at, review_requested_at, first_review_at
+        if event.created_at > reference_at:
+            break
+        if event.event == "converted_to_draft":
+            review_ready_at = None
+        elif event.event == "ready_for_review":
+            review_ready_at = event.created_at
+    return review_ready_at
+
+
+def _initial_review_ready_at(
+    *,
+    created_at: datetime,
+    timeline_events: list[PullRequestTimelineEvent],
+) -> datetime | None:
+    first_transition_event = _first_draft_transition_event(timeline_events)
+    if first_transition_event == "ready_for_review":
+        return None
+    if first_transition_event == "converted_to_draft":
+        return created_at
+    return created_at
+
+
+def _first_draft_transition_event(
+    timeline_events: list[PullRequestTimelineEvent],
+) -> str | None:
+    for event in timeline_events:
+        if event.created_at is None:
+            continue
+        if event.event in {"converted_to_draft", "ready_for_review"}:
+            return event.event
+    return None
+
+
+def _review_requested_at(
+    *,
+    timeline_events: list[PullRequestTimelineEvent],
+    reference_at: datetime,
+) -> datetime | None:
+    active_requests: set[str] = set()
+    review_requested_at: datetime | None = None
+    for event in timeline_events:
+        if event.created_at is None:
+            continue
+        if event.created_at > reference_at:
+            break
+        if event.event == "converted_to_draft":
+            active_requests.clear()
+            review_requested_at = None
+            continue
+        if event.event == "review_requested":
+            request_key = _request_key(event)
+            if request_key not in active_requests and not active_requests:
+                review_requested_at = event.created_at
+            active_requests.add(request_key)
+            continue
+        if event.event == "review_request_removed":
+            active_requests.discard(_request_key(event))
+            if not active_requests:
+                review_requested_at = None
+    return review_requested_at
+
+
+def _request_key(
+    event: PullRequestTimelineEvent,
+) -> str:
+    if event.requested_reviewer_login is not None:
+        return f"user:{event.requested_reviewer_login.lower()}"
+    if event.requested_team_name is not None:
+        return f"team:{event.requested_team_name.lower()}"
+    return f"event:{event.event_id}"
+
+
+def _review_started_at(
+    *,
+    review_ready_at: datetime | None,
+    review_requested_at: datetime | None,
+) -> datetime | None:
+    if review_ready_at is None:
+        return None
+    if review_requested_at is None:
+        return review_ready_at
+    return max(review_ready_at, review_requested_at)
 
 
 def _time_series(

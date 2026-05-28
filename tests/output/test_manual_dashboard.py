@@ -306,11 +306,15 @@ class TestManualDashboardPayload:
             },
         ]
         author_details = json.loads(prepared.author_details_json)
+        assert prepared.authors[0]["author_login"] == "carol"
+        assert prepared.authors[0]["changed_lines"] == 1000
+        assert prepared.authors[0]["median_first_review_hours"] == 3.0
+        assert author_details["carol"]["summary"]["changed_lines"] == 1000
         assert author_details["carol"]["size_mix"][-1] == {
             "bucket": "XL",
             "pull_requests": 1,
-            "changed_lines": 0,
-            "median_first_review_hours": None,
+            "changed_lines": 1000,
+            "median_first_review_hours": 3.0,
             "median_merge_hours": 24.0,
             "average_reviews_per_pr": 1.0,
         }
@@ -427,16 +431,6 @@ class TestManualDashboardPayload:
                 "median_merge_hours": 24.0,
                 "pull_request_delta": None,
                 "changed_lines_delta": None,
-                "period_start_date": "2026-01-01",
-                "period_end_date": "2026-01-31",
-                "status": "closed",
-                "label": "closed month",
-                "is_open": False,
-                "is_closed": True,
-                "is_partial": False,
-                "observed_through_date": "2026-01-31",
-                "open_week": False,
-                "open_month": False,
             },
             {
                 "period_key": "2026-02",
@@ -463,16 +457,6 @@ class TestManualDashboardPayload:
                 "median_merge_hours": 24.0,
                 "pull_request_delta": -1,
                 "changed_lines_delta": -20,
-                "period_start_date": "2026-02-01",
-                "period_end_date": "2026-02-28",
-                "status": "closed",
-                "label": "closed month",
-                "is_open": False,
-                "is_closed": True,
-                "is_partial": False,
-                "observed_through_date": "2026-02-28",
-                "open_week": False,
-                "open_month": False,
             },
         ]
         assert "PRs / active author" in html

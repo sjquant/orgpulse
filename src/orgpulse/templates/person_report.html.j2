@@ -244,6 +244,8 @@
             <button type="button" class="tab-button active" data-person-trend-metric="authored_pull_request_count" aria-selected="true">Authored PRs</button>
             <button type="button" class="tab-button" data-person-trend-metric="review_submissions_given" aria-selected="false">Reviews given</button>
             <button type="button" class="tab-button" data-person-trend-metric="reviewed_lines" aria-selected="false">Reviewed lines</button>
+            <button type="button" class="tab-button" data-person-trend-metric="median_merge_hours" aria-selected="false">Merge time</button>
+            <button type="button" class="tab-button" data-person-trend-metric="median_first_review_hours" aria-selected="false">First review</button>
             <button type="button" class="tab-button" data-person-trend-metric="changed_lines_total" aria-selected="false">Changed lines</button>
             <button type="button" class="tab-button" data-person-trend-metric="commits_total" aria-selected="false">Commits</button>
           </div>
@@ -272,8 +274,8 @@
             <h2>{{ period_total_count | intfmt }} periods</h2>
             <p class="section-copy">Each row combines authored pull request flow with review-given activity for the same reporting period.</p>
           </div>
-          <span class="period-state-pill{% if result.until is none %} open{% endif %}">
-            {% if result.until is none %}source bounded{% else %}filtered window{% endif %}
+          <span class="period-state-pill{% if period_status_label.startswith("open") %} open{% elif period_status_label.startswith("partial") %} partial{% endif %}">
+            {{ period_status_label }}
           </span>
         </div>
         <div class="table-wrap">
@@ -285,6 +287,8 @@
                 <th class="num">Authored PRs</th>
                 <th class="num">Merged</th>
                 <th class="num">Open</th>
+                <th class="num">Median Merge</th>
+                <th class="num">Median First Review</th>
                 <th class="num">Changed Lines</th>
                 <th class="num">Commits</th>
                 <th class="num">Reviews Received</th>
@@ -295,7 +299,7 @@
             </thead>
             <tbody>
               {% for row in period_recent_rows %}
-              <tr>
+              <tr class="{% if row.is_partial %}partial-period-row{% endif %}">
                 <td data-label="Period">{{ row.period_key }}</td>
                 <td data-label="State">
                   <span class="period-state-pill{% if row.is_open or row.is_partial %} open{% endif %}">{{ row.label }}</span>
@@ -303,6 +307,8 @@
                 <td class="num" data-label="Authored PRs">{{ row.authored_pull_request_count | intfmt }}</td>
                 <td class="num" data-label="Merged">{{ row.merged_pull_request_count | intfmt }}</td>
                 <td class="num" data-label="Open">{{ row.open_pull_request_count | intfmt }}</td>
+                <td class="num" data-label="Median Merge">{{ row.median_merge_hours | duration }}</td>
+                <td class="num" data-label="Median First Review">{{ row.median_first_review_hours | duration }}</td>
                 <td class="num" data-label="Changed Lines">{{ row.changed_lines_total | intfmt }}</td>
                 <td class="num" data-label="Commits">{{ row.commits_total | intfmt }}</td>
                 <td class="num" data-label="Reviews Received">{{ row.reviews_received | intfmt }}</td>
@@ -315,7 +321,7 @@
             {% if period_older_rows %}
             <tbody id="period-extra" class="hidden">
               {% for row in period_older_rows %}
-              <tr>
+              <tr class="{% if row.is_partial %}partial-period-row{% endif %}">
                 <td data-label="Period">{{ row.period_key }}</td>
                 <td data-label="State">
                   <span class="period-state-pill{% if row.is_open or row.is_partial %} open{% endif %}">{{ row.label }}</span>
@@ -323,6 +329,8 @@
                 <td class="num" data-label="Authored PRs">{{ row.authored_pull_request_count | intfmt }}</td>
                 <td class="num" data-label="Merged">{{ row.merged_pull_request_count | intfmt }}</td>
                 <td class="num" data-label="Open">{{ row.open_pull_request_count | intfmt }}</td>
+                <td class="num" data-label="Median Merge">{{ row.median_merge_hours | duration }}</td>
+                <td class="num" data-label="Median First Review">{{ row.median_first_review_hours | duration }}</td>
                 <td class="num" data-label="Changed Lines">{{ row.changed_lines_total | intfmt }}</td>
                 <td class="num" data-label="Commits">{{ row.commits_total | intfmt }}</td>
                 <td class="num" data-label="Reviews Received">{{ row.reviews_received | intfmt }}</td>
@@ -369,6 +377,8 @@
                 <th class="num">Authored PRs</th>
                 <th class="num">Merged</th>
                 <th class="num">Open</th>
+                <th class="num">Median Merge</th>
+                <th class="num">Median First Review</th>
                 <th class="num">Changed Lines</th>
                 <th class="num">Reviews Given</th>
                 <th class="num">PRs Reviewed</th>
@@ -382,6 +392,8 @@
                 <td class="num" data-label="Authored PRs">{{ row.authored_pull_request_count | intfmt }}</td>
                 <td class="num" data-label="Merged">{{ row.merged_pull_request_count | intfmt }}</td>
                 <td class="num" data-label="Open">{{ row.open_pull_request_count | intfmt }}</td>
+                <td class="num" data-label="Median Merge">{{ row.median_merge_hours | duration }}</td>
+                <td class="num" data-label="Median First Review">{{ row.median_first_review_hours | duration }}</td>
                 <td class="num" data-label="Changed Lines">{{ row.changed_lines_total | intfmt }}</td>
                 <td class="num" data-label="Reviews Given">{{ row.review_submissions_given | intfmt }}</td>
                 <td class="num" data-label="PRs Reviewed">{{ row.pull_requests_reviewed | intfmt }}</td>
@@ -397,6 +409,8 @@
                 <td class="num" data-label="Authored PRs">{{ row.authored_pull_request_count | intfmt }}</td>
                 <td class="num" data-label="Merged">{{ row.merged_pull_request_count | intfmt }}</td>
                 <td class="num" data-label="Open">{{ row.open_pull_request_count | intfmt }}</td>
+                <td class="num" data-label="Median Merge">{{ row.median_merge_hours | duration }}</td>
+                <td class="num" data-label="Median First Review">{{ row.median_first_review_hours | duration }}</td>
                 <td class="num" data-label="Changed Lines">{{ row.changed_lines_total | intfmt }}</td>
                 <td class="num" data-label="Reviews Given">{{ row.review_submissions_given | intfmt }}</td>
                 <td class="num" data-label="PRs Reviewed">{{ row.pull_requests_reviewed | intfmt }}</td>
@@ -695,6 +709,7 @@
           readoutCard("Authored PRs", formatMetricValue(selectedRow.authored_pull_request_count, "authored_pull_request_count")),
           readoutCard("Reviews given", formatMetricValue(selectedRow.review_submissions_given, "review_submissions_given")),
           readoutCard("Reviewed lines", formatMetricValue(selectedRow.reviewed_lines, "reviewed_lines")),
+          readoutCard("State", periodStatusText(selectedRow)),
         ].join("");
       }
 
@@ -765,9 +780,9 @@
           const showLabel = index === 0 || index === rows.length - 1 || index % labelInterval === 0;
           const stateSuffix = row.is_partial ? ", open period" : "";
           return `
-            <g class="chart-node ${row.is_partial ? "partial-period" : ""}" data-point-index="${index}" data-point-label="${escapeAttribute(row.period_key || "-")}" data-point-value="${escapeAttribute(formatMetricValue(value, metric))}" tabindex="0" role="button" aria-label="${escapeAttribute(`${row.period_key || "Period"} ${formatMetricValue(value, metric)}${stateSuffix}`)}">
+            <g class="chart-node ${row.is_partial ? "partial-period" : ""}" data-point-index="${index}" data-point-label="${escapeAttribute(row.period_key || "-")}" data-point-value="${escapeAttribute(formatMetricValue(value, metric))}" data-point-state="${escapeAttribute(periodStatusText(row))}" tabindex="0" role="button" aria-label="${escapeAttribute(`${row.period_key || "Period"} ${formatMetricValue(value, metric)}${stateSuffix}`)}">
               <circle cx="${xFor(index)}" cy="${yFor(value)}" r="${isSelected ? 6 : 4}" fill="${cssVar("--accent")}" stroke="${isSelected ? cssVar("--text") : "transparent"}" stroke-width="${isSelected ? 2 : 0}">
-                <title>${escapeHtml(row.period_key || "-")}: ${escapeHtml(formatMetricValue(value, metric))}${row.is_partial ? " (open period)" : ""}</title>
+                <title>${escapeHtml(row.period_key || "-")}: ${escapeHtml(formatMetricValue(value, metric))}${row.is_partial ? ` (${escapeHtml(periodStatusText(row))})` : ""}</title>
               </circle>
             </g>
             ${showLabel ? `<text x="${xFor(index)}" y="${height - 12}" text-anchor="middle" class="chart-axis">${escapeHtml(shortLabel(row.period_key || ""))}</text>` : ""}
@@ -826,6 +841,7 @@
         tooltip.innerHTML = `
           <strong>${escapeHtml(node.dataset.pointLabel || "-")}</strong>
           <span>${escapeHtml(metricLabel(metric))}: ${escapeHtml(node.dataset.pointValue || "-")}</span>
+          ${node.classList.contains("partial-period") ? `<span>${escapeHtml(node.dataset.pointState || "partial period")}</span>` : ""}
         `;
         tooltip.classList.remove("hidden");
         tooltip.setAttribute("aria-hidden", "false");
@@ -867,6 +883,8 @@
           authored_pull_request_count: "Authored PRs",
           review_submissions_given: "Reviews given",
           reviewed_lines: "Reviewed lines",
+          median_merge_hours: "Median merge",
+          median_first_review_hours: "Median first review",
           changed_lines_total: "Changed lines",
           commits_total: "Commits",
         }[metric] || metric;
@@ -877,9 +895,35 @@
         if (number === null) {
           return "-";
         }
+        if (metric === "median_merge_hours" || metric === "median_first_review_hours") {
+          return formatDuration(number);
+        }
         return new Intl.NumberFormat("en-US", {
           maximumFractionDigits: Number.isInteger(number) ? 0 : 2,
         }).format(number);
+      }
+
+      function formatDuration(hours) {
+        if (hours < 1) {
+          return `${Math.round(hours * 60).toLocaleString("en-US")} min`;
+        }
+        if (hours >= 24) {
+          return `${(hours / 24).toLocaleString("en-US", { maximumFractionDigits: 1 })} d`;
+        }
+        return `${hours.toLocaleString("en-US", { maximumFractionDigits: 1 })} h`;
+      }
+
+      function periodStatusText(row) {
+        if (row.open_week) {
+          return "open week";
+        }
+        if (row.open_month) {
+          return "open month";
+        }
+        if (row.is_partial) {
+          return row.label || "partial period";
+        }
+        return row.label || "closed period";
       }
 
       function toNumber(value) {

@@ -718,8 +718,8 @@ class TestPersonCommand:
         report_payload = json.loads(report_payload_match.group(1))
         assert report_payload["login"] == "alice"
         assert report_payload["period_rows"][0]["period_key"] == "2026-04"
-        assert report_payload["period_rows"][0]["label"] == "open month"
-        assert report_payload["period_rows"][0]["is_partial"] is True
+        assert report_payload["period_rows"][0]["label"] == "closed month"
+        assert report_payload["period_rows"][0]["is_partial"] is False
         assert report_payload["period_rows"][0]["median_merge_hours"] is None
         assert [row["period_key"] for row in report_payload["monthly_period_rows"]] == [
             "2026-04"

@@ -7,7 +7,7 @@ from typing import Any
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from markupsafe import Markup
 
-from orgpulse.person import (
+from orgpulse.apps.person_metrics.service import (
     PersonMetricsResult,
     PersonPeriodRow,
     PersonRepositoryRow,
@@ -124,7 +124,7 @@ def _html_report_payload(
 def _template_environment() -> Environment:
     environment = Environment(
         loader=FileSystemLoader(
-            str(Path(__file__).resolve().parents[1] / "templates")
+            str(Path(__file__).resolve().parents[2] / "templates")
         ),
         autoescape=select_autoescape(["html", "html.j2", "xml"]),
     )

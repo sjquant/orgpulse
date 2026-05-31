@@ -92,7 +92,7 @@ class TestReportingModules:
         command = [
             sys.executable,
             "-m",
-            "orgpulse.dashboard",
+            "orgpulse.apps.dashboard.service",
         ]
 
         # When
@@ -114,7 +114,7 @@ class TestReportingModules:
         command = [
             sys.executable,
             "-m",
-            "orgpulse.reporting.dashboard_html",
+            "orgpulse.libs.reporting.dashboard_html",
         ]
 
         # When

@@ -5,12 +5,7 @@ import json
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
-from orgpulse.ingestion import (
-    PULL_REQUEST_FIELDNAMES,
-    PULL_REQUEST_REVIEW_FIELDNAMES,
-    PULL_REQUEST_TIMELINE_EVENT_FIELDNAMES,
-)
-from orgpulse.models import (
+from orgpulse.common.models import (
     LastSuccessfulRun,
     ManifestWatermarks,
     PeriodGrain,
@@ -20,6 +15,11 @@ from orgpulse.models import (
     RunMode,
     RunScope,
     TimeAnchor,
+)
+from orgpulse.libs.github.ingestion import (
+    PULL_REQUEST_FIELDNAMES,
+    PULL_REQUEST_REVIEW_FIELDNAMES,
+    PULL_REQUEST_TIMELINE_EVENT_FIELDNAMES,
 )
 
 

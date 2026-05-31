@@ -5,9 +5,18 @@ from typing import cast
 
 from github import Github, GithubException
 
-from orgpulse.errors import AuthResolutionError, GitHubApiError, OrgTargetingError
-from orgpulse.models import AuthSource, GitHubTargetContext, ResolvedToken, RunConfig
-from orgpulse.types.github import GitHubAuthClientLike
+from orgpulse.common.errors import (
+    AuthResolutionError,
+    GitHubApiError,
+    OrgTargetingError,
+)
+from orgpulse.common.models import (
+    AuthSource,
+    GitHubTargetContext,
+    ResolvedToken,
+    RunConfig,
+)
+from orgpulse.libs.github.types import GitHubAuthClientLike
 
 AUTH_REQUIRED_MESSAGE = "GitHub authentication is required. Set GH_TOKEN or authenticate with `gh auth login`."
 

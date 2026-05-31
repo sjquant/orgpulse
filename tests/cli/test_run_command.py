@@ -55,28 +55,28 @@ class TestRunCommandRuntime:
             failures=(),
         )
         monkeypatch.setattr(
-            "orgpulse.cli.GitHubIngestionService",
+            "orgpulse.libs.snapshots.refresh.GitHubIngestionService",
             lambda github_client: FakeCliIngestionService(
                 inventory=inventory,
                 collection=collection,
             ),
         )
         monkeypatch.setattr(
-            "orgpulse.cli.NormalizedRawSnapshotWriter",
+            "orgpulse.libs.output_store.pipeline.NormalizedRawSnapshotWriter",
             lambda: NormalizedRawSnapshotWriter(),
         )
         monkeypatch.setattr(
-            "orgpulse.cli.RunManifestWriter",
+            "orgpulse.libs.output_store.pipeline.RunManifestWriter",
             lambda: RunManifestWriter(
                 now=lambda: datetime.fromisoformat("2026-04-18T00:00:00+00:00")
             ),
         )
         monkeypatch.setattr(
-            "orgpulse.cli.OrgSummaryWriter",
+            "orgpulse.libs.output_store.pipeline.OrgSummaryWriter",
             lambda: OrgSummaryWriter(),
         )
         monkeypatch.setattr(
-            "orgpulse.cli.RepositorySummaryCsvWriter",
+            "orgpulse.libs.output_store.pipeline.RepositorySummaryCsvWriter",
             lambda: RepositorySummaryCsvWriter(),
         )
 
@@ -373,7 +373,7 @@ class TestRunCommandRuntime:
         )
         NormalizedRawSnapshotWriter().write(seed_config, seed_collection)
         monkeypatch.setattr(
-            "orgpulse.cli.resolve_auth_token",
+            "orgpulse.libs.snapshots.refresh.resolve_auth_token",
             lambda config: (_ for _ in ()).throw(
                 AssertionError("reaggregate should not resolve GitHub auth")
             ),
@@ -542,7 +542,7 @@ class TestRunCommandRuntime:
         )
         NormalizedRawSnapshotWriter().write(seed_config, seed_collection)
         monkeypatch.setattr(
-            "orgpulse.cli.resolve_auth_token",
+            "orgpulse.libs.snapshots.refresh.resolve_auth_token",
             lambda config: (_ for _ in ()).throw(
                 AssertionError("reaggregate should not resolve GitHub auth")
             ),
@@ -635,26 +635,26 @@ class TestRunCommandRuntime:
             )
         )
         monkeypatch.setattr(
-            "orgpulse.cli.GitHubIngestionService",
+            "orgpulse.libs.snapshots.refresh.GitHubIngestionService",
             lambda github_client: FakeCliIngestionService(
                 inventory=inventory,
                 collection=collection,
             ),
         )
         monkeypatch.setattr(
-            "orgpulse.cli.NormalizedRawSnapshotWriter",
+            "orgpulse.libs.output_store.pipeline.NormalizedRawSnapshotWriter",
             lambda: NormalizedRawSnapshotWriter(),
         )
         monkeypatch.setattr(
-            "orgpulse.cli.RunManifestWriter",
+            "orgpulse.libs.output_store.pipeline.RunManifestWriter",
             lambda: RunManifestWriter(now=lambda: next(completed_at_values)),
         )
         monkeypatch.setattr(
-            "orgpulse.cli.OrgSummaryWriter",
+            "orgpulse.libs.output_store.pipeline.OrgSummaryWriter",
             lambda: OrgSummaryWriter(),
         )
         monkeypatch.setattr(
-            "orgpulse.cli.RepositorySummaryCsvWriter",
+            "orgpulse.libs.output_store.pipeline.RepositorySummaryCsvWriter",
             lambda: RepositorySummaryCsvWriter(),
         )
 
@@ -822,28 +822,28 @@ class TestRunCommandRuntime:
             failures=(),
         )
         monkeypatch.setattr(
-            "orgpulse.cli.GitHubIngestionService",
+            "orgpulse.libs.snapshots.refresh.GitHubIngestionService",
             lambda github_client: FakeCliIngestionService(
                 inventory=inventory,
                 collection=collection,
             ),
         )
         monkeypatch.setattr(
-            "orgpulse.cli.NormalizedRawSnapshotWriter",
+            "orgpulse.libs.output_store.pipeline.NormalizedRawSnapshotWriter",
             lambda: NormalizedRawSnapshotWriter(),
         )
         monkeypatch.setattr(
-            "orgpulse.cli.RunManifestWriter",
+            "orgpulse.libs.output_store.pipeline.RunManifestWriter",
             lambda: RunManifestWriter(
                 now=lambda: datetime.fromisoformat("2026-04-18T00:00:00+00:00")
             ),
         )
         monkeypatch.setattr(
-            "orgpulse.cli.OrgSummaryWriter",
+            "orgpulse.libs.output_store.pipeline.OrgSummaryWriter",
             lambda: OrgSummaryWriter(),
         )
         monkeypatch.setattr(
-            "orgpulse.cli.RepositorySummaryCsvWriter",
+            "orgpulse.libs.output_store.pipeline.RepositorySummaryCsvWriter",
             lambda: RepositorySummaryCsvWriter(),
         )
 
@@ -1046,28 +1046,28 @@ class TestRunCommandRuntime:
             failures=(),
         )
         monkeypatch.setattr(
-            "orgpulse.cli.GitHubIngestionService",
+            "orgpulse.libs.snapshots.refresh.GitHubIngestionService",
             lambda github_client: FakeCliIngestionService(
                 inventory=inventory,
                 collection=collection,
             ),
         )
         monkeypatch.setattr(
-            "orgpulse.cli.NormalizedRawSnapshotWriter",
+            "orgpulse.libs.output_store.pipeline.NormalizedRawSnapshotWriter",
             lambda: NormalizedRawSnapshotWriter(),
         )
         monkeypatch.setattr(
-            "orgpulse.cli.RunManifestWriter",
+            "orgpulse.libs.output_store.pipeline.RunManifestWriter",
             lambda: RunManifestWriter(
                 now=lambda: datetime.fromisoformat("2026-04-18T00:00:00+00:00")
             ),
         )
         monkeypatch.setattr(
-            "orgpulse.cli.OrgSummaryWriter",
+            "orgpulse.libs.output_store.pipeline.OrgSummaryWriter",
             lambda: OrgSummaryWriter(),
         )
         monkeypatch.setattr(
-            "orgpulse.cli.RepositorySummaryCsvWriter",
+            "orgpulse.libs.output_store.pipeline.RepositorySummaryCsvWriter",
             lambda: RepositorySummaryCsvWriter(),
         )
 
@@ -1374,28 +1374,28 @@ class TestRunCommandRuntime:
             failures=(),
         )
         monkeypatch.setattr(
-            "orgpulse.cli.GitHubIngestionService",
+            "orgpulse.libs.snapshots.refresh.GitHubIngestionService",
             lambda github_client: FakeCliIngestionService(
                 inventory=inventory,
                 collection=collection,
             ),
         )
         monkeypatch.setattr(
-            "orgpulse.cli.NormalizedRawSnapshotWriter",
+            "orgpulse.libs.output_store.pipeline.NormalizedRawSnapshotWriter",
             lambda: NormalizedRawSnapshotWriter(),
         )
         monkeypatch.setattr(
-            "orgpulse.cli.RunManifestWriter",
+            "orgpulse.libs.output_store.pipeline.RunManifestWriter",
             lambda: RunManifestWriter(
                 now=lambda: datetime.fromisoformat("2026-04-18T00:00:00+00:00")
             ),
         )
         monkeypatch.setattr(
-            "orgpulse.cli.OrgSummaryWriter",
+            "orgpulse.libs.output_store.pipeline.OrgSummaryWriter",
             lambda: OrgSummaryWriter(),
         )
         monkeypatch.setattr(
-            "orgpulse.cli.RepositorySummaryCsvWriter",
+            "orgpulse.libs.output_store.pipeline.RepositorySummaryCsvWriter",
             lambda: RepositorySummaryCsvWriter(),
         )
 
@@ -1665,28 +1665,28 @@ class TestRunCommandRuntime:
             failures=(),
         )
         monkeypatch.setattr(
-            "orgpulse.cli.GitHubIngestionService",
+            "orgpulse.libs.snapshots.refresh.GitHubIngestionService",
             lambda github_client: FakeCliIngestionService(
                 inventory=inventory,
                 collection=collection,
             ),
         )
         monkeypatch.setattr(
-            "orgpulse.cli.NormalizedRawSnapshotWriter",
+            "orgpulse.libs.output_store.pipeline.NormalizedRawSnapshotWriter",
             lambda: NormalizedRawSnapshotWriter(),
         )
         monkeypatch.setattr(
-            "orgpulse.cli.RunManifestWriter",
+            "orgpulse.libs.output_store.pipeline.RunManifestWriter",
             lambda: RunManifestWriter(
                 now=lambda: datetime.fromisoformat("2026-05-19T00:00:00+00:00")
             ),
         )
         monkeypatch.setattr(
-            "orgpulse.cli.OrgSummaryWriter",
+            "orgpulse.libs.output_store.pipeline.OrgSummaryWriter",
             lambda: OrgSummaryWriter(),
         )
         monkeypatch.setattr(
-            "orgpulse.cli.RepositorySummaryCsvWriter",
+            "orgpulse.libs.output_store.pipeline.RepositorySummaryCsvWriter",
             lambda: RepositorySummaryCsvWriter(),
         )
 
@@ -1968,24 +1968,24 @@ class TestRunCommandRuntime:
             failures=(),
         )
         monkeypatch.setattr(
-            "orgpulse.cli.GitHubIngestionService",
+            "orgpulse.libs.snapshots.refresh.GitHubIngestionService",
             lambda github_client: FakeCliIngestionService(
                 inventory=inventory,
                 collection=collection,
             ),
         )
         monkeypatch.setattr(
-            "orgpulse.cli.NormalizedRawSnapshotWriter",
+            "orgpulse.libs.output_store.pipeline.NormalizedRawSnapshotWriter",
             lambda: NormalizedRawSnapshotWriter(),
         )
         monkeypatch.setattr(
-            "orgpulse.cli.RunManifestWriter",
+            "orgpulse.libs.output_store.pipeline.RunManifestWriter",
             lambda: RunManifestWriter(
                 now=lambda: datetime.fromisoformat("2026-04-18T00:00:00+00:00")
             ),
         )
         monkeypatch.setattr(
-            "orgpulse.cli.OrgSummaryWriter",
+            "orgpulse.libs.output_store.pipeline.OrgSummaryWriter",
             lambda: OrgSummaryWriter(),
         )
 
@@ -2147,28 +2147,28 @@ class TestRunCommandRuntime:
             failures=(),
         )
         monkeypatch.setattr(
-            "orgpulse.cli.GitHubIngestionService",
+            "orgpulse.libs.snapshots.refresh.GitHubIngestionService",
             lambda github_client: FakeCliIngestionService(
                 inventory=inventory,
                 collection=collection,
             ),
         )
         monkeypatch.setattr(
-            "orgpulse.cli.NormalizedRawSnapshotWriter",
+            "orgpulse.libs.output_store.pipeline.NormalizedRawSnapshotWriter",
             lambda: NormalizedRawSnapshotWriter(),
         )
         monkeypatch.setattr(
-            "orgpulse.cli.RunManifestWriter",
+            "orgpulse.libs.output_store.pipeline.RunManifestWriter",
             lambda: RunManifestWriter(
                 now=lambda: datetime.fromisoformat("2026-04-18T00:00:00+00:00")
             ),
         )
         monkeypatch.setattr(
-            "orgpulse.cli.OrgSummaryWriter",
+            "orgpulse.libs.output_store.pipeline.OrgSummaryWriter",
             lambda: OrgSummaryWriter(),
         )
         monkeypatch.setattr(
-            "orgpulse.cli.RepositorySummaryCsvWriter",
+            "orgpulse.libs.output_store.pipeline.RepositorySummaryCsvWriter",
             lambda: RepositorySummaryCsvWriter(),
         )
 
@@ -2258,28 +2258,28 @@ class TestRunCommandRuntime:
             failures=(),
         )
         monkeypatch.setattr(
-            "orgpulse.cli.GitHubIngestionService",
+            "orgpulse.libs.snapshots.refresh.GitHubIngestionService",
             lambda github_client: FakeCliIngestionService(
                 inventory=inventory,
                 collection=collection,
             ),
         )
         monkeypatch.setattr(
-            "orgpulse.cli.NormalizedRawSnapshotWriter",
+            "orgpulse.libs.output_store.pipeline.NormalizedRawSnapshotWriter",
             lambda: NormalizedRawSnapshotWriter(),
         )
         monkeypatch.setattr(
-            "orgpulse.cli.RunManifestWriter",
+            "orgpulse.libs.output_store.pipeline.RunManifestWriter",
             lambda: RunManifestWriter(
                 now=lambda: datetime.fromisoformat("2026-04-18T00:00:00+00:00")
             ),
         )
         monkeypatch.setattr(
-            "orgpulse.cli.OrgSummaryWriter",
+            "orgpulse.libs.output_store.pipeline.OrgSummaryWriter",
             lambda: OrgSummaryWriter(),
         )
         monkeypatch.setattr(
-            "orgpulse.cli.RepositorySummaryCsvWriter",
+            "orgpulse.libs.output_store.pipeline.RepositorySummaryCsvWriter",
             lambda: RepositorySummaryCsvWriter(),
         )
 
@@ -2381,23 +2381,23 @@ class TestRunCommandRuntime:
             ),
         )
         monkeypatch.setattr(
-            "orgpulse.cli.GitHubIngestionService",
+            "orgpulse.libs.snapshots.refresh.GitHubIngestionService",
             lambda github_client: FakeCliIngestionService(collection=collection),
         )
         monkeypatch.setattr(
-            "orgpulse.cli.NormalizedRawSnapshotWriter",
+            "orgpulse.libs.output_store.pipeline.NormalizedRawSnapshotWriter",
             lambda: UnexpectedSnapshotWriter(),
         )
         monkeypatch.setattr(
-            "orgpulse.cli.RunManifestWriter",
+            "orgpulse.libs.output_store.pipeline.RunManifestWriter",
             lambda: UnexpectedManifestWriter(),
         )
         monkeypatch.setattr(
-            "orgpulse.cli.OrgSummaryWriter",
+            "orgpulse.libs.output_store.pipeline.OrgSummaryWriter",
             lambda: UnexpectedOrgSummaryWriter(),
         )
         monkeypatch.setattr(
-            "orgpulse.cli.RepositorySummaryCsvWriter",
+            "orgpulse.libs.output_store.pipeline.RepositorySummaryCsvWriter",
             lambda: UnexpectedRepositorySummaryWriter(),
         )
         existing_manifest = tmp_path / "manifest" / "month" / "created_at" / "manifest.json"
@@ -2471,7 +2471,7 @@ class TestRunCommandRuntime:
 
         monkeypatch.setattr(service, "clear_checkpoint", clear_checkpoint)
         monkeypatch.setattr(
-            "orgpulse.cli.GitHubIngestionService",
+            "orgpulse.libs.snapshots.refresh.GitHubIngestionService",
             lambda github_client: service,
         )
 
@@ -2540,23 +2540,23 @@ class TestRunCommandRuntime:
 
         monkeypatch.setattr(service, "clear_checkpoint", clear_checkpoint)
         monkeypatch.setattr(
-            "orgpulse.cli.GitHubIngestionService",
+            "orgpulse.libs.snapshots.refresh.GitHubIngestionService",
             lambda github_client: service,
         )
         monkeypatch.setattr(
-            "orgpulse.cli.NormalizedRawSnapshotWriter",
+            "orgpulse.libs.output_store.pipeline.NormalizedRawSnapshotWriter",
             lambda: UnexpectedSnapshotWriter(),
         )
         monkeypatch.setattr(
-            "orgpulse.cli.RunManifestWriter",
+            "orgpulse.libs.output_store.pipeline.RunManifestWriter",
             lambda: UnexpectedManifestWriter(),
         )
         monkeypatch.setattr(
-            "orgpulse.cli.OrgSummaryWriter",
+            "orgpulse.libs.output_store.pipeline.OrgSummaryWriter",
             lambda: UnexpectedOrgSummaryWriter(),
         )
         monkeypatch.setattr(
-            "orgpulse.cli.RepositorySummaryCsvWriter",
+            "orgpulse.libs.output_store.pipeline.RepositorySummaryCsvWriter",
             lambda: UnexpectedRepositorySummaryWriter(),
         )
 

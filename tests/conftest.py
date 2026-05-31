@@ -7,15 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from orgpulse.config import get_settings
-from orgpulse.ingestion import NormalizedRawSnapshotWriter
-from orgpulse.metrics import (
-    MetricValidationCollectionBuilder,
-    OrganizationMetricCollectionBuilder,
-    PullRequestMetricCollectionBuilder,
-    RepositoryMetricCollectionBuilder,
-)
-from orgpulse.models import (
+from orgpulse.common.config import get_settings
+from orgpulse.common.models import (
     MetricValidationCollection,
     OrganizationMetricCollection,
     PullRequestCollection,
@@ -26,6 +19,13 @@ from orgpulse.models import (
     RawSnapshotWriteResult,
     RepositoryMetricCollection,
     RunConfig,
+)
+from orgpulse.libs.github.ingestion import NormalizedRawSnapshotWriter
+from orgpulse.libs.metrics.service import (
+    MetricValidationCollectionBuilder,
+    OrganizationMetricCollectionBuilder,
+    PullRequestMetricCollectionBuilder,
+    RepositoryMetricCollectionBuilder,
 )
 
 

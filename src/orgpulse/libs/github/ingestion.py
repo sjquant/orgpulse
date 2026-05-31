@@ -14,9 +14,9 @@ from typing import Any, TypeVar, cast
 from github import Github, GithubException
 from requests.exceptions import RequestException
 
-from orgpulse.errors import GitHubApiError
-from orgpulse.files import atomic_write_csv, atomic_write_json
-from orgpulse.models import (
+from orgpulse.common.errors import GitHubApiError
+from orgpulse.common.files import atomic_write_csv, atomic_write_json
+from orgpulse.common.models import (
     CollectionWindow,
     PeriodGrain,
     PullRequestCollection,
@@ -35,7 +35,7 @@ from orgpulse.models import (
     canonicalize_repo_filter,
     repo_filter_matches,
 )
-from orgpulse.types.github import (
+from orgpulse.libs.github.types import (
     GitHubActorLike,
     GitHubIngestionClientLike,
     GitHubOrganizationLike,

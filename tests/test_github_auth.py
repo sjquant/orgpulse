@@ -8,14 +8,18 @@ from unittest.mock import Mock
 import pytest
 from github import GithubException
 
-from orgpulse.errors import AuthResolutionError, GitHubApiError, OrgTargetingError
-from orgpulse.github_auth import (
+from orgpulse.common.errors import (
+    AuthResolutionError,
+    GitHubApiError,
+    OrgTargetingError,
+)
+from orgpulse.common.models import AuthSource, RunConfig, RunMode
+from orgpulse.libs.github.auth import (
     AUTH_REQUIRED_MESSAGE,
     GitHubAuthService,
     resolve_auth_token,
 )
-from orgpulse.models import AuthSource, RunConfig, RunMode
-from orgpulse.types.github import GitHubAuthClientLike
+from orgpulse.libs.github.types import GitHubAuthClientLike
 
 
 class TestGitHubAuthService:
@@ -33,7 +37,7 @@ class TestGitHubAuthService:
         def fail_if_called(*args, **kwargs) -> subprocess.CompletedProcess[str]:
             raise AssertionError("expected config.github_token to take precedence")
 
-        monkeypatch.setattr("orgpulse.github_auth.subprocess.run", fail_if_called)
+        monkeypatch.setattr("orgpulse.libs.github.auth.subprocess.run", fail_if_called)
 
         # When
         resolved = resolve_auth_token(config)
@@ -57,7 +61,7 @@ class TestGitHubAuthService:
             cast(GitHubAuthClientLike, client), AuthSource.GH_CLI
         )
         monkeypatch.setattr(
-            "orgpulse.github_auth.subprocess.run",
+            "orgpulse.libs.github.auth.subprocess.run",
             lambda *args, **kwargs: subprocess.CompletedProcess(
                 args=["gh", "auth", "token"],
                 returncode=0,
@@ -83,7 +87,7 @@ class TestGitHubAuthService:
         # Given
         config = self._build_run_config()
         monkeypatch.setattr(
-            "orgpulse.github_auth.subprocess.run",
+            "orgpulse.libs.github.auth.subprocess.run",
             lambda *args, **kwargs: subprocess.CompletedProcess(
                 args=["gh", "auth", "token"],
                 returncode=0,
@@ -203,7 +207,7 @@ class TestGitHubAuthService:
         def raise_file_not_found(*args, **kwargs) -> subprocess.CompletedProcess[str]:
             raise FileNotFoundError()
 
-        monkeypatch.setattr("orgpulse.github_auth.subprocess.run", raise_file_not_found)
+        monkeypatch.setattr("orgpulse.libs.github.auth.subprocess.run", raise_file_not_found)
 
         # When
         with pytest.raises(AuthResolutionError, match=AUTH_REQUIRED_MESSAGE):
@@ -219,7 +223,7 @@ class TestGitHubAuthService:
         # Given
         config = self._build_run_config()
         monkeypatch.setattr(
-            "orgpulse.github_auth.subprocess.run",
+            "orgpulse.libs.github.auth.subprocess.run",
             lambda *args, **kwargs: subprocess.CompletedProcess(
                 args=["gh", "auth", "token"],
                 returncode=1,

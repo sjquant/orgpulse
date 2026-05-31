@@ -9,13 +9,8 @@ from typing import TypeVar, cast
 
 from pydantic import BaseModel
 
-from orgpulse.files import atomic_write_csv, atomic_write_json, atomic_write_text
-from orgpulse.ingestion import (
-    PULL_REQUEST_FIELDNAMES,
-    PULL_REQUEST_REVIEW_FIELDNAMES,
-    PULL_REQUEST_TIMELINE_EVENT_FIELDNAMES,
-)
-from orgpulse.models import (
+from orgpulse.common.files import atomic_write_csv, atomic_write_json, atomic_write_text
+from orgpulse.common.models import (
     LastSuccessfulRun,
     ManifestHistoryPayload,
     ManifestIndexLatestPayload,
@@ -54,16 +49,21 @@ from orgpulse.models import (
     TimeAnchorContextPayload,
     canonicalize_repo_filter,
 )
-from orgpulse.reporting.contracts import (
+from orgpulse.libs.github.ingestion import (
+    PULL_REQUEST_FIELDNAMES,
+    PULL_REQUEST_REVIEW_FIELDNAMES,
+    PULL_REQUEST_TIMELINE_EVENT_FIELDNAMES,
+)
+from orgpulse.libs.reporting.contracts import (
     build_anchored_metric_label as _shared_anchored_metric_label,
 )
-from orgpulse.reporting.contracts import (
+from orgpulse.libs.reporting.contracts import (
     build_period_state_payload as _shared_period_state_payload,
 )
-from orgpulse.reporting.contracts import (
+from orgpulse.libs.reporting.contracts import (
     build_time_anchor_context as _shared_time_anchor_context,
 )
-from orgpulse.reporting.contracts import (
+from orgpulse.libs.reporting.contracts import (
     time_anchor_scope as _shared_time_anchor_scope,
 )
 

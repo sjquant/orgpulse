@@ -4,13 +4,13 @@ import csv
 import json
 from io import StringIO
 
-from orgpulse.analysis import (
+from orgpulse.apps.analysis.service import (
     AnalysisExportFormat,
     AnalysisResult,
     AnalysisRow,
 )
-from orgpulse.errors import AnalysisInputError
-from orgpulse.reporting.analysis_report import render_analysis_report_html
+from orgpulse.common.errors import AnalysisInputError
+from orgpulse.libs.reporting.analysis_report import render_analysis_report_html
 
 
 def render_analysis_result(

@@ -4,11 +4,11 @@ from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime
 
-from orgpulse.models import (
+from orgpulse.common.models import (
     RawSnapshotPeriod,
     RawSnapshotWriteResult,
 )
-from orgpulse.raw_snapshot_source import read_snapshot_csv_rows
+from orgpulse.libs.snapshots.source import read_snapshot_csv_rows
 
 PullRequestKey = tuple[str, str]
 

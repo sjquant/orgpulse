@@ -4,7 +4,7 @@ import csv
 from datetime import datetime
 from statistics import fmean, median
 
-from orgpulse.models import (
+from orgpulse.common.models import (
     MetricValidationCollection,
     MetricValidationIssue,
     MetricValidationPeriod,

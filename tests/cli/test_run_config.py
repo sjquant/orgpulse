@@ -408,13 +408,13 @@ class TestRunConfigParsing:
             "token rejected"
         )
         monkeypatch.setattr(
-            "orgpulse.cli.resolve_auth_token",
+            "orgpulse.libs.snapshots.refresh.resolve_auth_token",
             lambda config: ResolvedToken(source=AuthSource.GH_TOKEN, token="env-token"),
         )
-        monkeypatch.setattr("orgpulse.cli.Github", lambda auth: object())
-        monkeypatch.setattr("orgpulse.cli.Auth.Token", lambda token: object())
+        monkeypatch.setattr("orgpulse.libs.snapshots.refresh.Github", lambda auth: object())
+        monkeypatch.setattr("orgpulse.libs.snapshots.refresh.Auth.Token", lambda token: object())
         monkeypatch.setattr(
-            "orgpulse.cli.GitHubAuthService",
+            "orgpulse.libs.snapshots.refresh.GitHubAuthService",
             lambda github_client, auth_source: github_auth_service,
         )
 
@@ -438,13 +438,13 @@ class TestRunConfigParsing:
         )
         github_auth_service.validate_access.side_effect = GitHubApiError("rate limited")
         monkeypatch.setattr(
-            "orgpulse.cli.resolve_auth_token",
+            "orgpulse.libs.snapshots.refresh.resolve_auth_token",
             lambda config: ResolvedToken(source=AuthSource.GH_TOKEN, token="env-token"),
         )
-        monkeypatch.setattr("orgpulse.cli.Github", lambda auth: object())
-        monkeypatch.setattr("orgpulse.cli.Auth.Token", lambda token: object())
+        monkeypatch.setattr("orgpulse.libs.snapshots.refresh.Github", lambda auth: object())
+        monkeypatch.setattr("orgpulse.libs.snapshots.refresh.Auth.Token", lambda token: object())
         monkeypatch.setattr(
-            "orgpulse.cli.GitHubAuthService",
+            "orgpulse.libs.snapshots.refresh.GitHubAuthService",
             lambda github_client, auth_source: github_auth_service,
         )
 

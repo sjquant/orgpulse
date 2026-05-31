@@ -7,7 +7,7 @@ import shutil
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, TypeVar, cast
 
@@ -47,6 +47,7 @@ from orgpulse.libs.github.types import (
 
 DEFAULT_MAX_RETRIES = 2
 DEFAULT_RETRY_BACKOFF_SECONDS = 1.0
+CHECKPOINT_UPDATED_AT_OVERLAP = timedelta(minutes=5)
 RAW_SNAPSHOT_DIRNAME = "raw"
 CHECKPOINT_DIRNAME = "checkpoints"
 CHECKPOINT_MANIFEST_FILENAME = "manifest.json"
@@ -116,7 +117,7 @@ PULL_REQUEST_GRAPHQL_QUERY_TEMPLATE = """
 query($owner: String!, $name: String!, $after: String) {
   repository(owner: $owner, name: $name) {
     pullRequests(
-      first: 50
+      first: 100
       after: $after
       orderBy: {field: __ORDER_FIELD__, direction: DESC}
     ) {
@@ -234,6 +235,7 @@ T = TypeVar("T")
 class _CollectionCheckpoint:
     pull_requests_by_repository: dict[str, tuple[PullRequestRecord, ...]]
     repository_end_dates: dict[str, date]
+    repository_latest_updated_at: dict[str, datetime]
 
 
 @dataclass(frozen=True)
@@ -1215,6 +1217,11 @@ class GitHubIngestionService:
                 failure_count=len(failures),
             )
             try:
+                resume_after_datetime = self._resume_after_datetime(
+                    checkpoint=checkpoint,
+                    repository_full_name=repository.full_name,
+                    window=window,
+                )
                 delta_pull_requests = self._fetch_repository_pull_requests(
                     config=config,
                     repository_full_name=repository.full_name,
@@ -1223,7 +1230,9 @@ class GitHubIngestionService:
                         checkpoint=checkpoint,
                         repository_full_name=repository.full_name,
                         current_end_date=window.end_date,
+                        resume_after_datetime=resume_after_datetime,
                     ),
+                    resume_after_datetime=resume_after_datetime,
                 )
                 repository_pull_requests = self._merge_repository_pull_requests(
                     cached_pull_requests,
@@ -1368,29 +1377,37 @@ class GitHubIngestionService:
             return _CollectionCheckpoint(
                 pull_requests_by_repository={},
                 repository_end_dates={},
+                repository_latest_updated_at={},
             )
         if not config.checkpoint_policy.resume_from_checkpoint:
             return _CollectionCheckpoint(
                 pull_requests_by_repository={},
                 repository_end_dates={},
+                repository_latest_updated_at={},
             )
         manifest_payload = self._load_checkpoint_manifest_payload(config)
         if manifest_payload is None:
             return _CollectionCheckpoint(
                 pull_requests_by_repository={},
                 repository_end_dates={},
+                repository_latest_updated_at={},
             )
         if manifest_payload.get("contract") != self._checkpoint_contract(config):
             self.clear_checkpoint(config)
             return _CollectionCheckpoint(
                 pull_requests_by_repository={},
                 repository_end_dates={},
+                repository_latest_updated_at={},
             )
         checkpoint_repository_end_dates = self._checkpoint_manifest_repository_end_dates(
             manifest_payload,
         )
+        checkpoint_latest_updated_at = (
+            self._checkpoint_manifest_repository_latest_updated_at(manifest_payload)
+        )
         pull_requests_by_repository: dict[str, tuple[PullRequestRecord, ...]] = {}
         repository_end_dates: dict[str, date] = {}
+        repository_latest_updated_at: dict[str, datetime] = {}
         for (
             repository_full_name,
             checkpoint_end_date,
@@ -1405,9 +1422,15 @@ class GitHubIngestionService:
                 continue
             pull_requests_by_repository[repository_full_name] = checkpoint_pull_requests
             repository_end_dates[repository_full_name] = checkpoint_end_date
+            checkpoint_updated_at = checkpoint_latest_updated_at.get(
+                repository_full_name
+            )
+            if checkpoint_updated_at is not None:
+                repository_latest_updated_at[repository_full_name] = checkpoint_updated_at
         return _CollectionCheckpoint(
             pull_requests_by_repository=pull_requests_by_repository,
             repository_end_dates=repository_end_dates,
+            repository_latest_updated_at=repository_latest_updated_at,
         )
 
     def _save_collection_checkpoint(
@@ -1433,10 +1456,19 @@ class GitHubIngestionService:
                 ],
             },
         )
+        manifest_payload = self._load_checkpoint_manifest_payload(config)
         repository_end_dates = self._checkpoint_manifest_repository_end_dates(
-            self._load_checkpoint_manifest_payload(config),
+            manifest_payload,
+        )
+        repository_latest_updated_at = (
+            self._checkpoint_manifest_repository_latest_updated_at(
+                manifest_payload,
+            )
         )
         repository_end_dates[repository_full_name] = config.collection_window.end_date
+        latest_updated_at = self._latest_pull_request_updated_at(pull_requests)
+        if latest_updated_at is not None:
+            repository_latest_updated_at[repository_full_name] = latest_updated_at
         atomic_write_json(
             self._checkpoint_manifest_path(config),
             {
@@ -1447,6 +1479,13 @@ class GitHubIngestionService:
                     for completed_repository, repository_end_date in sorted(
                         repository_end_dates.items()
                     )
+                },
+                "repository_latest_updated_at": {
+                    completed_repository: updated_at.isoformat()
+                    for completed_repository, updated_at in sorted(
+                        repository_latest_updated_at.items()
+                    )
+                    if completed_repository in repository_end_dates
                 },
             },
         )
@@ -1504,19 +1543,94 @@ class GitHubIngestionService:
             if isinstance(repository_name, str)
         }
 
+    def _checkpoint_manifest_repository_latest_updated_at(
+        self,
+        manifest_payload: dict[str, object] | None,
+    ) -> dict[str, datetime]:
+        if manifest_payload is None:
+            return {}
+        repository_latest_updated_at = manifest_payload.get(
+            "repository_latest_updated_at"
+        )
+        if not isinstance(repository_latest_updated_at, dict):
+            return {}
+
+        valid_latest_updated_at: dict[str, datetime] = {}
+        for repository_name, updated_at_value in repository_latest_updated_at.items():
+            if not isinstance(repository_name, str):
+                continue
+            if not isinstance(updated_at_value, str):
+                continue
+            try:
+                valid_latest_updated_at[repository_name] = datetime.fromisoformat(
+                    updated_at_value
+                )
+            except ValueError:
+                continue
+        return valid_latest_updated_at
+
     def _resume_after_date(
         self,
         *,
         checkpoint: _CollectionCheckpoint,
         repository_full_name: str,
         current_end_date: date,
+        resume_after_datetime: datetime | None,
     ) -> date | None:
+        if resume_after_datetime is not None:
+            return resume_after_datetime.date()
         checkpoint_end_date = checkpoint.repository_end_dates.get(repository_full_name)
         if checkpoint_end_date is None:
             return None
         if checkpoint_end_date > current_end_date:
             return None
         return checkpoint_end_date
+
+    def _resume_after_datetime(
+        self,
+        *,
+        checkpoint: _CollectionCheckpoint,
+        repository_full_name: str,
+        window: CollectionWindow,
+    ) -> datetime | None:
+        checkpoint_updated_at = checkpoint.repository_latest_updated_at.get(
+            repository_full_name
+        )
+        if checkpoint_updated_at is None:
+            return None
+        if checkpoint_updated_at.date() > window.end_date:
+            return None
+
+        resume_after = checkpoint_updated_at - CHECKPOINT_UPDATED_AT_OVERLAP
+        if window.start_date is None:
+            return resume_after
+
+        window_start = datetime.combine(
+            window.start_date,
+            datetime.min.time(),
+            tzinfo=resume_after.tzinfo,
+        )
+        if self._comparable_datetime(resume_after) < self._comparable_datetime(
+            window_start
+        ):
+            return window_start
+        return resume_after
+
+    def _latest_pull_request_updated_at(
+        self,
+        pull_requests: tuple[PullRequestRecord, ...],
+    ) -> datetime | None:
+        if not pull_requests:
+            return None
+        return max(
+            pull_requests,
+            key=lambda pull_request: self._comparable_datetime(pull_request.updated_at),
+        ).updated_at
+
+    def _comparable_datetime(self, value: datetime) -> datetime:
+        if value.tzinfo is None:
+            return value
+        return value.astimezone(timezone.utc).replace(tzinfo=None)
 
     def _merge_repository_pull_requests(
         self,
@@ -1665,13 +1779,23 @@ class GitHubIngestionService:
         repository_full_name: str,
         window: CollectionWindow,
         resume_after_date: date | None,
+        resume_after_datetime: datetime | None,
     ) -> tuple[PullRequestRecord, ...]:
+        if self._graphql_requester is not None:
+            return self._load_pull_requests_via_graphql(
+                config,
+                repository_full_name,
+                window,
+                resume_after_date=resume_after_date,
+                resume_after_datetime=resume_after_datetime,
+            )
         repository = self._load_repository(repository_full_name)
         return self._load_pull_requests(
             config,
             repository,
             window,
             resume_after_date=resume_after_date,
+            resume_after_datetime=resume_after_datetime,
         )
 
     def _load_repository(self, repository_full_name: str) -> GitHubRepositoryLike:
@@ -1689,20 +1813,14 @@ class GitHubIngestionService:
         window: CollectionWindow,
         *,
         resume_after_date: date | None,
+        resume_after_datetime: datetime | None,
     ) -> tuple[PullRequestRecord, ...]:
-        if self._graphql_requester is not None:
-            return self._load_pull_requests_via_graphql(
-                config,
-                repository,
-                window,
-                resume_after_date=resume_after_date,
-            )
-
         pull_requests = self._load_pull_request_nodes(
             config,
             repository,
             window,
             resume_after_date=resume_after_date,
+            resume_after_datetime=resume_after_datetime,
         )
         return tuple(
             self._build_pull_request_record(
@@ -1715,12 +1833,13 @@ class GitHubIngestionService:
     def _load_pull_requests_via_graphql(
         self,
         config: RunConfig,
-        repository: GitHubRepositoryLike,
+        repository_full_name: str,
         window: CollectionWindow,
         *,
         resume_after_date: date | None,
+        resume_after_datetime: datetime | None,
     ) -> tuple[PullRequestRecord, ...]:
-        owner, repository_name = repository.full_name.split("/", 1)
+        owner, repository_name = repository_full_name.split("/", 1)
         collection_time_anchor = self._collection_time_anchor(config)
         pull_request_nodes = self._load_pull_request_nodes_via_graphql(
             collection_time_anchor=collection_time_anchor,
@@ -1730,14 +1849,29 @@ class GitHubIngestionService:
                 window,
                 resume_after_date=resume_after_date,
             ),
+            resume_after_datetime=resume_after_datetime,
         )
-        return tuple(
-            self._build_graphql_pull_request_record(
-                repository=repository,
-                pull_request_node=pull_request_node,
+        pull_request_records: list[PullRequestRecord] = []
+        fallback_repository: GitHubRepositoryLike | None = None
+        for pull_request_node in pull_request_nodes:
+            if self._graphql_pull_request_requires_rest_fallback(pull_request_node):
+                if fallback_repository is None:
+                    fallback_repository = self._load_repository(repository_full_name)
+                pull_request_records.append(
+                    self._build_graphql_pull_request_record_from_rest_fallback(
+                        repository_full_name=repository_full_name,
+                        pull_request_node=pull_request_node,
+                        repository=fallback_repository,
+                    )
+                )
+                continue
+            pull_request_records.append(
+                self._build_graphql_pull_request_record(
+                    repository_full_name=repository_full_name,
+                    pull_request_node=pull_request_node,
+                )
             )
-            for pull_request_node in pull_request_nodes
-        )
+        return tuple(pull_request_records)
 
     def _load_pull_request_nodes_via_graphql(
         self,
@@ -1746,6 +1880,7 @@ class GitHubIngestionService:
         owner: str,
         repository_name: str,
         window: CollectionWindow,
+        resume_after_datetime: datetime | None,
     ) -> tuple[dict[str, Any], ...]:
         pull_requests: list[dict[str, Any]] = []
         cursor: str | None = None
@@ -1762,6 +1897,16 @@ class GitHubIngestionService:
             pull_request_connection = response["data"]["repository"]["pullRequests"]
             stop_loading = False
             for pull_request_node in pull_request_connection["nodes"]:
+                updated_at = self._parse_graphql_datetime(
+                    pull_request_node["updatedAt"]
+                )
+                if self._should_stop_before_resume_datetime(
+                    time_anchor=collection_time_anchor,
+                    updated_at=updated_at,
+                    resume_after_datetime=resume_after_datetime,
+                ):
+                    stop_loading = True
+                    break
                 anchor_on = self._graphql_anchor_date(
                     collection_time_anchor,
                     pull_request_node,
@@ -1774,6 +1919,11 @@ class GitHubIngestionService:
                     ):
                         stop_loading = True
                         break
+                    continue
+                if self._pull_request_is_before_resume_datetime(
+                    updated_at,
+                    resume_after_datetime,
+                ):
                     continue
                 pull_requests.append(pull_request_node)
 
@@ -1809,26 +1959,16 @@ class GitHubIngestionService:
     def _build_graphql_pull_request_record(
         self,
         *,
-        repository: GitHubRepositoryLike,
+        repository_full_name: str,
         pull_request_node: dict[str, Any],
     ) -> PullRequestRecord:
-        if self._graphql_pull_request_requires_rest_fallback(pull_request_node):
-            pull_request = self._load_pull_request_by_number(
-                repository,
-                pull_request_number=pull_request_node["number"],
-            )
-            return self._build_pull_request_record(
-                repository_full_name=repository.full_name,
-                pull_request=pull_request,
-            )
-
         merged_at = self._optional_graphql_datetime(pull_request_node["mergedAt"])
         state, merged = self._graphql_pull_request_state(
             pull_request_node["state"],
             merged_at=merged_at,
         )
         return PullRequestRecord(
-            repository_full_name=repository.full_name,
+            repository_full_name=repository_full_name,
             number=pull_request_node["number"],
             title=pull_request_node["title"],
             state=state,
@@ -1848,6 +1988,22 @@ class GitHubIngestionService:
             timeline_events=self._build_graphql_timeline_events(
                 pull_request_node["timelineItems"]["nodes"]
             ),
+        )
+
+    def _build_graphql_pull_request_record_from_rest_fallback(
+        self,
+        *,
+        repository_full_name: str,
+        pull_request_node: dict[str, Any],
+        repository: GitHubRepositoryLike,
+    ) -> PullRequestRecord:
+        pull_request = self._load_pull_request_by_number(
+            repository,
+            pull_request_number=pull_request_node["number"],
+        )
+        return self._build_pull_request_record(
+            repository_full_name=repository_full_name,
+            pull_request=pull_request,
         )
 
     def _graphql_pull_request_requires_rest_fallback(
@@ -2048,6 +2204,7 @@ class GitHubIngestionService:
         window: CollectionWindow,
         *,
         resume_after_date: date | None,
+        resume_after_datetime: datetime | None,
     ) -> tuple[GitHubPullRequestLike, ...]:
         collection_time_anchor = self._collection_time_anchor(config)
         effective_window = self._effective_collection_window(
@@ -2070,6 +2227,17 @@ class GitHubIngestionService:
                         window=effective_window,
                     ):
                         break
+                    continue
+                if self._should_stop_before_resume_datetime(
+                    time_anchor=collection_time_anchor,
+                    updated_at=pull_request.updated_at,
+                    resume_after_datetime=resume_after_datetime,
+                ):
+                    break
+                if self._pull_request_is_before_resume_datetime(
+                    pull_request.updated_at,
+                    resume_after_datetime,
+                ):
                     continue
                 pull_requests.append(pull_request)
             return tuple(pull_requests)
@@ -2103,6 +2271,32 @@ class GitHubIngestionService:
             and window.start_date is not None
             and anchor_on is not None
             and anchor_on < window.start_date
+        )
+
+    def _should_stop_before_resume_datetime(
+        self,
+        *,
+        time_anchor: TimeAnchor,
+        updated_at: datetime,
+        resume_after_datetime: datetime | None,
+    ) -> bool:
+        return (
+            time_anchor is TimeAnchor.UPDATED_AT
+            and self._pull_request_is_before_resume_datetime(
+                updated_at,
+                resume_after_datetime,
+            )
+        )
+
+    def _pull_request_is_before_resume_datetime(
+        self,
+        updated_at: datetime,
+        resume_after_datetime: datetime | None,
+    ) -> bool:
+        if resume_after_datetime is None:
+            return False
+        return self._comparable_datetime(updated_at) < self._comparable_datetime(
+            resume_after_datetime
         )
 
     def _build_pull_request_record(

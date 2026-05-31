@@ -11,12 +11,12 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 from markupsafe import Markup, escape
 from pydantic import BaseModel
 
-from orgpulse.distribution import (
+from orgpulse.common.distribution import (
     trim_upper_tail,
     upper_percentile_threshold,
     validate_distribution_percentile,
 )
-from orgpulse.models import (
+from orgpulse.common.models import (
     DashboardChartsPayload,
     DashboardMethodologyPayload,
     DashboardOverviewPayload,
@@ -29,7 +29,7 @@ from orgpulse.models import (
     DashboardSourcePayload,
     DashboardTrendRowPayload,
 )
-from orgpulse.reporting.contracts import (
+from orgpulse.libs.reporting.contracts import (
     build_period_state_payload,
     build_time_anchor_context,
 )
@@ -1437,7 +1437,7 @@ def _as_int(value: int | float | None) -> int:
 def _template_environment() -> Environment:
     environment = Environment(
         loader=FileSystemLoader(
-            str(Path(__file__).resolve().parents[1] / "templates")
+            str(Path(__file__).resolve().parents[2] / "templates")
         ),
         autoescape=select_autoescape(["html", "html.j2", "xml"]),
     )
@@ -1488,6 +1488,6 @@ def _format_delta(value: Any) -> Markup:
 
 if __name__ == "__main__":
     raise SystemExit(
-        "orgpulse.reporting.dashboard_html is no longer executable as a module. "
+        "orgpulse.libs.reporting.dashboard_html is no longer executable as a module. "
         "Use `orgpulse dashboard-render`."
     )

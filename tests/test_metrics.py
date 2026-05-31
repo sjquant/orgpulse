@@ -5,7 +5,7 @@ from datetime import datetime
 
 import pytest
 
-from orgpulse.models import (
+from orgpulse.common.models import (
     OrganizationMetricCollection,
     PullRequestMetricCollection,
     PullRequestRecord,

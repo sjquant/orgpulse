@@ -11,18 +11,8 @@ from typing import Any
 
 import pytest
 
-from orgpulse import dashboard as _dashboard_module
-from orgpulse.ingestion import (
-    PULL_REQUEST_FIELDNAMES,
-    PULL_REQUEST_REVIEW_FIELDNAMES,
-    PULL_REQUEST_TIMELINE_EVENT_FIELDNAMES,
-    NormalizedRawSnapshotWriter,
-)
-from orgpulse.metrics import (
-    PullRequestMetricCollectionBuilder,
-    RepositoryMetricCollectionBuilder,
-)
-from orgpulse.models import (
+from orgpulse.apps.dashboard import service as _dashboard_module
+from orgpulse.common.models import (
     CollectionWindow,
     LastSuccessfulRun,
     ManifestWatermarks,
@@ -41,17 +31,17 @@ from orgpulse.models import (
     RunMode,
     RunScope,
 )
-from orgpulse.raw_snapshot_source import LocalSnapshotSource
-from orgpulse.reporting.analysis_report import (
-    build_organization_report_payload,
-    render_organization_report_html,
+from orgpulse.libs.github.ingestion import (
+    PULL_REQUEST_FIELDNAMES,
+    PULL_REQUEST_REVIEW_FIELDNAMES,
+    PULL_REQUEST_TIMELINE_EVENT_FIELDNAMES,
+    NormalizedRawSnapshotWriter,
 )
-from orgpulse.reporting.dashboard_html import (
-    prepare_dashboard_payload,
-    render_dashboard_artifact,
-    render_dashboard_html,
+from orgpulse.libs.metrics.service import (
+    PullRequestMetricCollectionBuilder,
+    RepositoryMetricCollectionBuilder,
 )
-from orgpulse.reporting.run_outputs import (
+from orgpulse.libs.output_store.run_outputs import (
     MANIFEST_FILENAME,
     ORG_SUMMARY_DIRNAME,
     REQUIRED_RAW_SNAPSHOT_HEADERS,
@@ -59,6 +49,16 @@ from orgpulse.reporting.run_outputs import (
     RepositorySummaryCsvWriter,
     RunManifestWriter,
 )
+from orgpulse.libs.reporting.analysis_report import (
+    build_organization_report_payload,
+    render_organization_report_html,
+)
+from orgpulse.libs.reporting.dashboard_html import (
+    prepare_dashboard_payload,
+    render_dashboard_artifact,
+    render_dashboard_html,
+)
+from orgpulse.libs.snapshots.source import LocalSnapshotSource
 
 from .dashboard_source import (
     dashboard_pull_request_row as _manual_dashboard_pull_request_row,

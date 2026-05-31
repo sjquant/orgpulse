@@ -7,10 +7,12 @@ from statistics import fmean, median
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator
 
-from orgpulse.config import get_settings
-from orgpulse.distribution import trim_upper_tail, validate_distribution_percentile
-from orgpulse.metrics import PullRequestMetricCollectionBuilder
-from orgpulse.models import (
+from orgpulse.common.config import get_settings
+from orgpulse.common.distribution import (
+    trim_upper_tail,
+    validate_distribution_percentile,
+)
+from orgpulse.common.models import (
     AnalysisReportPayload,
     MetricValueSummary,
     OrgSlug,
@@ -22,10 +24,11 @@ from orgpulse.models import (
     RunManifest,
     TimeAnchor,
 )
-from orgpulse.raw_snapshot_source import LocalSnapshotSource
-from orgpulse.reporting.analysis_report import (
+from orgpulse.libs.metrics.service import PullRequestMetricCollectionBuilder
+from orgpulse.libs.reporting.analysis_report import (
     build_analysis_report_payload,
 )
+from orgpulse.libs.snapshots.source import LocalSnapshotSource
 
 
 class AnalysisGrouping(StrEnum):
@@ -542,19 +545,3 @@ def build_analysis_config(
         payload["distribution_percentile"] = distribution_percentile
     return AnalysisConfig.model_validate(payload)
 
-
-def render_analysis_result(
-    result: AnalysisResult,
-) -> str:
-    """Render an analysis result using its configured export format.
-
-    Args:
-        result: Fully computed analysis result.
-
-    Returns:
-        A serialized analysis document.
-    """
-
-    from orgpulse.reporting.analysis_export import render_analysis_result as _render
-
-    return _render(result)

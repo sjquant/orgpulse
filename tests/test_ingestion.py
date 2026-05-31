@@ -12,12 +12,7 @@ from typing import Any, TypeVar, cast, overload
 from github import GithubException
 from requests.exceptions import ChunkedEncodingError, RequestException
 
-from orgpulse.ingestion import (
-    GitHubIngestionService,
-    NormalizedRawSnapshotWriter,
-    PullRequestFetchProgress,
-)
-from orgpulse.models import (
+from orgpulse.common.models import (
     PullRequestCollection,
     PullRequestRecord,
     PullRequestReviewRecord,
@@ -27,7 +22,12 @@ from orgpulse.models import (
     RunConfig,
     RunMode,
 )
-from orgpulse.types.github import (
+from orgpulse.libs.github.ingestion import (
+    GitHubIngestionService,
+    NormalizedRawSnapshotWriter,
+    PullRequestFetchProgress,
+)
+from orgpulse.libs.github.types import (
     GitHubActorLike,
     GitHubIngestionClientLike,
     GitHubPullRequestLike,

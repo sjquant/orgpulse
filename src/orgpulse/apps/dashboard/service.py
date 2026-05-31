@@ -9,21 +9,15 @@ from pathlib import Path
 from statistics import median
 from typing import Any
 
-from github import Auth, Github
 from pydantic import ValidationError
 
-from orgpulse.cli import (
-    _build_metric_outputs,
-    _write_org_summary,
-    build_run_config,
+from orgpulse.common.config import build_run_config
+from orgpulse.common.errors import (
+    AuthResolutionError,
+    GitHubApiError,
+    OrgTargetingError,
 )
-from orgpulse.cli import (
-    _write_outputs as _write_run_outputs,
-)
-from orgpulse.errors import AuthResolutionError, GitHubApiError, OrgTargetingError
-from orgpulse.github_auth import GitHubAuthService, resolve_auth_token
-from orgpulse.ingestion import GitHubIngestionService
-from orgpulse.models import (
+from orgpulse.common.models import (
     DashboardAuthorPayload,
     DashboardAuthorThroughputPointPayload,
     DashboardChartsPayload,
@@ -44,13 +38,14 @@ from orgpulse.models import (
     RunManifest,
     RunMode,
 )
-from orgpulse.person_source import PersonSnapshotSource, ReviewFact
-from orgpulse.raw_snapshot_source import LocalSnapshotSource, read_snapshot_csv_rows
-from orgpulse.reporting.contracts import build_time_anchor_context
-from orgpulse.reporting.dashboard_html import (
+from orgpulse.libs.reporting.contracts import build_time_anchor_context
+from orgpulse.libs.reporting.dashboard_html import (
     prepare_dashboard_payload,
     render_dashboard_html,
 )
+from orgpulse.libs.snapshots.person_source import PersonSnapshotSource, ReviewFact
+from orgpulse.libs.snapshots.refresh import execute_source_refresh
+from orgpulse.libs.snapshots.source import LocalSnapshotSource, read_snapshot_csv_rows
 
 
 @dataclass(frozen=True)
@@ -225,45 +220,7 @@ def _refresh_local_source_outputs(
     except ValidationError as exc:
         raise RuntimeError(f"invalid run configuration: {exc}") from exc
 
-    resolved_token = resolve_auth_token(config)
-    github_client = Github(auth=Auth.Token(resolved_token.token))
-    GitHubAuthService(github_client, resolved_token.source).validate_access(config)
-    ingestion_service = GitHubIngestionService(github_client)
-    inventory = ingestion_service.load_repository_inventory(config)
-    collection = ingestion_service.fetch_pull_requests(config, inventory)
-    (
-        raw_snapshot,
-        raw_snapshot_skipped_reason,
-        manifest,
-        _manifest_skipped_reason,
-    ) = _write_run_outputs(
-        config,
-        len(inventory.repositories),
-        collection,
-    )
-    (
-        _repo_summary,
-        _repo_summary_skipped_reason,
-        org_metrics,
-        org_metrics_skipped_reason,
-        _metric_validation,
-        _metric_validation_skipped_reason,
-    ) = _build_metric_outputs(
-        config,
-        manifest=manifest,
-        raw_snapshot=raw_snapshot,
-        raw_snapshot_skipped_reason=raw_snapshot_skipped_reason,
-    )
-    _write_org_summary(
-        config,
-        org_metrics=org_metrics,
-        org_metrics_skipped_reason=org_metrics_skipped_reason,
-        refreshed_period_keys=()
-        if raw_snapshot is None
-        else tuple(period.key for period in raw_snapshot.periods),
-    )
-    if not collection.failures:
-        ingestion_service.clear_checkpoint(config)
+    execute_source_refresh(config)
 
 
 def build_dashboard_payload_from_local_outputs(
@@ -1381,6 +1338,6 @@ def _round(value: float | None) -> float | None:
 
 if __name__ == "__main__":
     raise SystemExit(
-        "orgpulse.dashboard is no longer executable as a module. "
+        "orgpulse.apps.dashboard.service is no longer executable as a module. "
         "Use `orgpulse dashboard`."
     )

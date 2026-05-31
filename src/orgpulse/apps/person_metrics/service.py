@@ -18,9 +18,12 @@ from pydantic import (
     model_validator,
 )
 
-from orgpulse.config import get_settings
-from orgpulse.distribution import trim_upper_tail, validate_distribution_percentile
-from orgpulse.models import (
+from orgpulse.common.config import get_settings
+from orgpulse.common.distribution import (
+    trim_upper_tail,
+    validate_distribution_percentile,
+)
+from orgpulse.common.models import (
     OrgSlug,
     PeriodGrain,
     RawSnapshotPeriod,
@@ -29,15 +32,15 @@ from orgpulse.models import (
     canonicalize_repo_filter,
     repo_filter_matches,
 )
-from orgpulse.person_source import (
+from orgpulse.libs.reporting.contracts import build_period_state_payload
+from orgpulse.libs.snapshots.person_source import (
     PersonSnapshotSource,
     PullRequestFact,
     PullRequestKey,
     ReviewFact,
     TimelineEventFact,
 )
-from orgpulse.raw_snapshot_source import LocalSnapshotSource
-from orgpulse.reporting.contracts import build_period_state_payload
+from orgpulse.libs.snapshots.source import LocalSnapshotSource
 
 Login = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
 

@@ -14,17 +14,11 @@ import pytest
 from pydantic import ValidationError
 from typer.testing import CliRunner
 
-from orgpulse import dashboard as dashboard_module
-from orgpulse.cli import app, build_run_config
-from orgpulse.errors import AuthResolutionError, GitHubApiError
-from orgpulse.github_auth import GitHubAuthService
-from orgpulse.ingestion import PULL_REQUEST_FIELDNAMES, NormalizedRawSnapshotWriter
-from orgpulse.metrics import (
-    OrganizationMetricCollectionBuilder,
-    PullRequestMetricCollectionBuilder,
-    RepositoryMetricCollectionBuilder,
-)
-from orgpulse.models import (
+from orgpulse.apps.dashboard import service as dashboard_module
+from orgpulse.cli import app
+from orgpulse.common.config import build_run_config
+from orgpulse.common.errors import AuthResolutionError, GitHubApiError
+from orgpulse.common.models import (
     AuthSource,
     CollectionWindow,
     GitHubTargetContext,
@@ -41,7 +35,17 @@ from orgpulse.models import (
     RunScope,
     TimeAnchor,
 )
-from orgpulse.reporting.run_outputs import (
+from orgpulse.libs.github.auth import GitHubAuthService
+from orgpulse.libs.github.ingestion import (
+    PULL_REQUEST_FIELDNAMES,
+    NormalizedRawSnapshotWriter,
+)
+from orgpulse.libs.metrics.service import (
+    OrganizationMetricCollectionBuilder,
+    PullRequestMetricCollectionBuilder,
+    RepositoryMetricCollectionBuilder,
+)
+from orgpulse.libs.output_store.run_outputs import (
     REPOSITORY_SUMMARY_CSV_FIELDNAMES,
     OrgSummaryWriter,
     RepositorySummaryCsvWriter,
@@ -175,33 +179,33 @@ def github_auth_service(monkeypatch: pytest.MonkeyPatch) -> None:
     )
 
     monkeypatch.setattr(
-        "orgpulse.cli.resolve_auth_token",
+        "orgpulse.libs.snapshots.refresh.resolve_auth_token",
         lambda config: ResolvedToken(source=AuthSource.GH_TOKEN, token="env-token"),
     )
-    monkeypatch.setattr("orgpulse.cli.Github", lambda auth: object())
-    monkeypatch.setattr("orgpulse.cli.Auth.Token", lambda token: object())
+    monkeypatch.setattr("orgpulse.libs.snapshots.refresh.Github", lambda auth: object())
+    monkeypatch.setattr("orgpulse.libs.snapshots.refresh.Auth.Token", lambda token: object())
     monkeypatch.setattr(
-        "orgpulse.cli.GitHubAuthService",
+        "orgpulse.libs.snapshots.refresh.GitHubAuthService",
         lambda github_client, auth_source: github_auth_service,
     )
     monkeypatch.setattr(
-        "orgpulse.cli.GitHubIngestionService",
+        "orgpulse.libs.snapshots.refresh.GitHubIngestionService",
         lambda github_client: FakeCliIngestionService(),
     )
     monkeypatch.setattr(
-        "orgpulse.cli.NormalizedRawSnapshotWriter",
+        "orgpulse.libs.output_store.pipeline.NormalizedRawSnapshotWriter",
         lambda: FakeCliSnapshotWriter(),
     )
     monkeypatch.setattr(
-        "orgpulse.cli.RunManifestWriter",
+        "orgpulse.libs.output_store.pipeline.RunManifestWriter",
         lambda: FakeCliManifestWriter(),
     )
     monkeypatch.setattr(
-        "orgpulse.cli.OrgSummaryWriter",
+        "orgpulse.libs.output_store.pipeline.OrgSummaryWriter",
         lambda: FakeCliOrgSummaryWriter(),
     )
     monkeypatch.setattr(
-        "orgpulse.cli.RepositorySummaryCsvWriter",
+        "orgpulse.libs.output_store.pipeline.RepositorySummaryCsvWriter",
         lambda: FakeCliRepositorySummaryWriter(),
     )
 
@@ -216,27 +220,27 @@ def _configure_production_cli_runtime(
         repositories=(),
     )
     monkeypatch.setattr(
-        "orgpulse.cli.GitHubIngestionService",
+        "orgpulse.libs.snapshots.refresh.GitHubIngestionService",
         lambda github_client: FakeCliIngestionService(
             inventory=inventory,
             collection=collection,
         ),
     )
     monkeypatch.setattr(
-        "orgpulse.cli.NormalizedRawSnapshotWriter",
+        "orgpulse.libs.output_store.pipeline.NormalizedRawSnapshotWriter",
         lambda: NormalizedRawSnapshotWriter(),
     )
     monkeypatch.setattr(
-        "orgpulse.cli.RunManifestWriter",
+        "orgpulse.libs.output_store.pipeline.RunManifestWriter",
         lambda: RunManifestWriter(
             now=lambda: datetime.fromisoformat("2026-04-18T00:00:00+00:00")
         ),
     )
     monkeypatch.setattr(
-        "orgpulse.cli.OrgSummaryWriter",
+        "orgpulse.libs.output_store.pipeline.OrgSummaryWriter",
         lambda: OrgSummaryWriter(),
     )
     monkeypatch.setattr(
-        "orgpulse.cli.RepositorySummaryCsvWriter",
+        "orgpulse.libs.output_store.pipeline.RepositorySummaryCsvWriter",
         lambda: RepositorySummaryCsvWriter(),
     )

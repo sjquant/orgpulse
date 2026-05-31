@@ -4,12 +4,12 @@ import csv
 import json
 from io import StringIO
 
-from orgpulse.person import (
+from orgpulse.apps.person_metrics.report import render_person_report_html
+from orgpulse.apps.person_metrics.service import (
     PersonExportFormat,
     PersonMetricsResult,
     PersonPeriodRow,
 )
-from orgpulse.reporting.person_report import render_person_report_html
 
 
 def render_person_metrics_result(

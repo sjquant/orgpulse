@@ -9,8 +9,8 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Literal
 
-from orgpulse.errors import AnalysisInputError
-from orgpulse.models import (
+from orgpulse.common.errors import AnalysisInputError
+from orgpulse.common.models import (
     PeriodGrain,
     RawSnapshotPeriod,
     RawSnapshotWriteResult,

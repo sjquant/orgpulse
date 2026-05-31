@@ -7,9 +7,14 @@ from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any
 
-from orgpulse.dashboard import generate_dashboard_report
-from orgpulse.ingestion import NormalizedRawSnapshotWriter
-from orgpulse.models import (
+from orgpulse.apps.dashboard.service import generate_dashboard_report
+from orgpulse.apps.person_metrics.export import render_person_metrics_result
+from orgpulse.apps.person_metrics.service import (
+    PersonExportFormat,
+    PersonMetricsService,
+    build_person_config,
+)
+from orgpulse.common.models import (
     PeriodGrain,
     PullRequestCollection,
     PullRequestRecord,
@@ -17,13 +22,8 @@ from orgpulse.models import (
     RunMode,
     TimeAnchor,
 )
-from orgpulse.person import (
-    PersonExportFormat,
-    PersonMetricsService,
-    build_person_config,
-)
-from orgpulse.reporting.person_export import render_person_metrics_result
-from orgpulse.reporting.run_outputs import RunManifestWriter
+from orgpulse.libs.github.ingestion import NormalizedRawSnapshotWriter
+from orgpulse.libs.output_store.run_outputs import RunManifestWriter
 
 DEFAULT_DATA_FILE = (
     Path(__file__).resolve().parents[1]

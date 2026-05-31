@@ -11,8 +11,8 @@ from typing import cast
 
 from jinja2 import Environment, FileSystemLoader, Template, select_autoescape
 
-from orgpulse.distribution import trim_upper_tail
-from orgpulse.models import (
+from orgpulse.common.distribution import trim_upper_tail
+from orgpulse.common.models import (
     AnalysisReportPayload,
     OrganizationMetricCollection,
     PullRequestMetricCollection,
@@ -22,12 +22,12 @@ from orgpulse.models import (
     RepositoryMetricCollection,
     RunConfig,
 )
-from orgpulse.raw_snapshot_source import pull_request_row_key, read_snapshot_csv_rows
-from orgpulse.reporting.contracts import (
+from orgpulse.libs.reporting.contracts import (
     build_anchored_metric_label,
     build_period_state_payload,
     build_time_anchor_context,
 )
+from orgpulse.libs.snapshots.source import pull_request_row_key, read_snapshot_csv_rows
 
 
 def build_analysis_report_payload(
@@ -791,7 +791,7 @@ def _validate_analysis_report_payload(
 
 @lru_cache(maxsize=1)
 def _analysis_report_template() -> Template:
-    templates_dir = Path(__file__).resolve().parents[1] / "templates"
+    templates_dir = Path(__file__).resolve().parents[2] / "templates"
     environment = Environment(
         loader=FileSystemLoader(str(templates_dir)),
         autoescape=select_autoescape(["html", "html.j2", "xml"]),

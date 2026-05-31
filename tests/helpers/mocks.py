@@ -2,8 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from orgpulse.ingestion import PullRequestFetchProgress
-from orgpulse.models import (
+from orgpulse.common.models import (
     LastSuccessfulRun,
     ManifestWatermarks,
     ManifestWriteResult,
@@ -15,6 +14,7 @@ from orgpulse.models import (
     RepositorySummaryCsvWriteResult,
     RunManifest,
 )
+from orgpulse.libs.github.ingestion import PullRequestFetchProgress
 
 
 class FakeCliIngestionService:

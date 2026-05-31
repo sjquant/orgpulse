@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import date
 
-from orgpulse.models import PeriodStatePayload, TimeAnchorContextPayload
+from orgpulse.common.models import PeriodStatePayload, TimeAnchorContextPayload
 
 
 def build_time_anchor_context(

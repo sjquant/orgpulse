@@ -400,6 +400,12 @@ def _build_overview(
         distribution_percentile=distribution_percentile,
         distribution_thresholds=distribution_thresholds,
     )
+    approval_values = _trimmed_values(
+        pull_requests,
+        "approval_hours",
+        distribution_percentile=distribution_percentile,
+        distribution_thresholds=distribution_thresholds,
+    )
     merge_values = _trimmed_values(
         pull_requests,
         "merge_hours",
@@ -424,6 +430,7 @@ def _build_overview(
         "total_changed_lines": _as_int(changed_lines["total"]),
         "total_commits": _as_int(commits["total"]),
         "median_first_review_hours": _round(_median_or_none(first_review_values)),
+        "median_approval_hours": _round(_median_or_none(approval_values)),
         "median_merge_hours": _round(_median_or_none(merge_values)),
         "median_close_hours": _round(_median_or_none(close_values)),
         "average_reviews_per_pr": _average_reviews_per_pull_request(pull_requests),
@@ -510,6 +517,12 @@ def _author_row(
         distribution_percentile=distribution_percentile,
         distribution_thresholds=None,
     )
+    approval_values = _trimmed_values(
+        pull_requests,
+        "approval_hours",
+        distribution_percentile=distribution_percentile,
+        distribution_thresholds=None,
+    )
     merge_values = _trimmed_values(
         pull_requests,
         "merge_hours",
@@ -526,6 +539,7 @@ def _author_row(
         "review_submissions_received": _review_submission_count(pull_requests),
         "average_reviews_per_pr": _average_reviews_per_pull_request(pull_requests),
         "median_first_review_hours": _round(_median_or_none(first_review_values)),
+        "median_approval_hours": _round(_median_or_none(approval_values)),
         "median_merge_hours": _round(_median_or_none(merge_values)),
         "median_changed_lines": _round(changed_lines["median"]),
         "share_of_prs_pct": _round(
@@ -584,6 +598,12 @@ def _repository_row(
         distribution_percentile=distribution_percentile,
         distribution_thresholds=distribution_thresholds,
     )
+    approval_values = _trimmed_values(
+        pull_requests,
+        "approval_hours",
+        distribution_percentile=distribution_percentile,
+        distribution_thresholds=distribution_thresholds,
+    )
     merge_values = _trimmed_values(
         pull_requests,
         "merge_hours",
@@ -600,6 +620,7 @@ def _repository_row(
         "review_submissions": _review_submission_count(pull_requests),
         "average_reviews_per_pr": _average_reviews_per_pull_request(pull_requests),
         "median_first_review_hours": _round(_median_or_none(first_review_values)),
+        "median_approval_hours": _round(_median_or_none(approval_values)),
         "median_merge_hours": _round(_median_or_none(merge_values)),
         "share_of_prs_pct": _round(
             (len(pull_requests) / total_pull_requests * 100)
@@ -631,6 +652,12 @@ def _build_size_bucket_rows(
             distribution_percentile=distribution_percentile,
             distribution_thresholds=distribution_thresholds,
         )
+        approval_values = _trimmed_values(
+            bucket_pull_requests,
+            "approval_hours",
+            distribution_percentile=distribution_percentile,
+            distribution_thresholds=distribution_thresholds,
+        )
         merge_values = _trimmed_values(
             bucket_pull_requests,
             "merge_hours",
@@ -645,6 +672,7 @@ def _build_size_bucket_rows(
                 "median_first_review_hours": _round(
                     _median_or_none(first_review_values)
                 ),
+                "median_approval_hours": _round(_median_or_none(approval_values)),
                 "median_merge_hours": _round(_median_or_none(merge_values)),
                 "average_reviews_per_pr": _average_reviews_per_pull_request(
                     bucket_pull_requests
@@ -706,6 +734,12 @@ def _build_trend_rows(
             distribution_percentile=distribution_percentile,
             distribution_thresholds=distribution_thresholds,
         )
+        approval_values = _trimmed_values(
+            period_rows,
+            "approval_hours",
+            distribution_percentile=distribution_percentile,
+            distribution_thresholds=distribution_thresholds,
+        )
         merge_values = _trimmed_values(
             period_rows,
             "merge_hours",
@@ -731,6 +765,9 @@ def _build_trend_rows(
             average_reviews_per_pr=_average_reviews_per_pull_request(period_rows),
             median_first_review_hours=_round(
                 float(median(first_review_values)) if first_review_values else None
+            ),
+            median_approval_hours=_round(
+                float(median(approval_values)) if approval_values else None
             ),
             median_merge_hours=_round(
                 float(median(merge_values)) if merge_values else None
@@ -938,6 +975,12 @@ def _build_author_size_mix_rows(
             distribution_percentile=distribution_percentile,
             distribution_thresholds=None,
         )
+        approval_values = _trimmed_values(
+            bucket_pull_requests,
+            "approval_hours",
+            distribution_percentile=distribution_percentile,
+            distribution_thresholds=None,
+        )
         merge_values = _trimmed_values(
             bucket_pull_requests,
             "merge_hours",
@@ -954,6 +997,7 @@ def _build_author_size_mix_rows(
                 "pull_requests": pull_request_count,
                 "changed_lines": _as_int(changed_lines["total"]),
                 "median_first_review_hours": _round(_median_or_none(first_review_values)),
+                "median_approval_hours": _round(_median_or_none(approval_values)),
                 "median_merge_hours": _round(_median_or_none(merge_values)),
                 "average_reviews_per_pr": _round(
                     review_submissions / pull_request_count
@@ -1315,6 +1359,7 @@ def _build_distribution_thresholds(
         "changed_lines",
         "commits",
         "first_review_hours",
+        "approval_hours",
         "merge_hours",
         "close_hours",
     )

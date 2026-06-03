@@ -378,6 +378,7 @@
           ${detailCard("Reviewed lines / month", formatMetric(summary.reviewed_lines_per_month))}
           ${detailCard("Merge rate", formatMetric(summary.merge_rate_pct, "%"))}
           ${detailCard("Avg lines / PR", formatMetric(summary.average_changed_lines_per_pr))}
+          ${detailCard("Approval time", formatDuration(summary.median_approval_hours))}
           ${detailCard("First review", formatDuration(summary.median_first_review_hours))}
         </div>
         <div class="profile-subgrid">
@@ -883,6 +884,7 @@
         pull_requests_per_active_author: "PRs per active author",
         changed_lines: "Changed lines",
         changed_lines_per_active_author: "Lines per active author",
+        median_approval_hours: "Median approval",
         median_first_review_hours: "Median first review",
         median_merge_hours: "Median merge",
       };
@@ -893,6 +895,7 @@
       const keys = {
         pull_requests: "pull_requests",
         changed_lines: "changed_lines",
+        median_approval_hours: "median_approval_hours",
         median_first_review_hours: "median_first_review_hours",
         median_merge_hours: "median_merge_hours",
       };

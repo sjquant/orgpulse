@@ -289,13 +289,14 @@ def dashboard_review_row(
     review_id: int,
     author_login: str,
     submitted_at: str,
+    state: str = "APPROVED",
 ) -> dict[str, str]:
     return {
         "period_key": period_key,
         "repository_full_name": repository_full_name,
         "pull_request_number": str(pull_request_number),
         "review_id": str(review_id),
-        "state": "APPROVED",
+        "state": state,
         "author_login": author_login,
         "submitted_at": submitted_at,
         "commit_id": "",

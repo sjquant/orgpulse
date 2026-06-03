@@ -95,6 +95,7 @@ class PullRequestSnapshot:
     reviewer_count: int
     first_review_at: datetime | None
     first_review_hours: float | None
+    approval_hours: float | None
     merge_hours: float | None
     close_hours: float | None
     review_rounds: int
@@ -126,6 +127,7 @@ DASHBOARD_PULL_REQUEST_FIELDNAMES = (
     "comment_review_count",
     "reviewer_count",
     "first_review_hours",
+    "approval_hours",
     "merge_hours",
     "close_hours",
     "review_rounds",
@@ -458,6 +460,13 @@ def _snapshot_from_local_rows(
             first_review_started_at,
             first_review_at,
         ),
+        approval_hours=_approval_hours(
+            author_login=pull_request_row["author_login"] or "ghost",
+            draft=draft,
+            created_at=created_at,
+            timeline_events=timeline_events,
+            reviews=reviews,
+        ),
         merge_hours=_hours_between(created_at, merged_at),
         close_hours=_hours_between(created_at, closed_at),
         review_rounds=max(
@@ -556,9 +565,11 @@ def _build_dashboard_payload(
                 DashboardReviewLatencyPointPayload(
                     label=row.author_login,
                     median_first_review_hours=row.median_first_review_hours,
+                    median_approval_hours=row.median_approval_hours,
                 )
                 for row in author_rows
                 if row.median_first_review_hours is not None
+                or row.median_approval_hours is not None
             ][:8],
             repository_throughput=[
                 DashboardRepositoryThroughputPointPayload(
@@ -653,6 +664,67 @@ def _review_cycle_markers(
         review_requested_at,
         first_review_started_at,
         first_review_at,
+    )
+
+
+def _approval_hours(
+    *,
+    author_login: str,
+    draft: bool,
+    created_at: datetime,
+    timeline_events: list[PullRequestTimelineEvent],
+    reviews: list[PullRequestReview],
+) -> float | None:
+    final_decision_review = _final_external_decision_review(
+        author_login=author_login,
+        reviews=reviews,
+    )
+    if final_decision_review is None or final_decision_review.state != "APPROVED":
+        return None
+    review_started_at = _approval_started_at(
+        draft=draft,
+        created_at=created_at,
+        timeline_events=timeline_events,
+        approval_submitted_at=final_decision_review.submitted_at,
+    )
+    return _hours_between(review_started_at, final_decision_review.submitted_at)
+
+
+def _final_external_decision_review(
+    *,
+    author_login: str,
+    reviews: list[PullRequestReview],
+) -> PullRequestReview | None:
+    final_decision_review = None
+    for review in reviews:
+        if review.state not in {"APPROVED", "CHANGES_REQUESTED"}:
+            continue
+        if _same_login(review.author_login, author_login):
+            continue
+        final_decision_review = review
+    return final_decision_review
+
+
+def _approval_started_at(
+    *,
+    draft: bool,
+    created_at: datetime,
+    timeline_events: list[PullRequestTimelineEvent],
+    approval_submitted_at: datetime,
+) -> datetime | None:
+    review_ready_at = _review_ready_at(
+        draft=draft,
+        created_at=created_at,
+        timeline_events=timeline_events,
+        reference_at=approval_submitted_at,
+    )
+    review_requested_at = _review_requested_at(
+        timeline_events=timeline_events,
+        reference_at=approval_submitted_at,
+    )
+    return _review_started_at(
+        review_ready_at=review_ready_at,
+        review_requested_at=review_requested_at,
     )
 
 
@@ -809,6 +881,11 @@ def _overview_summary(
         for snapshot in snapshots
         if snapshot.first_review_hours is not None
     ]
+    approval_values = [
+        snapshot.approval_hours
+        for snapshot in snapshots
+        if snapshot.approval_hours is not None
+    ]
     merge_values = [
         snapshot.merge_hours
         for snapshot in snapshots
@@ -837,6 +914,7 @@ def _overview_summary(
         total_changed_lines=sum(snapshot.changed_lines for snapshot in snapshots),
         total_commits=sum(snapshot.commits for snapshot in snapshots),
         median_first_review_hours=_round(_median_or_none(first_review_values)),
+        median_approval_hours=_round(_median_or_none(approval_values)),
         median_merge_hours=_round(_median_or_none(merge_values)),
         median_close_hours=_round(_median_or_none(close_values)),
         average_reviews_per_pr=_round(
@@ -1043,6 +1121,15 @@ def _size_bucket_rows(
                         ]
                     )
                 ),
+                median_approval_hours=_round(
+                    _median_or_none(
+                        [
+                            snapshot.approval_hours
+                            for snapshot in bucket_snapshots
+                            if snapshot.approval_hours is not None
+                        ]
+                    )
+                ),
                 median_merge_hours=_round(
                     _median_or_none(
                         [
@@ -1117,7 +1204,7 @@ def _insights(
         )
         insights.append(
             DashboardInsightPayload(
-                title="Fastest review entry",
+                title="Fastest first review",
                 body=(
                     f"{fastest_author.author_login} had the fastest median first review "
                     f"among authors with 20+ PRs at "
@@ -1146,7 +1233,7 @@ def _insights(
         if slowest_bucket.median_first_review_hours is not None:
             insights.append(
                 DashboardInsightPayload(
-                    title="Size penalty",
+                    title="First-review size penalty",
                     body=(
                         f"{slowest_bucket.bucket} PRs waited "
                         f"{slowest_bucket.median_first_review_hours} hours median "
@@ -1177,6 +1264,11 @@ def _author_row(
         for snapshot in snapshots
         if snapshot.first_review_hours is not None
     ]
+    approval_values = [
+        snapshot.approval_hours
+        for snapshot in snapshots
+        if snapshot.approval_hours is not None
+    ]
     merge_values = [
         snapshot.merge_hours
         for snapshot in snapshots
@@ -1198,6 +1290,7 @@ def _author_row(
             else None
         ),
         median_first_review_hours=_round(_median_or_none(first_review_values)),
+        median_approval_hours=_round(_median_or_none(approval_values)),
         median_merge_hours=_round(_median_or_none(merge_values)),
         median_changed_lines=_round(
             _median_or_none([snapshot.changed_lines for snapshot in snapshots])
@@ -1221,6 +1314,11 @@ def _repository_row(
         for snapshot in snapshots
         if snapshot.first_review_hours is not None
     ]
+    approval_values = [
+        snapshot.approval_hours
+        for snapshot in snapshots
+        if snapshot.approval_hours is not None
+    ]
     merge_values = [
         snapshot.merge_hours
         for snapshot in snapshots
@@ -1240,6 +1338,7 @@ def _repository_row(
             else None
         ),
         median_first_review_hours=_round(_median_or_none(first_review_values)),
+        median_approval_hours=_round(_median_or_none(approval_values)),
         median_merge_hours=_round(_median_or_none(merge_values)),
         share_of_prs_pct=_round(
             (len(snapshots) / total_pull_requests * 100)
@@ -1276,6 +1375,7 @@ def _snapshot_row(snapshot: PullRequestSnapshot) -> DashboardPullRequestPayload:
         comment_review_count=snapshot.comment_review_count,
         reviewer_count=snapshot.reviewer_count,
         first_review_hours=snapshot.first_review_hours,
+        approval_hours=snapshot.approval_hours,
         merge_hours=snapshot.merge_hours,
         close_hours=snapshot.close_hours,
         review_rounds=snapshot.review_rounds,

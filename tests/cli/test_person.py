@@ -1098,6 +1098,10 @@ class TestPersonCommand:
             == (payload["summary"]["median_first_review_hours"])
         )
         assert (
+            alice_detail["summary"]["median_approval_hours"]
+            == (payload["summary"]["median_approval_hours"])
+        )
+        assert (
             alice_detail["summary"]["median_merge_hours"]
             == (payload["summary"]["median_merge_hours"])
         )
@@ -1121,6 +1125,10 @@ class TestPersonCommand:
         assert (
             alice_month["median_first_review_hours"]
             == (person_month["median_first_review_hours"])
+        )
+        assert (
+            alice_month["median_approval_hours"]
+            == (person_month["median_approval_hours"])
         )
 
     def test_writes_person_html_with_progressive_tables(

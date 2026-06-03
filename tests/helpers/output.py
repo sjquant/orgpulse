@@ -175,6 +175,7 @@ def _manual_pull_request(
     first_review_hours: float | None,
     merge_hours: float | None,
     size_bucket: str,
+    approval_hours: float | None = None,
 ) -> dict[str, object]:
     """Build a normalized manual dashboard pull request payload for tests."""
     closed_at = merged_at
@@ -200,6 +201,7 @@ def _manual_pull_request(
         "comment_review_count": 0,
         "reviewer_count": 1,
         "first_review_hours": first_review_hours,
+        "approval_hours": approval_hours,
         "merge_hours": merge_hours,
         "close_hours": merge_hours,
         "review_rounds": 1,

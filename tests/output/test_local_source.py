@@ -267,10 +267,91 @@ class TestManualDashboardLocalSource:
         assert payload.overview.top_author == "alice"
         assert payload.overview.top_repository == "acme/api"
         assert payload.overview.median_first_review_hours == 1.5
+        assert payload.overview.median_approval_hours == 1.5
+        assert payload.authors[0].median_approval_hours == 1.0
+        assert payload.repositories[0].median_approval_hours == 1.0
+        assert payload.pull_requests[1].approval_hours == 2.0
         assert [row.repository_full_name for row in payload.pull_requests] == [
             "acme/api",
             "acme/web",
         ]
+
+    def test_counts_dashboard_approval_time_only_for_final_external_approval(
+        self,
+        tmp_path,
+    ) -> None:
+        """Ignore self reviews and external approvals superseded by later changes-requested decisions."""
+        # Given
+        source_output_dir = tmp_path
+        raw_root_dir = source_output_dir / "raw" / "month" / "created_at"
+        _write_manual_dashboard_source_period(
+            period_dir=raw_root_dir / "2026-03",
+            pull_request_rows=[
+                _manual_dashboard_pull_request_row(
+                    period_key="2026-03",
+                    repository_full_name="acme/api",
+                    pull_request_number=1,
+                    author_login="alice",
+                    created_at="2026-03-20T09:00:00+00:00",
+                    updated_at="2026-03-20T12:00:00+00:00",
+                    closed_at="2026-03-20T12:00:00+00:00",
+                    merged_at="2026-03-20T12:00:00+00:00",
+                    additions=30,
+                    deletions=10,
+                    changed_files=3,
+                    commits=2,
+                ),
+            ],
+            review_rows=[
+                _manual_dashboard_review_row(
+                    period_key="2026-03",
+                    repository_full_name="acme/api",
+                    pull_request_number=1,
+                    review_id=101,
+                    author_login="reviewer-1",
+                    submitted_at="2026-03-20T10:00:00+00:00",
+                ),
+                _manual_dashboard_review_row(
+                    period_key="2026-03",
+                    repository_full_name="acme/api",
+                    pull_request_number=1,
+                    review_id=102,
+                    author_login="alice",
+                    submitted_at="2026-03-20T11:00:00+00:00",
+                ),
+                _manual_dashboard_review_row(
+                    period_key="2026-03",
+                    repository_full_name="acme/api",
+                    pull_request_number=1,
+                    review_id=103,
+                    author_login="reviewer-2",
+                    submitted_at="2026-03-20T12:00:00+00:00",
+                    state="CHANGES_REQUESTED",
+                ),
+            ],
+            timeline_rows=[],
+        )
+        _write_manual_dashboard_source_manifest(
+            source_output_dir=source_output_dir,
+            refreshed_period_keys=("2026-03",),
+            locked_period_keys=(),
+            as_of="2026-03-31",
+        )
+
+        # When
+        payload = build_dashboard_payload_from_local_outputs(
+            org="acme",
+            since=date.fromisoformat("2026-03-01"),
+            until=date.fromisoformat("2026-03-31"),
+            source_output_dir=source_output_dir,
+        )
+
+        # Then
+        assert payload.pull_requests[0].approval_hours is None
+        assert payload.overview.median_approval_hours is None
+        assert payload.authors[0].median_approval_hours is None
+        assert payload.reviewers[0].reviewer_login == "reviewer-1"
+        assert payload.reviewers[1].reviewer_login == "reviewer-2"
 
     def test_builds_reviewer_monthly_rates_and_reviewed_lines_from_local_outputs(
         self,

@@ -41,7 +41,14 @@ class TestPersonCommand:
                         review_factory(
                             review_id=101,
                             author_login="bob",
+                            state="COMMENTED",
                             submitted_at=datetime.fromisoformat("2026-04-03T09:00:00"),
+                        ),
+                        review_factory(
+                            review_id=103,
+                            author_login="bob",
+                            state="APPROVED",
+                            submitted_at=datetime.fromisoformat("2026-04-04T12:00:00"),
                         ),
                     ),
                 ),
@@ -119,13 +126,14 @@ class TestPersonCommand:
             "authored_pull_request_count": 1,
             "changed_lines_total": 25,
             "commits_total": 3,
+            "median_approval_hours": 51.0,
             "median_first_review_hours": 24.0,
             "median_merge_hours": 51.0,
             "merge_rate_pct": 100.0,
             "merged_pull_request_count": 1,
             "open_pull_request_count": 0,
             "review_coverage_pct": 100.0,
-            "reviews_received": 1,
+            "reviews_received": 2,
         }
         assert payload["reviewer_summary"] == {
             "approvals": 0,
@@ -151,6 +159,7 @@ class TestPersonCommand:
                 "is_open": True,
                 "is_partial": True,
                 "label": "open month",
+                "median_approval_hours": 51.0,
                 "merged_pull_request_count": 1,
                 "observed_through_date": "2026-04-30",
                 "open_month": True,
@@ -162,7 +171,7 @@ class TestPersonCommand:
                 "pull_requests_reviewed": 1,
                 "reviewed_lines": 10,
                 "review_submissions_given": 1,
-                "reviews_received": 1,
+                "reviews_received": 2,
                 "status": "open",
             }
         ]
@@ -260,6 +269,7 @@ class TestPersonCommand:
                 "is_open": "False",
                 "is_partial": "False",
                 "label": "closed month",
+                "median_approval_hours": "",
                 "merged_pull_request_count": "0",
                 "observed_through_date": "2026-04-30",
                 "open_month": "False",
@@ -577,7 +587,7 @@ class TestPersonCommand:
         payload = json.loads(output_file.read_text(encoding="utf-8"))
         assert payload["summary"]["authored_pull_request_count"] == 1
         assert payload["summary"]["changed_lines_total"] == 15
-        assert payload["reviewer_summary"]["review_submissions"] == 1
+        assert payload["reviewer_summary"]["review_submissions"] == 0
         assert payload["repository_rows"] == [
             {
                 "authored_pull_request_count": 1,
@@ -585,11 +595,11 @@ class TestPersonCommand:
                 "commits_total": 1,
                 "merged_pull_request_count": 0,
                 "open_pull_request_count": 1,
-                "pull_requests_reviewed": 1,
-                "reviewed_lines": 15,
+                "pull_requests_reviewed": 0,
+                "reviewed_lines": 0,
                 "repository_full_name": "acme/api",
-                "review_submissions_given": 1,
-                "reviews_received": 1,
+                "review_submissions_given": 0,
+                "reviews_received": 0,
             }
         ]
 
@@ -679,7 +689,8 @@ class TestPersonCommand:
         assert markdown_result.exit_code == 0
         assert "# orgpulse person metrics: alice" in markdown_result.stdout
         assert (
-            "| 2026-04 | 1 | 0 | 1 | 10 | 1 | 0 | 0 | 0 | 0 |" in markdown_result.stdout
+            "| 2026-04 | 1 | 0 | 1 | 10 | 1 | 0 | - | 0 | 0 | 0 |"
+            in markdown_result.stdout
         )
         assert html_result.exit_code == 0
         assert "<title>orgpulse person metrics: alice</title>" in html_result.stdout
@@ -694,6 +705,7 @@ class TestPersonCommand:
         assert (
             'data-person-trend-metric="review_submissions_given"' in html_result.stdout
         )
+        assert 'data-person-trend-metric="pull_requests_reviewed"' in html_result.stdout
         assert 'data-person-trend-metric="reviewed_lines"' in html_result.stdout
         assert 'data-person-trend-metric="changed_lines_total"' in html_result.stdout
         assert 'data-person-trend-metric="commits_total"' in html_result.stdout
@@ -730,8 +742,11 @@ class TestPersonCommand:
         )
         assert '<a href="#charts">Charts</a>' in html_result.stdout
         assert '<a href="#periods">Periods</a>' in html_result.stdout
+        assert '<a href="#cadences">Weekly / Monthly</a>' in html_result.stdout
         assert '<a href="#repositories">Repositories</a>' in html_result.stdout
         assert '<a href="#methodology">Methodology</a>' in html_result.stdout
+        assert "<h3>Weekly report</h3>" in html_result.stdout
+        assert "<h3>Monthly report</h3>" in html_result.stdout
         assert str(tmp_path) not in html_result.stdout
 
     def test_writes_person_html_with_progressive_tables(

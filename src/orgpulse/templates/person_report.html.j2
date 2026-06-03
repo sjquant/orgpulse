@@ -97,11 +97,30 @@
       justify-content: flex-end;
     }
 
+    .person-report .cadence-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 16px;
+    }
+
+    .person-report .cadence-panel {
+      display: grid;
+      gap: 12px;
+      min-width: 0;
+    }
+
+    .person-report .cadence-panel h3 {
+      margin: 0;
+      font-family: var(--font-display);
+      font-size: 1rem;
+    }
+
     @media (max-width: 1180px) {
       .person-report .stats-grid,
       .person-report .repository-focus-grid,
       .person-report .metric-split,
-      .person-report .person-chart-toolbar {
+      .person-report .person-chart-toolbar,
+      .person-report .cadence-grid {
         grid-template-columns: 1fr;
       }
 
@@ -194,9 +213,9 @@
         <div class="stat-subvalue">{{ summary.reviews_received | intfmt }} review submissions received</div>
       </article>
       <article class="stat-card">
-        <span class="stat-label">Reviewer activity</span>
-        <div class="stat-value">{{ reviewer_summary.review_submissions | intfmt }}</div>
-        <div class="stat-subvalue">{{ reviewer_summary.pull_requests_reviewed_per_month | numfmt }} PRs reviewed / month</div>
+        <span class="stat-label">Reviewed PRs</span>
+        <div class="stat-value">{{ reviewer_summary.pull_requests_reviewed | intfmt }}</div>
+        <div class="stat-subvalue">{{ reviewer_summary.review_submissions | intfmt }} review submissions / {{ reviewer_summary.pull_requests_reviewed_per_month | numfmt }} PRs per month</div>
       </article>
     </section>
 
@@ -207,9 +226,9 @@
         <span>{{ summary.commits_total | intfmt }} commits across authored PRs</span>
       </article>
       <article class="summary-card panel">
-        <span class="summary-label">First review speed</span>
-        <strong>{{ summary.median_first_review_hours | duration }}</strong>
-        <span>median time to first review on authored PRs</span>
+        <span class="summary-label">Approval speed</span>
+        <strong>{{ summary.median_approval_hours | duration }}</strong>
+        <span>median time to final approval on authored PRs</span>
       </article>
       <article class="summary-card panel">
         <span class="summary-label">Review decisions</span>
@@ -226,6 +245,7 @@
     <nav class="section-nav" aria-label="Report sections">
       <a href="#charts">Charts</a>
       <a href="#periods">Periods</a>
+      <a href="#cadences">Weekly / Monthly</a>
       <a href="#repositories">Repositories</a>
       <a href="#methodology">Methodology</a>
     </nav>
@@ -243,9 +263,11 @@
           <div class="tab-strip" id="person-trend-metric-tabs" role="tablist" aria-label="Trend metric">
             <button type="button" class="tab-button active" data-person-trend-metric="authored_pull_request_count" aria-selected="true">Authored PRs</button>
             <button type="button" class="tab-button" data-person-trend-metric="review_submissions_given" aria-selected="false">Reviews given</button>
+            <button type="button" class="tab-button" data-person-trend-metric="pull_requests_reviewed" aria-selected="false">PRs reviewed</button>
             <button type="button" class="tab-button" data-person-trend-metric="reviewed_lines" aria-selected="false">Reviewed lines</button>
             <button type="button" class="tab-button" data-person-trend-metric="median_merge_hours" aria-selected="false">Merge time</button>
             <button type="button" class="tab-button" data-person-trend-metric="median_first_review_hours" aria-selected="false">First review</button>
+            <button type="button" class="tab-button" data-person-trend-metric="median_approval_hours" aria-selected="false">Approval</button>
             <button type="button" class="tab-button" data-person-trend-metric="changed_lines_total" aria-selected="false">Changed lines</button>
             <button type="button" class="tab-button" data-person-trend-metric="commits_total" aria-selected="false">Commits</button>
           </div>
@@ -271,8 +293,8 @@
         <div class="table-heading">
           <div>
             <p class="section-kicker">Period Tracking</p>
-            <h2>{{ period_total_count | intfmt }} periods</h2>
-            <p class="section-copy">Each row combines authored pull request flow with review-given activity for the same reporting period.</p>
+            <h2>{{ period_total_count | intfmt }} {{ result.grain.value }} periods</h2>
+            <p class="section-copy">This table follows the selected extract period. Weekly and monthly tables are separated below.</p>
           </div>
           <span class="period-state-pill{% if period_status_label.startswith("open") %} open{% elif period_status_label.startswith("partial") %} partial{% endif %}">
             {{ period_status_label }}
@@ -292,6 +314,7 @@
                 <th class="num">Changed Lines</th>
                 <th class="num">Commits</th>
                 <th class="num">Reviews Received</th>
+                <th class="num">Approval Time</th>
                 <th class="num">Reviews Given</th>
                 <th class="num">PRs Reviewed</th>
                 <th class="num">Reviewed Lines</th>
@@ -312,6 +335,7 @@
                 <td class="num" data-label="Changed Lines">{{ row.changed_lines_total | intfmt }}</td>
                 <td class="num" data-label="Commits">{{ row.commits_total | intfmt }}</td>
                 <td class="num" data-label="Reviews Received">{{ row.reviews_received | intfmt }}</td>
+                <td class="num" data-label="Approval Time">{{ row.median_approval_hours | duration }}</td>
                 <td class="num" data-label="Reviews Given">{{ row.review_submissions_given | intfmt }}</td>
                 <td class="num" data-label="PRs Reviewed">{{ row.pull_requests_reviewed | intfmt }}</td>
                 <td class="num" data-label="Reviewed Lines">{{ row.reviewed_lines | intfmt }}</td>
@@ -334,6 +358,7 @@
                 <td class="num" data-label="Changed Lines">{{ row.changed_lines_total | intfmt }}</td>
                 <td class="num" data-label="Commits">{{ row.commits_total | intfmt }}</td>
                 <td class="num" data-label="Reviews Received">{{ row.reviews_received | intfmt }}</td>
+                <td class="num" data-label="Approval Time">{{ row.median_approval_hours | duration }}</td>
                 <td class="num" data-label="Reviews Given">{{ row.review_submissions_given | intfmt }}</td>
                 <td class="num" data-label="PRs Reviewed">{{ row.pull_requests_reviewed | intfmt }}</td>
                 <td class="num" data-label="Reviewed Lines">{{ row.reviewed_lines | intfmt }}</td>
@@ -350,6 +375,84 @@
           </button>
         </div>
         {% endif %}
+      </section>
+
+      <section id="cadences" class="panel section-panel">
+        <div class="table-heading">
+          <div>
+            <p class="section-kicker">Cadence Reports</p>
+            <h2>Weekly and monthly reports</h2>
+            <p class="section-copy">Both cadences are shown in HTML so review and author movement can be compared without rerunning the extract.</p>
+          </div>
+        </div>
+        <div class="cadence-grid">
+          <article class="cadence-panel">
+            <h3>Weekly report</h3>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Week</th>
+                    <th>State</th>
+                    <th class="num">Authored PRs</th>
+                    <th class="num">Reviews Given</th>
+                    <th class="num">PRs Reviewed</th>
+                    <th class="num">Approval Time</th>
+                    <th class="num">Reviewed Lines</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for row in result.weekly_period_rows | reverse %}
+                  <tr>
+                    <td data-label="Week">{{ row.period_key }}</td>
+                    <td data-label="State">
+                      <span class="period-state-pill{% if row.is_open or row.is_partial %} open{% endif %}">{{ row.label }}</span>
+                    </td>
+                    <td class="num" data-label="Authored PRs">{{ row.authored_pull_request_count | intfmt }}</td>
+                    <td class="num" data-label="Reviews Given">{{ row.review_submissions_given | intfmt }}</td>
+                    <td class="num" data-label="PRs Reviewed">{{ row.pull_requests_reviewed | intfmt }}</td>
+                    <td class="num" data-label="Approval Time">{{ row.median_approval_hours | duration }}</td>
+                    <td class="num" data-label="Reviewed Lines">{{ row.reviewed_lines | intfmt }}</td>
+                  </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+          </article>
+          <article class="cadence-panel">
+            <h3>Monthly report</h3>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Month</th>
+                    <th>State</th>
+                    <th class="num">Authored PRs</th>
+                    <th class="num">Reviews Given</th>
+                    <th class="num">PRs Reviewed</th>
+                    <th class="num">Approval Time</th>
+                    <th class="num">Reviewed Lines</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for row in result.monthly_period_rows | reverse %}
+                  <tr>
+                    <td data-label="Month">{{ row.period_key }}</td>
+                    <td data-label="State">
+                      <span class="period-state-pill{% if row.is_open or row.is_partial %} open{% endif %}">{{ row.label }}</span>
+                    </td>
+                    <td class="num" data-label="Authored PRs">{{ row.authored_pull_request_count | intfmt }}</td>
+                    <td class="num" data-label="Reviews Given">{{ row.review_submissions_given | intfmt }}</td>
+                    <td class="num" data-label="PRs Reviewed">{{ row.pull_requests_reviewed | intfmt }}</td>
+                    <td class="num" data-label="Approval Time">{{ row.median_approval_hours | duration }}</td>
+                    <td class="num" data-label="Reviewed Lines">{{ row.reviewed_lines | intfmt }}</td>
+                  </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+          </article>
+        </div>
       </section>
 
       <section id="repositories" class="panel section-panel">
@@ -378,6 +481,7 @@
                 <th class="num">Merged</th>
                 <th class="num">Open</th>
                 <th class="num">Median Merge</th>
+                <th class="num">Approval Time</th>
                 <th class="num">Median First Review</th>
                 <th class="num">Changed Lines</th>
                 <th class="num">Reviews Given</th>
@@ -393,6 +497,7 @@
                 <td class="num" data-label="Merged">{{ row.merged_pull_request_count | intfmt }}</td>
                 <td class="num" data-label="Open">{{ row.open_pull_request_count | intfmt }}</td>
                 <td class="num" data-label="Median Merge">{{ row.median_merge_hours | duration }}</td>
+                <td class="num" data-label="Approval Time">{{ row.median_approval_hours | duration }}</td>
                 <td class="num" data-label="Median First Review">{{ row.median_first_review_hours | duration }}</td>
                 <td class="num" data-label="Changed Lines">{{ row.changed_lines_total | intfmt }}</td>
                 <td class="num" data-label="Reviews Given">{{ row.review_submissions_given | intfmt }}</td>
@@ -410,6 +515,7 @@
                 <td class="num" data-label="Merged">{{ row.merged_pull_request_count | intfmt }}</td>
                 <td class="num" data-label="Open">{{ row.open_pull_request_count | intfmt }}</td>
                 <td class="num" data-label="Median Merge">{{ row.median_merge_hours | duration }}</td>
+                <td class="num" data-label="Approval Time">{{ row.median_approval_hours | duration }}</td>
                 <td class="num" data-label="Median First Review">{{ row.median_first_review_hours | duration }}</td>
                 <td class="num" data-label="Changed Lines">{{ row.changed_lines_total | intfmt }}</td>
                 <td class="num" data-label="Reviews Given">{{ row.review_submissions_given | intfmt }}</td>
@@ -440,7 +546,11 @@
           </article>
           <article class="support-card">
             <strong>Review work</strong>
-            <span>Reviews given are filtered and grouped by review submission time, even if the PR was created earlier.</span>
+            <span>Reviews given exclude reviews on the person's own PRs and are grouped by review submission time.</span>
+          </article>
+          <article class="support-card">
+            <strong>Approval speed</strong>
+            <span>Approval speed uses the final external approval on each authored PR.</span>
           </article>
           <article class="support-card">
             <strong>Source</strong>
@@ -708,6 +818,7 @@
           readoutCard(metricLabel(metric), formatMetricValue(selectedRow[metric], metric)),
           readoutCard("Authored PRs", formatMetricValue(selectedRow.authored_pull_request_count, "authored_pull_request_count")),
           readoutCard("Reviews given", formatMetricValue(selectedRow.review_submissions_given, "review_submissions_given")),
+          readoutCard("PRs reviewed", formatMetricValue(selectedRow.pull_requests_reviewed, "pull_requests_reviewed")),
           readoutCard("Reviewed lines", formatMetricValue(selectedRow.reviewed_lines, "reviewed_lines")),
           readoutCard("State", periodStatusText(selectedRow)),
         ].join("");
@@ -882,9 +993,11 @@
         return {
           authored_pull_request_count: "Authored PRs",
           review_submissions_given: "Reviews given",
+          pull_requests_reviewed: "PRs reviewed",
           reviewed_lines: "Reviewed lines",
           median_merge_hours: "Median merge",
           median_first_review_hours: "Median first review",
+          median_approval_hours: "Median approval",
           changed_lines_total: "Changed lines",
           commits_total: "Commits",
         }[metric] || metric;
@@ -895,7 +1008,7 @@
         if (number === null) {
           return "-";
         }
-        if (metric === "median_merge_hours" || metric === "median_first_review_hours") {
+        if (metric === "median_merge_hours" || metric === "median_first_review_hours" || metric === "median_approval_hours") {
           return formatDuration(number);
         }
         return new Intl.NumberFormat("en-US", {

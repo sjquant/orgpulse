@@ -288,6 +288,7 @@ class TestManualDashboardPayload:
                 "review_submissions": 2,
                 "average_reviews_per_pr": 1.0,
                 "median_first_review_hours": 1.5,
+                "median_approval_hours": None,
                 "median_merge_hours": 24.0,
                 "share_of_prs_pct": 66.67,
             },
@@ -301,6 +302,7 @@ class TestManualDashboardPayload:
                 "review_submissions": 1,
                 "average_reviews_per_pr": 1.0,
                 "median_first_review_hours": None,
+                "median_approval_hours": None,
                 "median_merge_hours": 24.0,
                 "share_of_prs_pct": 33.33,
             },
@@ -315,6 +317,7 @@ class TestManualDashboardPayload:
             "pull_requests": 1,
             "changed_lines": 1000,
             "median_first_review_hours": 3.0,
+            "median_approval_hours": None,
             "median_merge_hours": 24.0,
             "average_reviews_per_pr": 1.0,
         }
@@ -428,6 +431,7 @@ class TestManualDashboardPayload:
                 "changed_lines_per_active_author": 20.0,
                 "average_reviews_per_pr": 1.0,
                 "median_first_review_hours": 1.5,
+                "median_approval_hours": None,
                 "median_merge_hours": 24.0,
                 "pull_request_delta": None,
                 "changed_lines_delta": None,
@@ -454,6 +458,7 @@ class TestManualDashboardPayload:
                 "changed_lines_per_active_author": 20.0,
                 "average_reviews_per_pr": 1.0,
                 "median_first_review_hours": 3.0,
+                "median_approval_hours": None,
                 "median_merge_hours": 24.0,
                 "pull_request_delta": -1,
                 "changed_lines_delta": -20,
@@ -464,6 +469,85 @@ class TestManualDashboardPayload:
         assert "avg active authors / month" in html
         assert "normalized changed lines per active author" in html
         assert 'data-label="Lines / active author"' in html
+
+    def test_surfaces_approval_timing_across_team_dashboard_sections(self) -> None:
+        """Expose final approval timing in team overview, trends, and person detail HTML."""
+        # Given
+        payload = {
+            "overview": {
+                "org": "acme",
+                "generated_at": "2026-04-24T00:00:00+00:00",
+                "since": "2026-04-01",
+                "until": "2026-04-30",
+                "time_anchor": "created_at",
+                "top_repository": "acme/api",
+                "top_author": "alice",
+                "unique_reviewers": 1,
+            },
+            "reviewers": [
+                {
+                    "reviewer_login": "reviewer-1",
+                    "review_submissions": 2,
+                    "pull_requests_reviewed": 2,
+                    "approvals": 2,
+                    "changes_requested": 0,
+                    "comments": 0,
+                    "authors_supported": 1,
+                },
+            ],
+            "pull_requests": [
+                _manual_pull_request(
+                    repository_full_name="acme/api",
+                    pull_request_number=1,
+                    author_login="alice",
+                    created_at="2026-04-01T09:00:00+00:00",
+                    merged_at="2026-04-02T09:00:00+00:00",
+                    changed_lines=20,
+                    additions=15,
+                    deletions=5,
+                    first_review_hours=1.0,
+                    approval_hours=5.0,
+                    merge_hours=24.0,
+                    size_bucket="XS",
+                ),
+                _manual_pull_request(
+                    repository_full_name="acme/api",
+                    pull_request_number=2,
+                    author_login="alice",
+                    created_at="2026-04-03T09:00:00+00:00",
+                    merged_at="2026-04-04T09:00:00+00:00",
+                    changed_lines=40,
+                    additions=30,
+                    deletions=10,
+                    first_review_hours=2.0,
+                    approval_hours=7.0,
+                    merge_hours=24.0,
+                    size_bucket="S",
+                ),
+            ],
+        }
+
+        # When
+        prepared = prepare_dashboard_payload(payload)
+        html = render_dashboard_html(prepared)
+        author_details = json.loads(prepared.author_details_json)
+
+        # Then
+        assert prepared.overview["median_approval_hours"] == 6.0
+        assert prepared.repositories[0]["median_approval_hours"] == 6.0
+        assert prepared.authors[0]["median_approval_hours"] == 6.0
+        assert prepared.weekly_trends[0]["median_approval_hours"] == 6.0
+        assert prepared.monthly_trends[0]["median_approval_hours"] == 6.0
+        assert author_details["alice"]["summary"]["median_approval_hours"] == 6.0
+        assert (
+            author_details["alice"]["monthly_trends"][0]["median_approval_hours"]
+            == 6.0
+        )
+        assert "Median approval time" in html
+        assert 'data-metric="median_approval_hours"' in html
+        assert 'data-author-metric="median_approval_hours"' in html
+        assert 'data-label="Median approval"' in html
+        assert 'data-label="Median first review"' in html
 
     def test_tolerates_additive_and_stale_source_sections_when_preparing_payload(
         self,

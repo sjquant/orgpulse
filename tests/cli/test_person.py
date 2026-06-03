@@ -41,7 +41,20 @@ class TestPersonCommand:
                         review_factory(
                             review_id=101,
                             author_login="bob",
+                            state="COMMENTED",
                             submitted_at=datetime.fromisoformat("2026-04-03T09:00:00"),
+                        ),
+                        review_factory(
+                            review_id=104,
+                            author_login="bob",
+                            state="APPROVED",
+                            submitted_at=datetime.fromisoformat("2026-04-03T12:00:00"),
+                        ),
+                        review_factory(
+                            review_id=103,
+                            author_login="bob",
+                            state="APPROVED",
+                            submitted_at=datetime.fromisoformat("2026-04-04T12:00:00"),
                         ),
                     ),
                 ),
@@ -119,13 +132,14 @@ class TestPersonCommand:
             "authored_pull_request_count": 1,
             "changed_lines_total": 25,
             "commits_total": 3,
+            "median_approval_hours": 51.0,
             "median_first_review_hours": 24.0,
             "median_merge_hours": 51.0,
             "merge_rate_pct": 100.0,
             "merged_pull_request_count": 1,
             "open_pull_request_count": 0,
             "review_coverage_pct": 100.0,
-            "reviews_received": 1,
+            "reviews_received": 3,
         }
         assert payload["reviewer_summary"] == {
             "approvals": 0,
@@ -151,6 +165,7 @@ class TestPersonCommand:
                 "is_open": False,
                 "is_partial": False,
                 "label": "closed month",
+                "median_approval_hours": 51.0,
                 "median_first_review_hours": 24.0,
                 "median_merge_hours": 51.0,
                 "merged_pull_request_count": 1,
@@ -164,10 +179,210 @@ class TestPersonCommand:
                 "pull_requests_reviewed": 1,
                 "reviewed_lines": 10,
                 "review_submissions_given": 1,
-                "reviews_received": 1,
+                "reviews_received": 3,
                 "status": "closed",
             }
         ]
+
+    def test_counts_approval_time_only_when_final_external_decision_is_approved(
+        self,
+        runner: CliRunner,
+        github_auth_service: None,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path,
+        pull_request_factory,
+        review_factory,
+    ) -> None:
+        """Leave approval timing empty when a later external decision requests changes."""
+        # Given
+        collection = PullRequestCollection(
+            window=CollectionWindow(
+                scope=RunScope.FULL_HISTORY,
+                start_date=None,
+                end_date=datetime.fromisoformat("2026-04-30T00:00:00").date(),
+            ),
+            pull_requests=(
+                pull_request_factory(
+                    repository_full_name="acme/api",
+                    number=13,
+                    title="Alice approval reversed",
+                    state="closed",
+                    author_login="alice",
+                    created_at=datetime.fromisoformat("2026-04-02T09:00:00"),
+                    updated_at=datetime.fromisoformat("2026-04-03T12:00:00"),
+                    closed_at=datetime.fromisoformat("2026-04-03T12:00:00"),
+                    merged=False,
+                    reviews=(
+                        review_factory(
+                            review_id=110,
+                            author_login="bob",
+                            state="APPROVED",
+                            submitted_at=datetime.fromisoformat("2026-04-03T09:00:00"),
+                        ),
+                        review_factory(
+                            review_id=111,
+                            author_login="alice",
+                            state="APPROVED",
+                            submitted_at=datetime.fromisoformat("2026-04-03T10:00:00"),
+                        ),
+                        review_factory(
+                            review_id=112,
+                            author_login="bob",
+                            state="CHANGES_REQUESTED",
+                            submitted_at=datetime.fromisoformat("2026-04-03T11:00:00"),
+                        ),
+                    ),
+                ),
+            ),
+            failures=(),
+        )
+        _configure_production_cli_runtime(
+            monkeypatch,
+            collection=collection,
+        )
+        run_result = runner.invoke(
+            app,
+            [
+                "run",
+                "--org",
+                "acme",
+                "--mode",
+                "full",
+                "--as-of",
+                "2026-04-30",
+                "--output-dir",
+                str(tmp_path),
+            ],
+        )
+        assert run_result.exit_code == 0
+
+        # When
+        result = runner.invoke(
+            app,
+            [
+                "person",
+                "--org",
+                "acme",
+                "--login",
+                "alice",
+                "--grain",
+                "month",
+                "--since",
+                "2026-04-01",
+                "--until",
+                "2026-04-30",
+                "--output-dir",
+                str(tmp_path),
+                "--format",
+                "json",
+            ],
+        )
+
+        # Then
+        assert result.exit_code == 0
+        payload = json.loads(result.stdout)
+        assert payload["summary"]["median_approval_hours"] is None
+        assert payload["period_rows"][0]["median_approval_hours"] is None
+        assert payload["summary"]["reviews_received"] == 3
+
+    def test_counts_approval_time_from_later_review_request_boundary(
+        self,
+        runner: CliRunner,
+        github_auth_service: None,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path,
+        pull_request_factory,
+        review_factory,
+        timeline_event_factory,
+    ) -> None:
+        """Measure approval timing from the later ready or review-request boundary."""
+        # Given
+        collection = PullRequestCollection(
+            window=CollectionWindow(
+                scope=RunScope.FULL_HISTORY,
+                start_date=None,
+                end_date=datetime.fromisoformat("2026-04-30T00:00:00").date(),
+            ),
+            pull_requests=(
+                pull_request_factory(
+                    repository_full_name="acme/api",
+                    number=14,
+                    title="Alice requested approval",
+                    state="closed",
+                    author_login="alice",
+                    created_at=datetime.fromisoformat("2026-04-02T09:00:00"),
+                    updated_at=datetime.fromisoformat("2026-04-02T14:00:00"),
+                    closed_at=datetime.fromisoformat("2026-04-02T14:00:00"),
+                    merged=True,
+                    merged_at=datetime.fromisoformat("2026-04-02T14:00:00"),
+                    reviews=(
+                        review_factory(
+                            review_id=140,
+                            author_login="bob",
+                            state="APPROVED",
+                            submitted_at=datetime.fromisoformat("2026-04-02T14:00:00"),
+                        ),
+                    ),
+                    timeline_events=(
+                        timeline_event_factory(
+                            event_id=140,
+                            event="review_requested",
+                            created_at=datetime.fromisoformat("2026-04-02T11:00:00"),
+                            requested_reviewer_login="bob",
+                        ),
+                    ),
+                ),
+            ),
+            failures=(),
+        )
+        _configure_production_cli_runtime(
+            monkeypatch,
+            collection=collection,
+        )
+        run_result = runner.invoke(
+            app,
+            [
+                "run",
+                "--org",
+                "acme",
+                "--mode",
+                "full",
+                "--as-of",
+                "2026-04-30",
+                "--output-dir",
+                str(tmp_path),
+            ],
+        )
+        assert run_result.exit_code == 0
+
+        # When
+        result = runner.invoke(
+            app,
+            [
+                "person",
+                "--org",
+                "acme",
+                "--login",
+                "alice",
+                "--grain",
+                "month",
+                "--since",
+                "2026-04-01",
+                "--until",
+                "2026-04-30",
+                "--output-dir",
+                str(tmp_path),
+                "--format",
+                "json",
+            ],
+        )
+
+        # Then
+        assert result.exit_code == 0
+        payload = json.loads(result.stdout)
+        assert payload["summary"]["median_approval_hours"] == 3.0
+        assert payload["period_rows"][0]["median_approval_hours"] == 3.0
+        assert payload["repository_rows"][0]["median_approval_hours"] == 3.0
 
     def test_counts_reviews_by_submission_date_for_csv(
         self,
@@ -262,6 +477,7 @@ class TestPersonCommand:
                 "is_open": "False",
                 "is_partial": "False",
                 "label": "closed month",
+                "median_approval_hours": "",
                 "median_first_review_hours": "",
                 "median_merge_hours": "",
                 "merged_pull_request_count": "0",
@@ -581,20 +797,21 @@ class TestPersonCommand:
         payload = json.loads(output_file.read_text(encoding="utf-8"))
         assert payload["summary"]["authored_pull_request_count"] == 1
         assert payload["summary"]["changed_lines_total"] == 15
-        assert payload["reviewer_summary"]["review_submissions"] == 1
+        assert payload["reviewer_summary"]["review_submissions"] == 0
         assert payload["repository_rows"] == [
             {
                 "authored_pull_request_count": 1,
                 "changed_lines_total": 15,
                 "commits_total": 1,
+                "median_approval_hours": None,
                 "median_first_review_hours": None,
                 "median_merge_hours": None,
                 "merged_pull_request_count": 0,
                 "open_pull_request_count": 1,
-                "pull_requests_reviewed": 1,
-                "reviewed_lines": 15,
+                "pull_requests_reviewed": 0,
+                "reviewed_lines": 0,
                 "repository_full_name": "acme/api",
-                "review_submissions_given": 1,
+                "review_submissions_given": 0,
                 "reviews_received": 1,
             }
         ]
@@ -685,7 +902,12 @@ class TestPersonCommand:
         assert markdown_result.exit_code == 0
         assert "# orgpulse person metrics: alice" in markdown_result.stdout
         assert (
-            "| 2026-04 | 1 | 0 | 1 | 10 | 1 | 0 | 0 | 0 | 0 |" in markdown_result.stdout
+            "| 2026-04 | 1 | 0 | 1 | 10 | 1 | 0 | - | 0 | 0 | 0 |"
+            in markdown_result.stdout
+        )
+        assert (
+            "| acme/api | 1 | 0 | 1 | 10 | - | 0 | 0 | 0 |"
+            in markdown_result.stdout
         )
         assert html_result.exit_code == 0
         assert "<title>orgpulse person metrics: alice</title>" in html_result.stdout
@@ -700,9 +922,13 @@ class TestPersonCommand:
         assert (
             'data-person-trend-metric="review_submissions_given"' in html_result.stdout
         )
+        assert 'data-person-trend-metric="pull_requests_reviewed"' in html_result.stdout
         assert 'data-person-trend-metric="reviewed_lines"' in html_result.stdout
         assert 'data-person-trend-metric="median_merge_hours"' in html_result.stdout
-        assert 'data-person-trend-metric="median_first_review_hours"' in html_result.stdout
+        assert (
+            'data-person-trend-metric="median_first_review_hours"' in html_result.stdout
+        )
+        assert 'data-person-trend-metric="median_approval_hours"' in html_result.stdout
         assert 'data-person-trend-metric="changed_lines_total"' in html_result.stdout
         assert 'data-person-trend-metric="commits_total"' in html_result.stdout
         assert "Yellow band = open period" in html_result.stdout
@@ -739,8 +965,11 @@ class TestPersonCommand:
         )
         assert '<a href="#charts">Charts</a>' in html_result.stdout
         assert '<a href="#periods">Periods</a>' in html_result.stdout
+        assert '<a href="#cadences">Weekly / Monthly</a>' in html_result.stdout
         assert '<a href="#repositories">Repositories</a>' in html_result.stdout
         assert '<a href="#methodology">Methodology</a>' in html_result.stdout
+        assert "<h3>Weekly report</h3>" in html_result.stdout
+        assert "<h3>Monthly report</h3>" in html_result.stdout
         assert str(tmp_path) not in html_result.stdout
 
     def test_applies_distribution_percentile_to_person_latency_metrics(
@@ -776,16 +1005,12 @@ class TestPersonCommand:
                         review_factory(
                             review_id=1000,
                             author_login="alice",
-                            submitted_at=datetime.fromisoformat(
-                                "2026-01-01T00:30:00"
-                            ),
+                            submitted_at=datetime.fromisoformat("2026-01-01T00:30:00"),
                         ),
                         review_factory(
                             review_id=1005,
                             author_login="alice",
-                            submitted_at=datetime.fromisoformat(
-                                "2026-02-01T00:30:00"
-                            ),
+                            submitted_at=datetime.fromisoformat("2026-02-01T00:30:00"),
                         ),
                         review_factory(
                             review_id=1001,
@@ -946,6 +1171,7 @@ class TestPersonCommand:
         assert payload["summary"]["median_merge_hours"] == 1.5
         assert payload["period_rows"][0]["median_first_review_hours"] == 1.5
         assert payload["period_rows"][0]["median_merge_hours"] == 1.5
+        assert payload["repository_rows"][0]["median_approval_hours"] == 1.5
         assert payload["repository_rows"][0]["median_first_review_hours"] == 1.5
         assert payload["repository_rows"][0]["median_merge_hours"] == 1.5
         assert dashboard_result.exit_code == 0
@@ -963,34 +1189,51 @@ class TestPersonCommand:
         alice_detail = author_details["alice"]
         alice_month = alice_detail["monthly_trends"][0]
         person_month = payload["monthly_period_rows"][0]
-        assert alice_detail["summary"]["pull_requests"] == (
-            payload["summary"]["authored_pull_request_count"]
+        assert (
+            alice_detail["summary"]["pull_requests"]
+            == (payload["summary"]["authored_pull_request_count"])
         )
-        assert alice_detail["summary"]["changed_lines"] == (
-            payload["summary"]["changed_lines_total"]
+        assert (
+            alice_detail["summary"]["changed_lines"]
+            == (payload["summary"]["changed_lines_total"])
         )
         assert alice_detail["summary"]["commits"] == payload["summary"]["commits_total"]
-        assert alice_detail["summary"]["median_first_review_hours"] == (
-            payload["summary"]["median_first_review_hours"]
+        assert (
+            alice_detail["summary"]["median_first_review_hours"]
+            == (payload["summary"]["median_first_review_hours"])
         )
-        assert alice_detail["summary"]["median_merge_hours"] == (
-            payload["summary"]["median_merge_hours"]
+        assert (
+            alice_detail["summary"]["median_approval_hours"]
+            == (payload["summary"]["median_approval_hours"])
         )
-        assert alice_detail["summary"]["review_submissions_given"] == (
-            payload["reviewer_summary"]["review_submissions"]
+        assert (
+            alice_detail["summary"]["median_merge_hours"]
+            == (payload["summary"]["median_merge_hours"])
         )
-        assert alice_detail["summary"]["pull_requests_reviewed"] == (
-            payload["reviewer_summary"]["pull_requests_reviewed"]
+        assert (
+            alice_detail["summary"]["review_submissions_given"]
+            == (payload["reviewer_summary"]["review_submissions"])
         )
-        assert alice_detail["summary"]["reviewed_lines"] == (
-            payload["reviewer_summary"]["reviewed_lines"]
+        assert (
+            alice_detail["summary"]["pull_requests_reviewed"]
+            == (payload["reviewer_summary"]["pull_requests_reviewed"])
         )
-        assert alice_detail["summary"]["authors_supported"] == (
-            payload["reviewer_summary"]["authors_supported"]
+        assert (
+            alice_detail["summary"]["reviewed_lines"]
+            == (payload["reviewer_summary"]["reviewed_lines"])
+        )
+        assert (
+            alice_detail["summary"]["authors_supported"]
+            == (payload["reviewer_summary"]["authors_supported"])
         )
         assert alice_month["changed_lines"] == person_month["changed_lines_total"]
-        assert alice_month["median_first_review_hours"] == (
-            person_month["median_first_review_hours"]
+        assert (
+            alice_month["median_first_review_hours"]
+            == (person_month["median_first_review_hours"])
+        )
+        assert (
+            alice_month["median_approval_hours"]
+            == (person_month["median_approval_hours"])
         )
 
     def test_writes_person_html_with_progressive_tables(

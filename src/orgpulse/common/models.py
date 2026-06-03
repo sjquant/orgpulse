@@ -497,6 +497,7 @@ class DashboardOverviewPayload(BaseModel):
     total_changed_lines: int | None = None
     total_commits: int | None = None
     median_first_review_hours: float | None = None
+    median_approval_hours: float | None = None
     median_merge_hours: float | None = None
     median_close_hours: float | None = None
     average_reviews_per_pr: float | None = None
@@ -560,6 +561,7 @@ class DashboardPullRequestPayload(BaseModel):
     comment_review_count: int
     reviewer_count: int
     first_review_hours: float | None = None
+    approval_hours: float | None = None
     merge_hours: float | None = None
     close_hours: float | None = None
     review_rounds: int
@@ -600,6 +602,7 @@ class DashboardAuthorPayload(BaseModel):
     review_submissions_received: int
     average_reviews_per_pr: float | None = None
     median_first_review_hours: float | None = None
+    median_approval_hours: float | None = None
     median_merge_hours: float | None = None
     median_changed_lines: float | None = None
     share_of_prs_pct: float | None = None
@@ -619,6 +622,7 @@ class DashboardRepositoryPayload(BaseModel):
     review_submissions: int
     average_reviews_per_pr: float | None = None
     median_first_review_hours: float | None = None
+    median_approval_hours: float | None = None
     median_merge_hours: float | None = None
     share_of_prs_pct: float | None = None
 
@@ -632,6 +636,7 @@ class DashboardSizeBucketPayload(BaseModel):
     pull_requests: int
     median_changed_lines: float | None = None
     median_first_review_hours: float | None = None
+    median_approval_hours: float | None = None
     median_merge_hours: float | None = None
     average_reviews_per_pr: float | None = None
 
@@ -664,6 +669,7 @@ class DashboardReviewLatencyPointPayload(BaseModel):
 
     label: str
     median_first_review_hours: float | None = None
+    median_approval_hours: float | None = None
 
 
 class DashboardRepositoryThroughputPointPayload(BaseModel):
@@ -712,6 +718,7 @@ class DashboardTrendRowPayload(BaseModel):
     changed_lines_per_active_author: float | None = None
     average_reviews_per_pr: float | None = None
     median_first_review_hours: float | None = None
+    median_approval_hours: float | None = None
     median_merge_hours: float | None = None
     pull_request_delta: int | None = None
     changed_lines_delta: int | None = None

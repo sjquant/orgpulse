@@ -69,6 +69,7 @@ def _render_markdown(
         f"- Reviews received: {summary.reviews_received}",
         f"- Review coverage: {_markdown_number(summary.review_coverage_pct)}%",
         f"- Median first review hours: {_markdown_number(summary.median_first_review_hours)}",
+        f"- Median approval hours: {_markdown_number(summary.median_approval_hours)}",
         f"- Median merge hours: {_markdown_number(summary.median_merge_hours)}",
         "",
         "## Reviewer Activity",
@@ -86,8 +87,8 @@ def _render_markdown(
         "",
         "## Periods",
         "",
-        "| Period | Authored PRs | Merged | Open | Changed Lines | Commits | Reviews Received | Reviews Given | PRs Reviewed | Reviewed Lines |",
-        "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+        "| Period | Authored PRs | Merged | Open | Changed Lines | Commits | Reviews Received | Approval Hours | Reviews Given | PRs Reviewed | Reviewed Lines |",
+        "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
     ]
     for row in result.period_rows:
         lines.append(
@@ -99,6 +100,7 @@ def _render_markdown(
             f"{row.changed_lines_total} | "
             f"{row.commits_total} | "
             f"{row.reviews_received} | "
+            f"{_markdown_number(row.median_approval_hours)} | "
             f"{row.review_submissions_given} | "
             f"{row.pull_requests_reviewed} | "
             f"{row.reviewed_lines} |"
@@ -108,8 +110,8 @@ def _render_markdown(
             "",
             "## Repositories",
             "",
-            "| Repository | Authored PRs | Merged | Open | Changed Lines | Reviews Given | PRs Reviewed | Reviewed Lines |",
-            "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+            "| Repository | Authored PRs | Merged | Open | Changed Lines | Approval Hours | Reviews Given | PRs Reviewed | Reviewed Lines |",
+            "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
         ]
     )
     for row in result.repository_rows:
@@ -120,6 +122,7 @@ def _render_markdown(
             f"{row.merged_pull_request_count} | "
             f"{row.open_pull_request_count} | "
             f"{row.changed_lines_total} | "
+            f"{_markdown_number(row.median_approval_hours)} | "
             f"{row.review_submissions_given} | "
             f"{row.pull_requests_reviewed} | "
             f"{row.reviewed_lines} |"

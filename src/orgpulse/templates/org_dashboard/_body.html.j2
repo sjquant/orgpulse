@@ -69,9 +69,9 @@
         <div class="stat-subvalue">{{ overview.review_submissions | intfmt }} total review submissions</div>
       </article>
       <article class="stat-card">
-        <span class="stat-label">Median first review</span>
-        <div class="stat-value">{{ overview.median_first_review_hours | duration }}</div>
-        <div class="stat-subvalue">from ready/request to first review</div>
+        <span class="stat-label">Median approval time</span>
+        <div class="stat-value">{{ overview.median_approval_hours | duration }}</div>
+        <div class="stat-subvalue">from ready/request to final approval</div>
       </article>
       <article class="stat-card">
         <span class="stat-label">Median merge time</span>
@@ -125,13 +125,14 @@
       <section id="trends" class="panel section-panel chart-panel">
         <p class="section-kicker">Trend charts</p>
         <h2>Weekly and monthly movement, graphed</h2>
-        <p class="section-copy">Primary trend surface for throughput, code volume, and review speed. Dense weekly/monthly tables live in the reference section below.</p>
+        <p class="section-copy">Primary trend surface for throughput, code volume, and approval speed. Dense weekly/monthly tables live in the reference section below.</p>
         <div class="two-col">
           <div class="tab-strip" id="trend-metric-tabs">
             <button type="button" class="tab-button active" data-metric="pull_requests" aria-selected="true">PR throughput</button>
             <button type="button" class="tab-button" data-metric="pull_requests_per_active_author" aria-selected="false">PRs / active author</button>
             <button type="button" class="tab-button" data-metric="changed_lines" aria-selected="false">Changed lines</button>
             <button type="button" class="tab-button" data-metric="changed_lines_per_active_author" aria-selected="false">Lines / active author</button>
+            <button type="button" class="tab-button" data-metric="median_approval_hours" aria-selected="false">Approval time</button>
             <button type="button" class="tab-button" data-metric="median_first_review_hours" aria-selected="false">First review</button>
             <button type="button" class="tab-button" data-metric="median_merge_hours" aria-selected="false">Merge time</button>
           </div>
@@ -195,7 +196,7 @@
                 <span class="person-card-metrics">
                   <span>{{ row.pull_requests | intfmt }} PRs</span>
                   <span>{{ row.changed_lines | intfmt }} lines</span>
-                  <span>{{ row.median_first_review_hours | duration }} first review</span>
+                  <span>{{ row.median_approval_hours | duration }} approval</span>
                 </span>
               </button>
               {% endfor %}
@@ -215,7 +216,7 @@
                 <span class="person-card-metrics">
                   <span>{{ row.pull_requests | intfmt }} PRs</span>
                   <span>{{ row.changed_lines | intfmt }} lines</span>
-                  <span>{{ row.median_first_review_hours | duration }} first review</span>
+                  <span>{{ row.median_approval_hours | duration }} approval</span>
                 </span>
               </button>
               {% endfor %}
@@ -244,7 +245,8 @@
               <div class="detail-tabs" id="author-detail-metric-tabs">
                 <button type="button" class="tab-button active" data-author-metric="pull_requests" aria-selected="true">Throughput</button>
                 <button type="button" class="tab-button" data-author-metric="changed_lines" aria-selected="false">Changed lines</button>
-                <button type="button" class="tab-button" data-author-metric="median_first_review_hours" aria-selected="false">Review speed</button>
+                <button type="button" class="tab-button" data-author-metric="median_approval_hours" aria-selected="false">Approval speed</button>
+                <button type="button" class="tab-button" data-author-metric="median_first_review_hours" aria-selected="false">First review</button>
                 <button type="button" class="tab-button" data-author-metric="median_merge_hours" aria-selected="false">Merge speed</button>
               </div>
               <div class="detail-tabs" id="author-detail-grain-tabs">
@@ -361,7 +363,8 @@
                 <th class="num tablet-hide">Open</th>
                 <th class="num tablet-hide">Authors</th>
                 <th class="num tablet-hide">Reviews / PR</th>
-                <th class="num">Median first review</th>
+                <th class="num">Median approval</th>
+                <th class="num tablet-hide">Median first review</th>
               </tr>
             </thead>
             <tbody>
@@ -386,7 +389,8 @@
                 <td class="num tablet-hide" data-label="Open">{{ row.open_pull_requests | intfmt }}</td>
                 <td class="num tablet-hide" data-label="Authors">{{ row.authors | intfmt }}</td>
                 <td class="num tablet-hide" data-label="Reviews / PR">{{ row.average_reviews_per_pr | numfmt }}</td>
-                <td class="num" data-label="Median first review">{{ row.median_first_review_hours | duration }}</td>
+                <td class="num" data-label="Median approval">{{ row.median_approval_hours | duration }}</td>
+                <td class="num tablet-hide" data-label="Median first review">{{ row.median_first_review_hours | duration }}</td>
               </tr>
               {% endfor %}
             </tbody>
@@ -413,7 +417,8 @@
                 <td class="num tablet-hide" data-label="Open">{{ row.open_pull_requests | intfmt }}</td>
                 <td class="num tablet-hide" data-label="Authors">{{ row.authors | intfmt }}</td>
                 <td class="num tablet-hide" data-label="Reviews / PR">{{ row.average_reviews_per_pr | numfmt }}</td>
-                <td class="num" data-label="Median first review">{{ row.median_first_review_hours | duration }}</td>
+                <td class="num" data-label="Median approval">{{ row.median_approval_hours | duration }}</td>
+                <td class="num tablet-hide" data-label="Median first review">{{ row.median_first_review_hours | duration }}</td>
               </tr>
               {% endfor %}
             </tbody>
@@ -452,9 +457,9 @@
             <span>Open pull requests older than 72 hours at the end of the reporting window.</span>
           </article>
           <article class="summary-card panel">
-            <span class="summary-label">Median response</span>
-            <strong>{{ overview.median_first_review_hours | duration }}</strong>
-            <span>{{ overview.median_merge_hours | duration }} median merge time across the window.</span>
+            <span class="summary-label">Median approval</span>
+            <strong>{{ overview.median_approval_hours | duration }}</strong>
+            <span>{{ overview.median_first_review_hours | duration }} median first review across the window.</span>
           </article>
         </div>
         <div class="table-wrap">
@@ -465,6 +470,7 @@
               <th class="num">PRs</th>
               <th class="num">Median lines</th>
               <th class="num">Median first review</th>
+              <th class="num tablet-hide">Median approval</th>
               <th class="num">Median merge</th>
               <th class="num tablet-hide">Reviews / PR</th>
             </tr>
@@ -479,6 +485,7 @@
               <td class="num" data-label="PRs">{{ row.pull_requests | intfmt }}</td>
               <td class="num" data-label="Median lines">{{ row.median_changed_lines | numfmt }}</td>
               <td class="num" data-label="Median first review">{{ row.median_first_review_hours | duration }}</td>
+              <td class="num tablet-hide" data-label="Median approval">{{ row.median_approval_hours | duration }}</td>
               <td class="num" data-label="Median merge">{{ row.median_merge_hours | duration }}</td>
               <td class="num tablet-hide" data-label="Reviews / PR">{{ row.average_reviews_per_pr | numfmt }}</td>
             </tr>
@@ -519,7 +526,8 @@
                       <th class="num">Changed lines</th>
                       <th class="num tablet-hide">Lines / active author</th>
                       <th class="num tablet-hide">Reviews / PR</th>
-                      <th class="num">Median first review</th>
+                      <th class="num">Median approval</th>
+                      <th class="num tablet-hide">Median first review</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -536,7 +544,8 @@
                       <td class="num" data-label="Changed lines">{{ row.changed_lines | intfmt }}</td>
                       <td class="num tablet-hide" data-label="Lines / active author">{{ row.changed_lines_per_active_author | numfmt }}</td>
                       <td class="num tablet-hide" data-label="Reviews / PR">{{ row.average_reviews_per_pr | numfmt }}</td>
-                      <td class="num" data-label="Median first review">{{ row.median_first_review_hours | duration }}</td>
+                      <td class="num" data-label="Median approval">{{ row.median_approval_hours | duration }}</td>
+                      <td class="num tablet-hide" data-label="Median first review">{{ row.median_first_review_hours | duration }}</td>
                     </tr>
                     {% endfor %}
                   </tbody>
@@ -555,7 +564,8 @@
                       <td class="num" data-label="Changed lines">{{ row.changed_lines | intfmt }}</td>
                       <td class="num tablet-hide" data-label="Lines / active author">{{ row.changed_lines_per_active_author | numfmt }}</td>
                       <td class="num tablet-hide" data-label="Reviews / PR">{{ row.average_reviews_per_pr | numfmt }}</td>
-                      <td class="num" data-label="Median first review">{{ row.median_first_review_hours | duration }}</td>
+                      <td class="num" data-label="Median approval">{{ row.median_approval_hours | duration }}</td>
+                      <td class="num tablet-hide" data-label="Median first review">{{ row.median_first_review_hours | duration }}</td>
                     </tr>
                     {% endfor %}
                   </tbody>
@@ -586,8 +596,9 @@
                       <th class="num tablet-hide">Open</th>
                       <th class="num">Changed lines</th>
                       <th class="num tablet-hide">Lines / active author</th>
-                      <th class="num">Median first review</th>
+                      <th class="num">Median approval</th>
                       <th class="num tablet-hide">Median merge</th>
+                      <th class="num tablet-hide">Median first review</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -603,8 +614,9 @@
                       <td class="num tablet-hide" data-label="Open">{{ row.open_pull_requests | intfmt }}</td>
                       <td class="num" data-label="Changed lines">{{ row.changed_lines | intfmt }}</td>
                       <td class="num tablet-hide" data-label="Lines / active author">{{ row.changed_lines_per_active_author | numfmt }}</td>
-                      <td class="num" data-label="Median first review">{{ row.median_first_review_hours | duration }}</td>
+                      <td class="num" data-label="Median approval">{{ row.median_approval_hours | duration }}</td>
                       <td class="num tablet-hide" data-label="Median merge">{{ row.median_merge_hours | duration }}</td>
+                      <td class="num tablet-hide" data-label="Median first review">{{ row.median_first_review_hours | duration }}</td>
                     </tr>
                     {% endfor %}
                   </tbody>
@@ -622,8 +634,9 @@
                       <td class="num tablet-hide" data-label="Open">{{ row.open_pull_requests | intfmt }}</td>
                       <td class="num" data-label="Changed lines">{{ row.changed_lines | intfmt }}</td>
                       <td class="num tablet-hide" data-label="Lines / active author">{{ row.changed_lines_per_active_author | numfmt }}</td>
-                      <td class="num" data-label="Median first review">{{ row.median_first_review_hours | duration }}</td>
+                      <td class="num" data-label="Median approval">{{ row.median_approval_hours | duration }}</td>
                       <td class="num tablet-hide" data-label="Median merge">{{ row.median_merge_hours | duration }}</td>
+                      <td class="num tablet-hide" data-label="Median first review">{{ row.median_first_review_hours | duration }}</td>
                     </tr>
                     {% endfor %}
                   </tbody>
@@ -659,8 +672,9 @@
                   <th class="num">Changed lines</th>
                   <th class="num tablet-hide">Commits</th>
                   <th class="num tablet-hide">Reviews / PR</th>
-                  <th class="num">Median first review</th>
+                  <th class="num">Median approval</th>
                   <th class="num tablet-hide">Median merge</th>
+                  <th class="num tablet-hide">Median first review</th>
                 </tr>
               </thead>
               <tbody>
@@ -696,8 +710,9 @@
                   <td class="num" data-label="Changed lines">{{ row.changed_lines | intfmt }}</td>
                   <td class="num tablet-hide" data-label="Commits">{{ row.commits | intfmt }}</td>
                   <td class="num tablet-hide" data-label="Reviews / PR">{{ row.average_reviews_per_pr | numfmt }}</td>
-                  <td class="num" data-label="Median first review">{{ row.median_first_review_hours | duration }}</td>
+                  <td class="num" data-label="Median approval">{{ row.median_approval_hours | duration }}</td>
                   <td class="num tablet-hide" data-label="Median merge">{{ row.median_merge_hours | duration }}</td>
+                  <td class="num tablet-hide" data-label="Median first review">{{ row.median_first_review_hours | duration }}</td>
                 </tr>
                 {% endfor %}
               </tbody>

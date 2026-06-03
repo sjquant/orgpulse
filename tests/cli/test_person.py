@@ -45,6 +45,12 @@ class TestPersonCommand:
                             submitted_at=datetime.fromisoformat("2026-04-03T09:00:00"),
                         ),
                         review_factory(
+                            review_id=104,
+                            author_login="bob",
+                            state="APPROVED",
+                            submitted_at=datetime.fromisoformat("2026-04-03T12:00:00"),
+                        ),
+                        review_factory(
                             review_id=103,
                             author_login="bob",
                             state="APPROVED",
@@ -133,7 +139,7 @@ class TestPersonCommand:
             "merged_pull_request_count": 1,
             "open_pull_request_count": 0,
             "review_coverage_pct": 100.0,
-            "reviews_received": 2,
+            "reviews_received": 3,
         }
         assert payload["reviewer_summary"] == {
             "approvals": 0,
@@ -173,10 +179,111 @@ class TestPersonCommand:
                 "pull_requests_reviewed": 1,
                 "reviewed_lines": 10,
                 "review_submissions_given": 1,
-                "reviews_received": 2,
+                "reviews_received": 3,
                 "status": "closed",
             }
         ]
+
+    def test_counts_approval_time_only_when_final_external_decision_is_approved(
+        self,
+        runner: CliRunner,
+        github_auth_service: None,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path,
+        pull_request_factory,
+        review_factory,
+    ) -> None:
+        """Leave approval timing empty when a later external decision requests changes."""
+        # Given
+        collection = PullRequestCollection(
+            window=CollectionWindow(
+                scope=RunScope.FULL_HISTORY,
+                start_date=None,
+                end_date=datetime.fromisoformat("2026-04-30T00:00:00").date(),
+            ),
+            pull_requests=(
+                pull_request_factory(
+                    repository_full_name="acme/api",
+                    number=13,
+                    title="Alice approval reversed",
+                    state="closed",
+                    author_login="alice",
+                    created_at=datetime.fromisoformat("2026-04-02T09:00:00"),
+                    updated_at=datetime.fromisoformat("2026-04-03T12:00:00"),
+                    closed_at=datetime.fromisoformat("2026-04-03T12:00:00"),
+                    merged=False,
+                    reviews=(
+                        review_factory(
+                            review_id=110,
+                            author_login="bob",
+                            state="APPROVED",
+                            submitted_at=datetime.fromisoformat("2026-04-03T09:00:00"),
+                        ),
+                        review_factory(
+                            review_id=111,
+                            author_login="alice",
+                            state="APPROVED",
+                            submitted_at=datetime.fromisoformat("2026-04-03T10:00:00"),
+                        ),
+                        review_factory(
+                            review_id=112,
+                            author_login="bob",
+                            state="CHANGES_REQUESTED",
+                            submitted_at=datetime.fromisoformat("2026-04-03T11:00:00"),
+                        ),
+                    ),
+                ),
+            ),
+            failures=(),
+        )
+        _configure_production_cli_runtime(
+            monkeypatch,
+            collection=collection,
+        )
+        run_result = runner.invoke(
+            app,
+            [
+                "run",
+                "--org",
+                "acme",
+                "--mode",
+                "full",
+                "--as-of",
+                "2026-04-30",
+                "--output-dir",
+                str(tmp_path),
+            ],
+        )
+        assert run_result.exit_code == 0
+
+        # When
+        result = runner.invoke(
+            app,
+            [
+                "person",
+                "--org",
+                "acme",
+                "--login",
+                "alice",
+                "--grain",
+                "month",
+                "--since",
+                "2026-04-01",
+                "--until",
+                "2026-04-30",
+                "--output-dir",
+                str(tmp_path),
+                "--format",
+                "json",
+            ],
+        )
+
+        # Then
+        assert result.exit_code == 0
+        payload = json.loads(result.stdout)
+        assert payload["summary"]["median_approval_hours"] is None
+        assert payload["period_rows"][0]["median_approval_hours"] is None
+        assert payload["summary"]["reviews_received"] == 3
 
     def test_counts_reviews_by_submission_date_for_csv(
         self,
@@ -605,7 +712,7 @@ class TestPersonCommand:
                 "reviewed_lines": 0,
                 "repository_full_name": "acme/api",
                 "review_submissions_given": 0,
-                "reviews_received": 0,
+                "reviews_received": 1,
             }
         ]
 

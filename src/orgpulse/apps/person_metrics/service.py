@@ -932,26 +932,28 @@ class PersonMetricsService:
         self,
         pull_request: PullRequestFact,
     ) -> float | None:
-        approval_submitted_at: datetime | None = None
+        final_decision_submitted_at: datetime | None = None
+        final_decision_state: str | None = None
         for review in pull_request.reviews:
             if review.submitted_at is None:
                 continue
-            if review.state != "APPROVED":
+            if review.state not in {"APPROVED", "CHANGES_REQUESTED"}:
                 continue
             if self._review_is_by_pull_request_author(pull_request, review):
                 continue
             if (
-                approval_submitted_at is None
-                or review.submitted_at > approval_submitted_at
+                final_decision_submitted_at is None
+                or review.submitted_at > final_decision_submitted_at
             ):
-                approval_submitted_at = review.submitted_at
-        if approval_submitted_at is None:
+                final_decision_submitted_at = review.submitted_at
+                final_decision_state = review.state
+        if final_decision_submitted_at is None or final_decision_state != "APPROVED":
             return None
         review_started_at = self._review_started_at(
             pull_request,
-            approval_submitted_at,
+            final_decision_submitted_at,
         )
-        return self._hours_between(review_started_at, approval_submitted_at)
+        return self._hours_between(review_started_at, final_decision_submitted_at)
 
     def _review_started_at(
         self,
@@ -1067,10 +1069,7 @@ class PersonMetricsService:
         pull_request: PullRequestFact,
     ) -> int:
         return sum(
-            1
-            for review in pull_request.reviews
-            if review.submitted_at is not None
-            and not self._review_is_by_pull_request_author(pull_request, review)
+            1 for review in pull_request.reviews if review.submitted_at is not None
         )
 
     def _review_is_by_pull_request_author(

@@ -285,6 +285,105 @@ class TestPersonCommand:
         assert payload["period_rows"][0]["median_approval_hours"] is None
         assert payload["summary"]["reviews_received"] == 3
 
+    def test_counts_approval_time_from_later_review_request_boundary(
+        self,
+        runner: CliRunner,
+        github_auth_service: None,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path,
+        pull_request_factory,
+        review_factory,
+        timeline_event_factory,
+    ) -> None:
+        """Measure approval timing from the later ready or review-request boundary."""
+        # Given
+        collection = PullRequestCollection(
+            window=CollectionWindow(
+                scope=RunScope.FULL_HISTORY,
+                start_date=None,
+                end_date=datetime.fromisoformat("2026-04-30T00:00:00").date(),
+            ),
+            pull_requests=(
+                pull_request_factory(
+                    repository_full_name="acme/api",
+                    number=14,
+                    title="Alice requested approval",
+                    state="closed",
+                    author_login="alice",
+                    created_at=datetime.fromisoformat("2026-04-02T09:00:00"),
+                    updated_at=datetime.fromisoformat("2026-04-02T14:00:00"),
+                    closed_at=datetime.fromisoformat("2026-04-02T14:00:00"),
+                    merged=True,
+                    merged_at=datetime.fromisoformat("2026-04-02T14:00:00"),
+                    reviews=(
+                        review_factory(
+                            review_id=140,
+                            author_login="bob",
+                            state="APPROVED",
+                            submitted_at=datetime.fromisoformat("2026-04-02T14:00:00"),
+                        ),
+                    ),
+                    timeline_events=(
+                        timeline_event_factory(
+                            event_id=140,
+                            event="review_requested",
+                            created_at=datetime.fromisoformat("2026-04-02T11:00:00"),
+                            requested_reviewer_login="bob",
+                        ),
+                    ),
+                ),
+            ),
+            failures=(),
+        )
+        _configure_production_cli_runtime(
+            monkeypatch,
+            collection=collection,
+        )
+        run_result = runner.invoke(
+            app,
+            [
+                "run",
+                "--org",
+                "acme",
+                "--mode",
+                "full",
+                "--as-of",
+                "2026-04-30",
+                "--output-dir",
+                str(tmp_path),
+            ],
+        )
+        assert run_result.exit_code == 0
+
+        # When
+        result = runner.invoke(
+            app,
+            [
+                "person",
+                "--org",
+                "acme",
+                "--login",
+                "alice",
+                "--grain",
+                "month",
+                "--since",
+                "2026-04-01",
+                "--until",
+                "2026-04-30",
+                "--output-dir",
+                str(tmp_path),
+                "--format",
+                "json",
+            ],
+        )
+
+        # Then
+        assert result.exit_code == 0
+        payload = json.loads(result.stdout)
+        assert payload["summary"]["median_approval_hours"] == 3.0
+        assert payload["period_rows"][0]["median_approval_hours"] == 3.0
+        assert payload["repository_rows"][0]["median_approval_hours"] == 3.0
+
     def test_counts_reviews_by_submission_date_for_csv(
         self,
         runner: CliRunner,

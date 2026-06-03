@@ -662,7 +662,7 @@ def _first_external_review_at(
     reviews: list[PullRequestReview],
 ) -> datetime | None:
     for review in reviews:
-        if review.author_login == author_login:
+        if _same_login(review.author_login, author_login):
             continue
         return review.submitted_at
     return None
@@ -674,9 +674,7 @@ def _last_review_cycle_reference(
     timeline_events: list[PullRequestTimelineEvent],
 ) -> datetime:
     event_times = [
-        event.created_at
-        for event in timeline_events
-        if event.created_at is not None
+        event.created_at for event in timeline_events if event.created_at is not None
     ]
     return max(event_times, default=created_at)
 
@@ -934,11 +932,11 @@ def _reviewer_rows(
     for review in review_facts:
         if review.author_login is None or review.submitted_at is None:
             continue
+        if _same_login(review.author_login, review.pull_request_author_login):
+            continue
         if review.submitted_at.date() < since or review.submitted_at.date() > until:
             continue
-        pull_request_key = (
-            f"{review.repository_full_name}#{review.pull_request_number}"
-        )
+        pull_request_key = f"{review.repository_full_name}#{review.pull_request_number}"
         reviewer_login = review.author_login
         review_counts[reviewer_login] += 1
         if pull_request_key not in prs_reviewed[reviewer_login]:
@@ -980,6 +978,15 @@ def _reviewer_rows(
             row.reviewer_login,
         ),
     )
+
+
+def _same_login(
+    left: str | None,
+    right: str | None,
+) -> bool:
+    if left is None or right is None:
+        return False
+    return left.lower() == right.lower()
 
 
 def _repository_rows(

@@ -170,6 +170,7 @@ class PersonSummary(BaseModel):
     reviews_received: int
     review_coverage_pct: float | None
     median_first_review_hours: float | None
+    median_approval_hours: float | None
     median_merge_hours: float | None
 
 
@@ -213,6 +214,7 @@ class PersonPeriodRow(BaseModel):
     commits_total: int
     reviews_received: int
     median_first_review_hours: float | None
+    median_approval_hours: float | None
     median_merge_hours: float | None
     review_submissions_given: int
     pull_requests_reviewed: int
@@ -414,6 +416,8 @@ class PersonMetricsService:
                 if review.submitted_at is None:
                     continue
                 if (review.author_login or "").lower() != login:
+                    continue
+                if self._same_login(review.pull_request_author_login, login):
                     continue
                 if not self._in_window(
                     review.submitted_at.date(),
@@ -646,6 +650,15 @@ class PersonMetricsService:
                 ),
                 distribution_percentile=config.distribution_percentile,
             ),
+            median_approval_hours=self._median_metric(
+                tuple(
+                    approval_hours
+                    for pull_request in authored_pull_requests
+                    if (approval_hours := self._approval_hours(pull_request))
+                    is not None
+                ),
+                distribution_percentile=config.distribution_percentile,
+            ),
             median_merge_hours=self._median_metric(
                 tuple(
                     merge_hours
@@ -815,6 +828,15 @@ class PersonMetricsService:
                 ),
                 distribution_percentile=distribution_percentile,
             ),
+            median_approval_hours=self._median_metric(
+                tuple(
+                    approval_hours
+                    for pull_request in authored_pull_requests
+                    if (approval_hours := self._approval_hours(pull_request))
+                    is not None
+                ),
+                distribution_percentile=distribution_percentile,
+            ),
             median_merge_hours=self._median_metric(
                 tuple(
                     merge_hours
@@ -898,16 +920,38 @@ class PersonMetricsService:
         for review in pull_request.reviews:
             if review.submitted_at is None:
                 continue
-            if (
-                pull_request.author_login is not None
-                and review.author_login == pull_request.author_login
-            ):
+            if self._review_is_by_pull_request_author(pull_request, review):
                 continue
             review_started_at = self._review_started_at(
                 pull_request, review.submitted_at
             )
             return self._hours_between(review_started_at, review.submitted_at)
         return None
+
+    def _approval_hours(
+        self,
+        pull_request: PullRequestFact,
+    ) -> float | None:
+        approval_submitted_at: datetime | None = None
+        for review in pull_request.reviews:
+            if review.submitted_at is None:
+                continue
+            if review.state != "APPROVED":
+                continue
+            if self._review_is_by_pull_request_author(pull_request, review):
+                continue
+            if (
+                approval_submitted_at is None
+                or review.submitted_at > approval_submitted_at
+            ):
+                approval_submitted_at = review.submitted_at
+        if approval_submitted_at is None:
+            return None
+        review_started_at = self._review_started_at(
+            pull_request,
+            approval_submitted_at,
+        )
+        return self._hours_between(review_started_at, approval_submitted_at)
 
     def _review_started_at(
         self,
@@ -1023,8 +1067,27 @@ class PersonMetricsService:
         pull_request: PullRequestFact,
     ) -> int:
         return sum(
-            1 for review in pull_request.reviews if review.submitted_at is not None
+            1
+            for review in pull_request.reviews
+            if review.submitted_at is not None
+            and not self._review_is_by_pull_request_author(pull_request, review)
         )
+
+    def _review_is_by_pull_request_author(
+        self,
+        pull_request: PullRequestFact,
+        review: ReviewFact,
+    ) -> bool:
+        return self._same_login(review.author_login, pull_request.author_login)
+
+    def _same_login(
+        self,
+        left: str | None,
+        right: str | None,
+    ) -> bool:
+        if left is None or right is None:
+            return False
+        return left.lower() == right.lower()
 
     def _period_overlaps_window(
         self,

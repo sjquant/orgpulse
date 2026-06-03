@@ -481,6 +481,7 @@
                 <th class="num">Merged</th>
                 <th class="num">Open</th>
                 <th class="num">Median Merge</th>
+                <th class="num">Approval Time</th>
                 <th class="num">Median First Review</th>
                 <th class="num">Changed Lines</th>
                 <th class="num">Reviews Given</th>
@@ -496,6 +497,7 @@
                 <td class="num" data-label="Merged">{{ row.merged_pull_request_count | intfmt }}</td>
                 <td class="num" data-label="Open">{{ row.open_pull_request_count | intfmt }}</td>
                 <td class="num" data-label="Median Merge">{{ row.median_merge_hours | duration }}</td>
+                <td class="num" data-label="Approval Time">{{ row.median_approval_hours | duration }}</td>
                 <td class="num" data-label="Median First Review">{{ row.median_first_review_hours | duration }}</td>
                 <td class="num" data-label="Changed Lines">{{ row.changed_lines_total | intfmt }}</td>
                 <td class="num" data-label="Reviews Given">{{ row.review_submissions_given | intfmt }}</td>
@@ -513,6 +515,7 @@
                 <td class="num" data-label="Merged">{{ row.merged_pull_request_count | intfmt }}</td>
                 <td class="num" data-label="Open">{{ row.open_pull_request_count | intfmt }}</td>
                 <td class="num" data-label="Median Merge">{{ row.median_merge_hours | duration }}</td>
+                <td class="num" data-label="Approval Time">{{ row.median_approval_hours | duration }}</td>
                 <td class="num" data-label="Median First Review">{{ row.median_first_review_hours | duration }}</td>
                 <td class="num" data-label="Changed Lines">{{ row.changed_lines_total | intfmt }}</td>
                 <td class="num" data-label="Reviews Given">{{ row.review_submissions_given | intfmt }}</td>

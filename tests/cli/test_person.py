@@ -704,6 +704,7 @@ class TestPersonCommand:
                 "authored_pull_request_count": 1,
                 "changed_lines_total": 15,
                 "commits_total": 1,
+                "median_approval_hours": None,
                 "median_first_review_hours": None,
                 "median_merge_hours": None,
                 "merged_pull_request_count": 0,
@@ -803,6 +804,10 @@ class TestPersonCommand:
         assert "# orgpulse person metrics: alice" in markdown_result.stdout
         assert (
             "| 2026-04 | 1 | 0 | 1 | 10 | 1 | 0 | - | 0 | 0 | 0 |"
+            in markdown_result.stdout
+        )
+        assert (
+            "| acme/api | 1 | 0 | 1 | 10 | - | 0 | 0 | 0 |"
             in markdown_result.stdout
         )
         assert html_result.exit_code == 0
@@ -1067,6 +1072,7 @@ class TestPersonCommand:
         assert payload["summary"]["median_merge_hours"] == 1.5
         assert payload["period_rows"][0]["median_first_review_hours"] == 1.5
         assert payload["period_rows"][0]["median_merge_hours"] == 1.5
+        assert payload["repository_rows"][0]["median_approval_hours"] == 1.5
         assert payload["repository_rows"][0]["median_first_review_hours"] == 1.5
         assert payload["repository_rows"][0]["median_merge_hours"] == 1.5
         assert dashboard_result.exit_code == 0

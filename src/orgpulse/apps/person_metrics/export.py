@@ -110,8 +110,8 @@ def _render_markdown(
             "",
             "## Repositories",
             "",
-            "| Repository | Authored PRs | Merged | Open | Changed Lines | Reviews Given | PRs Reviewed | Reviewed Lines |",
-            "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+            "| Repository | Authored PRs | Merged | Open | Changed Lines | Approval Hours | Reviews Given | PRs Reviewed | Reviewed Lines |",
+            "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
         ]
     )
     for row in result.repository_rows:
@@ -122,6 +122,7 @@ def _render_markdown(
             f"{row.merged_pull_request_count} | "
             f"{row.open_pull_request_count} | "
             f"{row.changed_lines_total} | "
+            f"{_markdown_number(row.median_approval_hours)} | "
             f"{row.review_submissions_given} | "
             f"{row.pull_requests_reviewed} | "
             f"{row.reviewed_lines} |"

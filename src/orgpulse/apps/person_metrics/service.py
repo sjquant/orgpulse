@@ -237,6 +237,7 @@ class PersonRepositoryRow(BaseModel):
     commits_total: int
     reviews_received: int
     median_first_review_hours: float | None
+    median_approval_hours: float | None
     median_merge_hours: float | None
     review_submissions_given: int
     pull_requests_reviewed: int
@@ -761,6 +762,15 @@ class PersonMetricsService:
                     first_review_hours
                     for pull_request in authored_pull_requests
                     if (first_review_hours := self._first_review_hours(pull_request))
+                    is not None
+                ),
+                distribution_percentile=config.distribution_percentile,
+            ),
+            median_approval_hours=self._median_metric(
+                tuple(
+                    approval_hours
+                    for pull_request in authored_pull_requests
+                    if (approval_hours := self._approval_hours(pull_request))
                     is not None
                 ),
                 distribution_percentile=config.distribution_percentile,

@@ -185,7 +185,7 @@
             <span class="meta-value">{{ window_label }}</span>
           </div>
           <div class="meta-box">
-            <span class="meta-label">Grain</span>
+            <span class="meta-label">Source grain</span>
             <span class="meta-value">{{ result.grain.value }}</span>
           </div>
           <div class="meta-box">
@@ -244,7 +244,6 @@
 
     <nav class="section-nav" aria-label="Report sections">
       <a href="#charts">Charts</a>
-      <a href="#periods">Periods</a>
       <a href="#cadences">Weekly / Monthly</a>
       <a href="#repositories">Repositories</a>
       <a href="#methodology">Methodology</a>
@@ -287,94 +286,6 @@
           <div id="person-trend-chart-readout" class="chart-readout"></div>
           <div id="person-trend-chart-root" class="chart-root"></div>
         </div>
-      </section>
-
-      <section id="periods" class="panel section-panel">
-        <div class="table-heading">
-          <div>
-            <p class="section-kicker">Period Tracking</p>
-            <h2>{{ period_total_count | intfmt }} {{ result.grain.value }} periods</h2>
-            <p class="section-copy">This table follows the selected extract period. Weekly and monthly tables are separated below.</p>
-          </div>
-          <span class="period-state-pill{% if period_status_label.startswith("open") %} open{% elif period_status_label.startswith("partial") %} partial{% endif %}">
-            {{ period_status_label }}
-          </span>
-        </div>
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Period</th>
-                <th>State</th>
-                <th class="num">Authored PRs</th>
-                <th class="num">Merged</th>
-                <th class="num">Open</th>
-                <th class="num">Median Merge</th>
-                <th class="num">Median First Review</th>
-                <th class="num">Changed Lines</th>
-                <th class="num">Commits</th>
-                <th class="num">Reviews Received</th>
-                <th class="num">Approval Time</th>
-                <th class="num">Reviews Given</th>
-                <th class="num">PRs Reviewed</th>
-                <th class="num">Reviewed Lines</th>
-              </tr>
-            </thead>
-            <tbody>
-              {% for row in period_recent_rows %}
-              <tr class="{% if row.is_partial %}partial-period-row{% endif %}">
-                <td data-label="Period">{{ row.period_key }}</td>
-                <td data-label="State">
-                  <span class="period-state-pill{% if row.is_open or row.is_partial %} open{% endif %}">{{ row.label }}</span>
-                </td>
-                <td class="num" data-label="Authored PRs">{{ row.authored_pull_request_count | intfmt }}</td>
-                <td class="num" data-label="Merged">{{ row.merged_pull_request_count | intfmt }}</td>
-                <td class="num" data-label="Open">{{ row.open_pull_request_count | intfmt }}</td>
-                <td class="num" data-label="Median Merge">{{ row.median_merge_hours | duration }}</td>
-                <td class="num" data-label="Median First Review">{{ row.median_first_review_hours | duration }}</td>
-                <td class="num" data-label="Changed Lines">{{ row.changed_lines_total | intfmt }}</td>
-                <td class="num" data-label="Commits">{{ row.commits_total | intfmt }}</td>
-                <td class="num" data-label="Reviews Received">{{ row.reviews_received | intfmt }}</td>
-                <td class="num" data-label="Approval Time">{{ row.median_approval_hours | duration }}</td>
-                <td class="num" data-label="Reviews Given">{{ row.review_submissions_given | intfmt }}</td>
-                <td class="num" data-label="PRs Reviewed">{{ row.pull_requests_reviewed | intfmt }}</td>
-                <td class="num" data-label="Reviewed Lines">{{ row.reviewed_lines | intfmt }}</td>
-              </tr>
-              {% endfor %}
-            </tbody>
-            {% if period_older_rows %}
-            <tbody id="period-extra" class="hidden">
-              {% for row in period_older_rows %}
-              <tr class="{% if row.is_partial %}partial-period-row{% endif %}">
-                <td data-label="Period">{{ row.period_key }}</td>
-                <td data-label="State">
-                  <span class="period-state-pill{% if row.is_open or row.is_partial %} open{% endif %}">{{ row.label }}</span>
-                </td>
-                <td class="num" data-label="Authored PRs">{{ row.authored_pull_request_count | intfmt }}</td>
-                <td class="num" data-label="Merged">{{ row.merged_pull_request_count | intfmt }}</td>
-                <td class="num" data-label="Open">{{ row.open_pull_request_count | intfmt }}</td>
-                <td class="num" data-label="Median Merge">{{ row.median_merge_hours | duration }}</td>
-                <td class="num" data-label="Median First Review">{{ row.median_first_review_hours | duration }}</td>
-                <td class="num" data-label="Changed Lines">{{ row.changed_lines_total | intfmt }}</td>
-                <td class="num" data-label="Commits">{{ row.commits_total | intfmt }}</td>
-                <td class="num" data-label="Reviews Received">{{ row.reviews_received | intfmt }}</td>
-                <td class="num" data-label="Approval Time">{{ row.median_approval_hours | duration }}</td>
-                <td class="num" data-label="Reviews Given">{{ row.review_submissions_given | intfmt }}</td>
-                <td class="num" data-label="PRs Reviewed">{{ row.pull_requests_reviewed | intfmt }}</td>
-                <td class="num" data-label="Reviewed Lines">{{ row.reviewed_lines | intfmt }}</td>
-              </tr>
-              {% endfor %}
-            </tbody>
-            {% endif %}
-          </table>
-        </div>
-        {% if period_older_rows %}
-        <div class="table-footer">
-          <button type="button" id="period-toggle" class="ghost-button" aria-expanded="false">
-            Show {{ [progressive_chunk_size, period_older_rows|length]|min }} more older {{ result.grain.value }} rows
-          </button>
-        </div>
-        {% endif %}
       </section>
 
       <section id="cadences" class="panel section-panel">
@@ -542,7 +453,7 @@
         <div class="methodology-grid">
           <article class="support-card">
             <strong>Authored work</strong>
-            <span>Authored PRs are filtered by {{ result.time_anchor.value }} and grouped by {{ result.grain.value }}.</span>
+            <span>Authored PRs are filtered by {{ result.time_anchor.value }} and shown in weekly and monthly period tables.</span>
           </article>
           <article class="support-card">
             <strong>Review work</strong>
@@ -554,7 +465,7 @@
           </article>
           <article class="support-card">
             <strong>Source</strong>
-            <span>Uses normalized orgpulse snapshots already present for the selected organization, grain, and anchor.</span>
+            <span>Uses normalized orgpulse snapshots already present for the selected organization and anchor.</span>
           </article>
         </div>
       </section>
@@ -568,8 +479,6 @@
       const root = document.documentElement;
       const switcher = document.querySelector(".theme-switch");
       const buttons = Array.from(document.querySelectorAll(".theme-switch-button"));
-      const periodToggle = document.getElementById("period-toggle");
-      const periodExtra = document.getElementById("period-extra");
       const repositoryToggle = document.getElementById("repository-toggle");
       const repositoryExtra = document.getElementById("repository-extra");
       const report = JSON.parse(document.getElementById("person-report-data").textContent);
@@ -654,13 +563,6 @@
         });
       });
       window.addEventListener("resize", renderPersonTrendChart);
-      setupProgressiveToggle({
-        button: periodToggle,
-        container: periodExtra,
-        items: periodExtra ? Array.from(periodExtra.querySelectorAll("tr")) : [],
-        chunkSize: {{ progressive_chunk_size }},
-        label: "older {{ result.grain.value }} rows",
-      });
       setupProgressiveToggle({
         button: repositoryToggle,
         container: repositoryExtra,

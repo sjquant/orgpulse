@@ -110,8 +110,6 @@ class TestPersonCommand:
                 "acme",
                 "--login",
                 "ALICE",
-                "--grain",
-                "month",
                 "--since",
                 "2026-04-01",
                 "--until",
@@ -265,8 +263,6 @@ class TestPersonCommand:
                 "acme",
                 "--login",
                 "alice",
-                "--grain",
-                "month",
                 "--since",
                 "2026-04-01",
                 "--until",
@@ -364,8 +360,6 @@ class TestPersonCommand:
                 "acme",
                 "--login",
                 "alice",
-                "--grain",
-                "month",
                 "--since",
                 "2026-04-01",
                 "--until",
@@ -449,8 +443,6 @@ class TestPersonCommand:
                 "acme",
                 "--login",
                 "alice",
-                "--grain",
-                "month",
                 "--since",
                 "2026-04-01",
                 "--until",
@@ -594,8 +586,6 @@ class TestPersonCommand:
                 "acme",
                 "--login",
                 "alice",
-                "--grain",
-                "month",
                 "--since",
                 "2026-04-01",
                 "--until",
@@ -679,8 +669,6 @@ class TestPersonCommand:
                 "acme",
                 "--login",
                 "alice",
-                "--grain",
-                "month",
                 "--since",
                 "2026-02-01",
                 "--until",
@@ -774,8 +762,6 @@ class TestPersonCommand:
                 "alice",
                 "--org",
                 "acme",
-                "--period",
-                "month",
                 "--pr-time-anchor",
                 "created_at",
                 "--source-output-dir",
@@ -815,6 +801,28 @@ class TestPersonCommand:
                 "reviews_received": 1,
             }
         ]
+
+    def test_rejects_person_grain_option(
+        self,
+        runner: CliRunner,
+    ) -> None:
+        """Reject obsolete person grain selection because both cadences are reported."""
+        # Given
+        arguments = [
+            "person",
+            "alice",
+            "--org",
+            "acme",
+            "--grain",
+            "month",
+        ]
+
+        # When
+        result = runner.invoke(app, arguments)
+
+        # Then
+        assert result.exit_code == 2
+        assert "No such option: --grain" in result.stderr
 
     def test_writes_person_metrics_as_markdown_and_html(
         self,
@@ -873,8 +881,6 @@ class TestPersonCommand:
                 "acme",
                 "--login",
                 "alice",
-                "--grain",
-                "month",
                 "--output-dir",
                 str(tmp_path),
                 "--format",
@@ -889,8 +895,6 @@ class TestPersonCommand:
                 "acme",
                 "--login",
                 "alice",
-                "--grain",
-                "month",
                 "--output-dir",
                 str(tmp_path),
                 "--format",
@@ -952,7 +956,8 @@ class TestPersonCommand:
         ]
         assert report_payload["weekly_period_rows"][0]["period_key"] == "2026-W14"
         assert report_payload["weekly_period_rows"][-1]["period_key"] == "2026-W18"
-        assert 'data-label="Period">2026-04</td>' in html_result.stdout
+        assert 'data-label="Month">2026-04</td>' in html_result.stdout
+        assert 'data-label="Week">2026-W14</td>' in html_result.stdout
         assert 'data-label="State">' in html_result.stdout
         assert 'data-label="Authored PRs">1</td>' in html_result.stdout
         assert 'id="person-trend-grain-tabs"' in html_result.stdout
@@ -964,7 +969,6 @@ class TestPersonCommand:
             in html_result.stdout
         )
         assert '<a href="#charts">Charts</a>' in html_result.stdout
-        assert '<a href="#periods">Periods</a>' in html_result.stdout
         assert '<a href="#cadences">Weekly / Monthly</a>' in html_result.stdout
         assert '<a href="#repositories">Repositories</a>' in html_result.stdout
         assert '<a href="#methodology">Methodology</a>' in html_result.stdout
@@ -1129,8 +1133,6 @@ class TestPersonCommand:
                 "acme",
                 "--login",
                 "alice",
-                "--grain",
-                "month",
                 "--since",
                 "2026-01-01",
                 "--until",
@@ -1301,8 +1303,6 @@ class TestPersonCommand:
                 "acme",
                 "--login",
                 "alice",
-                "--grain",
-                "month",
                 "--since",
                 "2026-01-01",
                 "--until",
@@ -1316,12 +1316,8 @@ class TestPersonCommand:
 
         # Then
         assert result.exit_code == 0
-        assert 'id="period-extra" class="hidden"' in result.stdout
-        assert "Show 3 more older month rows" in result.stdout
-        assert (
-            'id="period-toggle" class="ghost-button" aria-expanded="false"'
-            in result.stdout
-        )
+        assert 'id="period-extra" class="hidden"' not in result.stdout
+        assert 'id="period-toggle"' not in result.stdout
         assert 'id="repository-extra" class="hidden"' in result.stdout
         assert "Show 5 more repositories" in result.stdout
         assert (
@@ -1386,8 +1382,6 @@ class TestPersonCommand:
                 "acme",
                 "--login",
                 "nobody",
-                "--grain",
-                "month",
                 "--since",
                 "2026-04-01",
                 "--until",
@@ -1424,8 +1418,6 @@ class TestPersonCommand:
                 "acme",
                 "--login",
                 "alice",
-                "--grain",
-                "month",
                 "--output-dir",
                 str(tmp_path),
                 "--format",
@@ -1495,8 +1487,6 @@ class TestPersonCommand:
                 "acme",
                 "--login",
                 "alice",
-                "--grain",
-                "month",
                 "--until",
                 "2026-04-30",
                 "--output-dir",
@@ -1568,8 +1558,6 @@ class TestPersonCommand:
                 "acme",
                 "--login",
                 "alice",
-                "--grain",
-                "month",
                 "--output-dir",
                 str(tmp_path),
                 "--format",

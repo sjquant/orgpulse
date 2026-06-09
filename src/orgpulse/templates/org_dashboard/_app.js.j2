@@ -110,9 +110,12 @@
     for (const button of peopleMetricTabs) {
       button.addEventListener("click", () => {
         activePeopleMetric = button.dataset.peopleMetric;
+        activeAuthorMetric = activePeopleMetric;
+        activeAuthorPointIndex = null;
         visiblePeopleCount = selectedPeopleVisibleCount(sortedPeopleRows(activePeopleMetric));
         syncPeopleMetricTabs();
         renderPeopleRanking();
+        renderAuthorDetail(activeAuthor);
       });
     }
 

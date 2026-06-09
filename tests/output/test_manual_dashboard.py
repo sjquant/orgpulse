@@ -738,6 +738,7 @@ class TestManualDashboardPayload:
         assert 'id="author-detail-metric-tabs"' not in html
         assert "Size mix" not in html
         assert "Timeline" not in html
+        assert "activeAuthorMetric = activePeopleMetric" in html
         assert html.index('id="repository-toggle"') > html.index('id="repository-extra"')
         assert html.index('id="weekly-trend-toggle"') > html.index('id="weekly-trend-extra"')
         assert html.index('id="monthly-trend-toggle"') > html.index('id="monthly-trend-extra"')

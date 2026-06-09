@@ -727,15 +727,15 @@ class TestManualDashboardPayload:
 
         # Then
         assert 'class="table-footer"' in html
-        assert 'id="people-ranking-tabs"' in html
-        assert 'data-people-ranking="authors"' in html
-        assert 'data-people-ranking="reviewers"' in html
-        assert 'id="people-reviewers-panel"' in html
+        assert 'id="people-metric-tabs"' in html
+        assert 'data-people-metric="pull_requests"' in html
+        assert 'data-people-metric="changed_lines"' in html
+        assert 'data-people-metric="median_merge_hours"' in html
+        assert 'id="people-ranking-list"' in html
+        assert 'id="people-ranking-toggle"' in html
         assert 'class="tab-strip primary-tabs"' in html
         assert 'class="tab-strip secondary-tabs"' in html
-        assert 'class="detail-tabs tertiary-tabs"' in html
-        assert html.index('id="author-roster-toggle"') > html.index('class="person-list"')
-        assert html.index('id="reviewer-toggle"') > html.index('id="reviewer-extra"')
+        assert "Size mix" not in html
         assert html.index('id="repository-toggle"') > html.index('id="repository-extra"')
         assert html.index('id="weekly-trend-toggle"') > html.index('id="weekly-trend-extra"')
         assert html.index('id="monthly-trend-toggle"') > html.index('id="monthly-trend-extra"')
@@ -1057,6 +1057,5 @@ class TestManualDashboardPayload:
         # Then
         assert "PRs / month" in html
         assert "Reviewed lines" in html
-        assert "Lines / month" in html
         assert "Reviewed PRs / month" in html
         assert "Reviewed lines / month" in html

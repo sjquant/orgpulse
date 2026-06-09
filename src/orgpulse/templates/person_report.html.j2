@@ -319,7 +319,7 @@
                   </tr>
                 </thead>
                 <tbody>
-                  {% for row in result.weekly_period_rows | reverse %}
+                  {% for row in weekly_period_rows_recent %}
                   <tr>
                     <td data-label="Week">{{ row.period_key }}</td>
                     <td data-label="State">
@@ -333,8 +333,32 @@
                   </tr>
                   {% endfor %}
                 </tbody>
+                {% if weekly_period_rows_older %}
+                <tbody id="weekly-period-extra" class="hidden">
+                  {% for row in weekly_period_rows_older %}
+                  <tr>
+                    <td data-label="Week">{{ row.period_key }}</td>
+                    <td data-label="State">
+                      <span class="period-state-pill{% if row.is_open or row.is_partial %} open{% endif %}">{{ row.label }}</span>
+                    </td>
+                    <td class="num" data-label="Authored PRs">{{ row.authored_pull_request_count | intfmt }}</td>
+                    <td class="num" data-label="Reviews Given">{{ row.review_submissions_given | intfmt }}</td>
+                    <td class="num" data-label="PRs Reviewed">{{ row.pull_requests_reviewed | intfmt }}</td>
+                    <td class="num" data-label="Approval Time">{{ row.median_approval_hours | duration }}</td>
+                    <td class="num" data-label="Reviewed Lines">{{ row.reviewed_lines | intfmt }}</td>
+                  </tr>
+                  {% endfor %}
+                </tbody>
+                {% endif %}
               </table>
             </div>
+            {% if weekly_period_rows_older %}
+            <div class="table-footer">
+              <button type="button" id="weekly-period-toggle" class="ghost-button" aria-expanded="false">
+                Show {{ [progressive_chunk_size, weekly_period_rows_older|length]|min }} more weekly rows
+              </button>
+            </div>
+            {% endif %}
           </article>
           <article class="cadence-panel hidden" id="person-cadence-monthly" role="tabpanel" aria-labelledby="person-cadence-monthly-tab" data-person-cadence-panel="monthly" hidden>
             <h3>Monthly report</h3>
@@ -352,7 +376,7 @@
                   </tr>
                 </thead>
                 <tbody>
-                  {% for row in result.monthly_period_rows | reverse %}
+                  {% for row in monthly_period_rows_recent %}
                   <tr>
                     <td data-label="Month">{{ row.period_key }}</td>
                     <td data-label="State">
@@ -366,8 +390,32 @@
                   </tr>
                   {% endfor %}
                 </tbody>
+                {% if monthly_period_rows_older %}
+                <tbody id="monthly-period-extra" class="hidden">
+                  {% for row in monthly_period_rows_older %}
+                  <tr>
+                    <td data-label="Month">{{ row.period_key }}</td>
+                    <td data-label="State">
+                      <span class="period-state-pill{% if row.is_open or row.is_partial %} open{% endif %}">{{ row.label }}</span>
+                    </td>
+                    <td class="num" data-label="Authored PRs">{{ row.authored_pull_request_count | intfmt }}</td>
+                    <td class="num" data-label="Reviews Given">{{ row.review_submissions_given | intfmt }}</td>
+                    <td class="num" data-label="PRs Reviewed">{{ row.pull_requests_reviewed | intfmt }}</td>
+                    <td class="num" data-label="Approval Time">{{ row.median_approval_hours | duration }}</td>
+                    <td class="num" data-label="Reviewed Lines">{{ row.reviewed_lines | intfmt }}</td>
+                  </tr>
+                  {% endfor %}
+                </tbody>
+                {% endif %}
               </table>
             </div>
+            {% if monthly_period_rows_older %}
+            <div class="table-footer">
+              <button type="button" id="monthly-period-toggle" class="ghost-button" aria-expanded="false">
+                Show {{ [progressive_chunk_size, monthly_period_rows_older|length]|min }} more monthly rows
+              </button>
+            </div>
+            {% endif %}
           </article>
         </div>
       </section>
@@ -496,6 +544,10 @@
       const trendGrainTabs = Array.from(document.querySelectorAll("#person-trend-grain-tabs .tab-button"));
       const cadenceTabs = Array.from(document.querySelectorAll("#person-cadence-tabs .tab-button"));
       const cadencePanels = Array.from(document.querySelectorAll("[data-person-cadence-panel]"));
+      const weeklyPeriodToggle = document.getElementById("weekly-period-toggle");
+      const weeklyPeriodExtra = document.getElementById("weekly-period-extra");
+      const monthlyPeriodToggle = document.getElementById("monthly-period-toggle");
+      const monthlyPeriodExtra = document.getElementById("monthly-period-extra");
       const trendChartTitle = document.getElementById("person-trend-chart-title");
       const trendChartReadout = document.getElementById("person-trend-chart-readout");
       const trendChartRoot = document.getElementById("person-trend-chart-root");
@@ -579,6 +631,20 @@
         });
       });
       window.addEventListener("resize", renderPersonTrendChart);
+      setupProgressiveToggle({
+        button: weeklyPeriodToggle,
+        container: weeklyPeriodExtra,
+        items: weeklyPeriodExtra ? Array.from(weeklyPeriodExtra.querySelectorAll("tr")) : [],
+        chunkSize: {{ progressive_chunk_size }},
+        label: "weekly rows",
+      });
+      setupProgressiveToggle({
+        button: monthlyPeriodToggle,
+        container: monthlyPeriodExtra,
+        items: monthlyPeriodExtra ? Array.from(monthlyPeriodExtra.querySelectorAll("tr")) : [],
+        chunkSize: {{ progressive_chunk_size }},
+        label: "monthly rows",
+      });
       setupProgressiveToggle({
         button: repositoryToggle,
         container: repositoryExtra,

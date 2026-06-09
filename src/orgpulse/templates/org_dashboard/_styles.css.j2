@@ -744,6 +744,11 @@
       min-width: 0;
     }
 
+    .people-ranking-shell {
+      display: grid;
+      gap: 12px;
+    }
+
     .person-list {
       display: grid;
       gap: 10px;
@@ -765,11 +770,21 @@
       cursor: pointer;
     }
 
+    .reviewer-rank-card {
+      cursor: default;
+    }
+
     .person-card:hover,
     .person-card.active {
       border-color: var(--line-strong);
       border-left-color: var(--accent);
       background: var(--theme-toggle-hover);
+    }
+
+    .reviewer-rank-card:hover {
+      border-color: var(--line);
+      border-left-color: transparent;
+      background: var(--panel-subtle);
     }
 
     .person-card-header,

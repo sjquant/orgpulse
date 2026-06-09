@@ -404,6 +404,9 @@
     .tab-strip.secondary-tabs,
     .detail-tabs.secondary-tabs {
       gap: 6px;
+      width: fit-content;
+      max-width: 100%;
+      align-items: center;
     }
 
     .detail-tabs.tertiary-tabs {
@@ -642,8 +645,13 @@
 
     .two-col {
       display: grid;
-      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+      grid-template-columns: minmax(0, 1fr) auto;
       gap: 16px;
+      align-items: start;
+    }
+
+    .two-col > .secondary-tabs {
+      justify-self: end;
     }
 
     .wide-stack {

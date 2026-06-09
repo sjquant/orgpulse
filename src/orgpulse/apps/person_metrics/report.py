@@ -25,6 +25,14 @@ def render_person_report_html(
         result.repository_rows,
         top_count=progressive_chunk_size,
     )
+    weekly_period_rows_recent, weekly_period_rows_older = _split_recent_rows(
+        result.weekly_period_rows,
+        recent_count=progressive_chunk_size,
+    )
+    monthly_period_rows_recent, monthly_period_rows_older = _split_recent_rows(
+        result.monthly_period_rows,
+        recent_count=progressive_chunk_size,
+    )
     window_label = _window_label(result)
     report_payload = _html_report_payload(result)
     template = _template_environment().get_template("person_report.html.j2")
@@ -34,6 +42,10 @@ def render_person_report_html(
         reviewer_summary=result.reviewer_summary,
         repository_top_rows=repository_top_rows,
         repository_rest_rows=repository_rest_rows,
+        weekly_period_rows_recent=weekly_period_rows_recent,
+        weekly_period_rows_older=weekly_period_rows_older,
+        monthly_period_rows_recent=monthly_period_rows_recent,
+        monthly_period_rows_older=monthly_period_rows_older,
         top_repository_rows=top_repository_rows,
         repository_total_count=len(result.repository_rows),
         progressive_chunk_size=progressive_chunk_size,

@@ -34,10 +34,10 @@ from orgpulse.libs.reporting.contracts import (
     build_time_anchor_context,
 )
 
-AUTHOR_ROSTER_LIMIT = 12
-LEADERBOARD_LIMIT = 10
-WEEKLY_RECENT_TREND_COUNT = 12
-MONTHLY_RECENT_TREND_COUNT = 6
+AUTHOR_ROSTER_LIMIT = 5
+LEADERBOARD_LIMIT = 5
+WEEKLY_RECENT_TREND_COUNT = 5
+MONTHLY_RECENT_TREND_COUNT = 5
 
 DashboardModelT = TypeVar("DashboardModelT", bound=BaseModel)
 
@@ -1133,19 +1133,19 @@ def _build_reference_summary(
             authors,
             value_key="pull_requests",
             total=float(overview["pull_requests"]),
-            top_n=12,
+            top_n=AUTHOR_ROSTER_LIMIT,
         ),
         reviewers_top_coverage_pct=_coverage_share(
             reviewers,
             value_key="pull_requests_reviewed",
             total=float(sum(int(row["pull_requests_reviewed"]) for row in reviewers)),
-            top_n=10,
+            top_n=LEADERBOARD_LIMIT,
         ),
         repositories_top_coverage_pct=_coverage_share(
             repositories,
             value_key="pull_requests",
             total=float(overview["pull_requests"]),
-            top_n=10,
+            top_n=LEADERBOARD_LIMIT,
         ),
         top3_author_share_pct=_coverage_share(
             authors,

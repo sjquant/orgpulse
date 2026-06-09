@@ -5,6 +5,8 @@
     const authorDetails = JSON.parse(document.getElementById("author-details-data").textContent);
     const authorButtons = Array.from(document.querySelectorAll(".author-button"));
     const rosterButtons = Array.from(document.querySelectorAll('.author-button[data-author-surface="roster"]'));
+    const peopleRankingTabs = Array.from(document.querySelectorAll("#people-ranking-tabs .tab-button"));
+    const peopleRankingPanels = Array.from(document.querySelectorAll("[data-people-ranking-panel]"));
     const authorRosterSearch = document.getElementById("author-roster-search");
     const authorRosterToggle = document.getElementById("author-roster-toggle");
     const authorDetailRoot = document.getElementById("author-detail-root");
@@ -21,6 +23,8 @@
     const weeklyTrendExtra = document.getElementById("weekly-trend-extra");
     const monthlyTrendToggle = document.getElementById("monthly-trend-toggle");
     const monthlyTrendExtra = document.getElementById("monthly-trend-extra");
+    const referenceTrendTabs = Array.from(document.querySelectorAll("#reference-trend-tabs .tab-button"));
+    const referenceTrendPanels = Array.from(document.querySelectorAll("[data-reference-trend-panel]"));
     const trendChartRoot = document.getElementById("trend-chart-root");
     const trendChartReadout = document.getElementById("trend-chart-readout");
     const trendChartTitle = document.getElementById("trend-chart-title");
@@ -54,6 +58,8 @@
     let activeAuthorMetric = "pull_requests";
     let activeAuthorView = "timeline";
     let activeAuthorGrain = "weekly";
+    let activePeopleRanking = "authors";
+    let activeReferenceTrend = "weekly";
     let activeAuthorPointIndex = null;
     let activeAuthor = "{{ default_author }}";
     let rosterVisibleOverflowCount = 0;
@@ -70,6 +76,8 @@
       authorGrainTabs.find((button) => button.dataset.authorGrain === activeAuthorGrain),
     );
     syncThemeButtons(document.documentElement.dataset.theme || "dark");
+    syncPeopleRankingTabs();
+    syncReferenceTrendTabs();
     updateAuthorRoster();
 
     for (const button of themeButtons) {
@@ -87,7 +95,7 @@
         } else if (rosterVisibleOverflowCount >= rosterButtons.filter((button) => button.dataset.overflow === "true").length) {
           rosterVisibleOverflowCount = 0;
         } else {
-          rosterVisibleOverflowCount += 12;
+          rosterVisibleOverflowCount += 5;
         }
         updateAuthorRoster(authorRosterSearch?.value || "");
       });
@@ -108,32 +116,46 @@
       });
     }
 
+    for (const button of peopleRankingTabs) {
+      button.addEventListener("click", () => {
+        activePeopleRanking = button.dataset.peopleRanking;
+        syncPeopleRankingTabs();
+      });
+    }
+
+    for (const button of referenceTrendTabs) {
+      button.addEventListener("click", () => {
+        activeReferenceTrend = button.dataset.referenceTrend;
+        syncReferenceTrendTabs();
+      });
+    }
+
     setupProgressiveToggle({
       button: reviewerToggle,
       container: reviewerExtra,
-      items: reviewerExtra ? Array.from(reviewerExtra.querySelectorAll("tr")) : [],
-      chunkSize: 10,
+      items: reviewerExtra ? Array.from(reviewerExtra.querySelectorAll(".reviewer-overflow")) : [],
+      chunkSize: 5,
       label: "reviewers",
     });
     setupProgressiveToggle({
       button: repositoryToggle,
       container: repositoryExtra,
       items: repositoryExtra ? Array.from(repositoryExtra.querySelectorAll("tr")) : [],
-      chunkSize: 10,
+      chunkSize: 5,
       label: "repositories",
     });
     setupProgressiveToggle({
       button: weeklyTrendToggle,
       container: weeklyTrendExtra,
       items: weeklyTrendExtra ? Array.from(weeklyTrendExtra.querySelectorAll("tr")) : [],
-      chunkSize: 12,
+      chunkSize: 5,
       label: "older weekly rows",
     });
     setupProgressiveToggle({
       button: monthlyTrendToggle,
       container: monthlyTrendExtra,
       items: monthlyTrendExtra ? Array.from(monthlyTrendExtra.querySelectorAll("tr")) : [],
-      chunkSize: 6,
+      chunkSize: 5,
       label: "older monthly rows",
     });
 
@@ -225,7 +247,7 @@
         return;
       }
       if (normalizedQuery) {
-        authorRosterToggle.textContent = "Clear search to restore Top 12 view";
+        authorRosterToggle.textContent = "Clear search to restore Top 5 view";
         authorRosterToggle.setAttribute("aria-expanded", "true");
       } else {
         const remaining = Math.max(0, overflowButtons.length - rosterVisibleOverflowCount);
@@ -233,12 +255,36 @@
           authorRosterToggle.textContent = "Collapse roster";
           authorRosterToggle.setAttribute("aria-expanded", "true");
         } else {
-          authorRosterToggle.textContent = `Show ${Math.min(12, remaining)} more people`;
+          authorRosterToggle.textContent = `Show ${Math.min(5, remaining)} more people`;
           authorRosterToggle.setAttribute(
             "aria-expanded",
             String(rosterVisibleOverflowCount > 0),
           );
         }
+      }
+    }
+
+    function syncPeopleRankingTabs() {
+      syncTabs(
+        peopleRankingTabs,
+        peopleRankingTabs.find((button) => button.dataset.peopleRanking === activePeopleRanking),
+      );
+      for (const panel of peopleRankingPanels) {
+        const isActive = panel.dataset.peopleRankingPanel === activePeopleRanking;
+        panel.classList.toggle("hidden", !isActive);
+        panel.toggleAttribute("hidden", !isActive);
+      }
+    }
+
+    function syncReferenceTrendTabs() {
+      syncTabs(
+        referenceTrendTabs,
+        referenceTrendTabs.find((button) => button.dataset.referenceTrend === activeReferenceTrend),
+      );
+      for (const panel of referenceTrendPanels) {
+        const isActive = panel.dataset.referenceTrendPanel === activeReferenceTrend;
+        panel.classList.toggle("hidden", !isActive);
+        panel.toggleAttribute("hidden", !isActive);
       }
     }
 

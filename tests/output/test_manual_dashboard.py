@@ -727,11 +727,20 @@ class TestManualDashboardPayload:
 
         # Then
         assert 'class="table-footer"' in html
+        assert 'id="people-ranking-tabs"' in html
+        assert 'data-people-ranking="authors"' in html
+        assert 'data-people-ranking="reviewers"' in html
+        assert 'id="people-reviewers-panel"' in html
         assert html.index('id="author-roster-toggle"') > html.index('class="person-list"')
         assert html.index('id="reviewer-toggle"') > html.index('id="reviewer-extra"')
         assert html.index('id="repository-toggle"') > html.index('id="repository-extra"')
         assert html.index('id="weekly-trend-toggle"') > html.index('id="weekly-trend-extra"')
         assert html.index('id="monthly-trend-toggle"') > html.index('id="monthly-trend-extra"')
+        assert 'id="reference-trend-tabs"' in html
+        assert 'data-reference-trend="weekly"' in html
+        assert 'data-reference-trend="monthly"' in html
+        assert "Reviewer leaderboard" not in html
+        assert "Repository leaderboard" in html
 
     def test_reference_trend_tables_render_newest_periods_first(self) -> None:
         """Render recent and older reference trend rows in newest-to-oldest order."""
@@ -792,9 +801,9 @@ class TestManualDashboardPayload:
             "2026-06",
             "2026-05",
             "2026-04",
-            "2026-03",
         ]
         assert [row["period_key"] for row in prepared.monthly_trends_older] == [
+            "2026-03",
             "2026-02",
             "2026-01",
         ]

@@ -29,17 +29,24 @@ def render_person_metrics_result(
 def _render_csv(
     result: PersonMetricsResult,
 ) -> str:
-    fieldnames = tuple(PersonPeriodRow.model_fields.keys())
+    fieldnames = ("period_grain", *PersonPeriodRow.model_fields.keys())
     buffer = StringIO()
     writer = csv.DictWriter(buffer, fieldnames=fieldnames, lineterminator="\n")
     writer.writeheader()
-    for row in result.period_rows:
-        writer.writerow(
-            {
-                key: "" if value is None else value
-                for key, value in row.model_dump(mode="json").items()
-            }
-        )
+    for period_grain, rows in (
+        ("week", result.weekly_period_rows),
+        ("month", result.monthly_period_rows),
+    ):
+        for row in rows:
+            writer.writerow(
+                {
+                    "period_grain": period_grain,
+                    **{
+                        key: "" if value is None else value
+                        for key, value in row.model_dump(mode="json").items()
+                    },
+                }
+            )
     return buffer.getvalue().rstrip("\n")
 
 

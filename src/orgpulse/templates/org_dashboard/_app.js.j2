@@ -786,14 +786,20 @@
       }
       const label = node.dataset.pointLabel || node.getAttribute("aria-label") || "-";
       const value = node.dataset.pointValue || "-";
-      tooltip.innerHTML = `
-        <strong>${label}</strong>
-        <span>${tooltipMeta.metricLabel}: ${value}</span>
-        <span>${tooltipMeta.subtitle}</span>
-      `;
+      tooltip.replaceChildren(
+        tooltipText("strong", label),
+        tooltipText("span", `${tooltipMeta.metricLabel}: ${value}`),
+        tooltipText("span", tooltipMeta.subtitle)
+      );
       tooltip.classList.remove("hidden");
       tooltip.setAttribute("aria-hidden", "false");
       positionChartTooltip(tooltip, chartElement, node, event);
+    }
+
+    function tooltipText(tagName, text) {
+      const element = document.createElement(tagName);
+      element.textContent = text;
+      return element;
     }
 
     function hideChartTooltip(tooltip) {

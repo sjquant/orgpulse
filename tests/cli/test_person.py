@@ -468,6 +468,35 @@ class TestPersonCommand:
                 "commits_total": "0",
                 "is_closed": "True",
                 "is_open": "False",
+                "is_partial": "True",
+                "label": "open week",
+                "median_approval_hours": "",
+                "median_first_review_hours": "",
+                "median_merge_hours": "",
+                "merged_pull_request_count": "0",
+                "observed_through_date": "2026-04-05",
+                "open_month": "False",
+                "open_pull_request_count": "0",
+                "open_week": "False",
+                "period_grain": "week",
+                "period_end_date": "2026-04-05",
+                "period_key": "2026-W14",
+                "period_start_date": "2026-03-30",
+                "pull_requests_reviewed": "1",
+                "reviewed_lines": "10",
+                "review_submissions_given": "1",
+                "reviews_received": "0",
+                "status": "closed",
+            },
+            {
+                "approvals_given": "1",
+                "authored_pull_request_count": "0",
+                "changed_lines_total": "0",
+                "changes_requested_given": "0",
+                "comments_given": "0",
+                "commits_total": "0",
+                "is_closed": "True",
+                "is_open": "False",
                 "is_partial": "False",
                 "label": "closed month",
                 "median_approval_hours": "",
@@ -478,6 +507,7 @@ class TestPersonCommand:
                 "open_month": "False",
                 "open_pull_request_count": "0",
                 "open_week": "False",
+                "period_grain": "month",
                 "period_end_date": "2026-04-30",
                 "period_key": "2026-04",
                 "period_start_date": "2026-04-01",
@@ -824,6 +854,80 @@ class TestPersonCommand:
         # Then
         assert result.exit_code == 2
         assert "No such option: --grain" in result.stderr
+
+    def test_ignores_global_period_for_person_source_selection(
+        self,
+        runner: CliRunner,
+        github_auth_service: None,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path,
+        pull_request_factory,
+    ) -> None:
+        """Keep person extraction cadence-independent when global period is weekly."""
+        # Given
+        collection = PullRequestCollection(
+            window=CollectionWindow(
+                scope=RunScope.FULL_HISTORY,
+                start_date=None,
+                end_date=datetime.fromisoformat("2026-04-30T00:00:00").date(),
+            ),
+            pull_requests=(
+                pull_request_factory(
+                    repository_full_name="acme/api",
+                    number=81,
+                    title="Alice API work",
+                    author_login="alice",
+                    created_at=datetime.fromisoformat("2026-04-02T09:00:00"),
+                    updated_at=datetime.fromisoformat("2026-04-03T10:00:00"),
+                ),
+            ),
+            failures=(),
+        )
+        _configure_production_cli_runtime(
+            monkeypatch,
+            collection=collection,
+        )
+        run_result = runner.invoke(
+            app,
+            [
+                "run",
+                "--org",
+                "acme",
+                "--mode",
+                "full",
+                "--as-of",
+                "2026-04-30",
+                "--output-dir",
+                str(tmp_path),
+            ],
+        )
+        assert run_result.exit_code == 0
+        monkeypatch.setenv("ORGPULSE_PERIOD", "week")
+
+        # When
+        result = runner.invoke(
+            app,
+            [
+                "person",
+                "--org",
+                "acme",
+                "--login",
+                "alice",
+                "--output-dir",
+                str(tmp_path),
+                "--format",
+                "json",
+            ],
+        )
+
+        # Then
+        assert result.exit_code == 0
+        payload = json.loads(result.stdout)
+        assert payload["grain"] == "month"
+        assert [row["period_key"] for row in payload["monthly_period_rows"]] == [
+            "2026-04"
+        ]
+        assert payload["weekly_period_rows"][0]["period_key"] == "2026-W14"
 
     def test_writes_person_metrics_as_markdown_and_html(
         self,

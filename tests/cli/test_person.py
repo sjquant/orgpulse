@@ -191,7 +191,7 @@ class TestPersonCommand:
         pull_request_factory,
         review_factory,
     ) -> None:
-        """Leave approval timing empty when a later external decision requests changes."""
+        """Leave approval timing empty when the final same-time external decision requests changes."""
         # Given
         collection = PullRequestCollection(
             window=CollectionWindow(
@@ -227,7 +227,7 @@ class TestPersonCommand:
                             review_id=112,
                             author_login="bob",
                             state="CHANGES_REQUESTED",
-                            submitted_at=datetime.fromisoformat("2026-04-03T11:00:00"),
+                            submitted_at=datetime.fromisoformat("2026-04-03T09:00:00"),
                         ),
                     ),
                 ),
@@ -279,6 +279,7 @@ class TestPersonCommand:
         payload = json.loads(result.stdout)
         assert payload["summary"]["median_approval_hours"] is None
         assert payload["period_rows"][0]["median_approval_hours"] is None
+        assert payload["repository_rows"][0]["median_approval_hours"] is None
         assert payload["summary"]["reviews_received"] == 3
 
     def test_counts_approval_time_from_later_review_request_boundary(

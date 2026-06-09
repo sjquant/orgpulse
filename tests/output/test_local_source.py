@@ -37,16 +37,6 @@ class TestManualDashboardLocalSource:
             json.dumps(manifest_payload),
             encoding="utf-8",
         )
-        source_manifest = (
-            LocalSnapshotSource()
-            .load_dashboard_source(
-                org="acme",
-                output_dir=source_output_dir,
-                since=date.fromisoformat("2026-03-01"),
-                until=date.fromisoformat("2026-04-27"),
-            )
-            .manifest
-        )
         captured: dict[str, object] = {}
 
         def fake_build_run_config(**kwargs: object) -> RunConfig:
@@ -61,11 +51,15 @@ class TestManualDashboardLocalSource:
 
         # When
         with pytest.raises(RuntimeError, match="invalid run configuration"):
-            _dashboard_module._refresh_local_source_outputs(
+            _dashboard_module.generate_dashboard_report(
                 org="acme",
-                as_of=date.fromisoformat("2026-04-27"),
+                since=date.fromisoformat("2026-03-01"),
+                until=date.fromisoformat("2026-04-27"),
                 source_output_dir=source_output_dir,
-                source_manifest=source_manifest,
+                output_dir=tmp_path / "dashboard",
+                base_name="acme-created-at-since-2026-03-01",
+                refresh=True,
+                distribution_percentile=100,
             )
 
         # Then
@@ -316,9 +310,10 @@ class TestManualDashboardLocalSource:
                     period_key="2026-03",
                     repository_full_name="acme/api",
                     pull_request_number=1,
-                    review_id=101,
-                    author_login="reviewer-1",
-                    submitted_at="2026-03-20T10:00:00+00:00",
+                    review_id=103,
+                    author_login="reviewer-2",
+                    submitted_at="2026-03-20T12:00:00+00:00",
+                    state="CHANGES_REQUESTED",
                 ),
                 _manual_dashboard_review_row(
                     period_key="2026-03",
@@ -332,10 +327,9 @@ class TestManualDashboardLocalSource:
                     period_key="2026-03",
                     repository_full_name="acme/api",
                     pull_request_number=1,
-                    review_id=103,
-                    author_login="reviewer-2",
+                    review_id=101,
+                    author_login="reviewer-1",
                     submitted_at="2026-03-20T12:00:00+00:00",
-                    state="CHANGES_REQUESTED",
                 ),
             ],
             timeline_rows=[],

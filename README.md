@@ -91,7 +91,6 @@ Extract one person's metrics:
 ```bash
 uv run orgpulse person alice \
   --org acme \
-  --period month \
   --since 2026-01-01 \
   --until 2026-04-30 \
   --source-output-dir output \

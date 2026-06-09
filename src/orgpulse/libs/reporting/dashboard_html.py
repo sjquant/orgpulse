@@ -274,6 +274,7 @@ def _build_dashboard_sections(
         "overview": _build_overview(
             payload,
             pull_requests=pull_requests,
+            reviewers=payload["reviewers"],
             distribution_percentile=distribution_percentile,
             distribution_thresholds=distribution_thresholds,
         ),
@@ -376,6 +377,7 @@ def _build_overview(
     payload: dict[str, Any],
     *,
     pull_requests: list[dict[str, Any]],
+    reviewers: list[dict[str, Any]],
     distribution_percentile: int,
     distribution_thresholds: dict[str, float | None],
 ) -> dict[str, Any]:
@@ -426,7 +428,7 @@ def _build_overview(
         "open_pull_requests": _open_pull_request_count(pull_requests),
         "repositories": _unique_value_count(pull_requests, "repository_full_name"),
         "authors": _unique_value_count(pull_requests, "author_login"),
-        "review_submissions": _review_submission_count(pull_requests),
+        "review_submissions": _reviewer_submission_count(reviewers),
         "total_changed_lines": _as_int(changed_lines["total"]),
         "total_commits": _as_int(commits["total"]),
         "median_first_review_hours": _round(_median_or_none(first_review_values)),
@@ -478,6 +480,12 @@ def _build_overview(
         "open_month_key": until.strftime("%Y-%m") if source_as_of < _month_end(until) else None,
         "distribution_percentile": distribution_percentile,
     }
+
+
+def _reviewer_submission_count(
+    reviewers: list[dict[str, Any]],
+) -> int:
+    return sum(int(reviewer.get("review_submissions") or 0) for reviewer in reviewers)
 
 
 def _build_author_rows(

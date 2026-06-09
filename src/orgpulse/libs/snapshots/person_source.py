@@ -17,6 +17,7 @@ PullRequestKey = tuple[str, str]
 class ReviewFact:
     """Store one review row with the pull request context needed for person metrics."""
 
+    review_id: int
     repository_full_name: str
     pull_request_number: str
     state: str
@@ -143,6 +144,7 @@ class PersonSnapshotSource:
             )
             reviews_by_pull_request[pull_request_key].append(
                 ReviewFact(
+                    review_id=int(row["review_id"]),
                     repository_full_name=row["repository_full_name"],
                     pull_request_number=row["pull_request_number"],
                     state=row["state"],
@@ -156,8 +158,7 @@ class PersonSnapshotSource:
             reviews.sort(
                 key=lambda review: (
                     review.submitted_at.isoformat() if review.submitted_at else "",
-                    review.author_login or "",
-                    review.state,
+                    review.review_id,
                 )
             )
         return reviews_by_pull_request

@@ -731,6 +731,9 @@ class TestManualDashboardPayload:
         assert 'data-people-ranking="authors"' in html
         assert 'data-people-ranking="reviewers"' in html
         assert 'id="people-reviewers-panel"' in html
+        assert 'class="tab-strip primary-tabs"' in html
+        assert 'class="tab-strip secondary-tabs"' in html
+        assert 'class="detail-tabs tertiary-tabs"' in html
         assert html.index('id="author-roster-toggle"') > html.index('class="person-list"')
         assert html.index('id="reviewer-toggle"') > html.index('id="reviewer-extra"')
         assert html.index('id="repository-toggle"') > html.index('id="repository-extra"')

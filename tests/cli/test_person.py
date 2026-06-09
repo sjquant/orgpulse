@@ -920,6 +920,8 @@ class TestPersonCommand:
         assert 'data-theme-option="dark"' in html_result.stdout
         assert 'id="person-trend-chart-root"' in html_result.stdout
         assert 'id="person-trend-chart-readout"' in html_result.stdout
+        assert 'class="tab-strip primary-tabs"' in html_result.stdout
+        assert 'class="tab-strip secondary-tabs"' in html_result.stdout
         assert (
             'data-person-trend-metric="authored_pull_request_count"'
             in html_result.stdout

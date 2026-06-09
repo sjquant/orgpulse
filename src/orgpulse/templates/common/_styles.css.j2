@@ -393,6 +393,25 @@
       gap: 8px;
     }
 
+    .tab-strip.primary-tabs {
+      gap: 10px;
+      padding: 4px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius-control);
+      background: var(--panel-muted);
+    }
+
+    .tab-strip.secondary-tabs,
+    .detail-tabs.secondary-tabs {
+      gap: 6px;
+    }
+
+    .detail-tabs.tertiary-tabs {
+      gap: 6px;
+      padding-left: 8px;
+      border-left: 2px solid var(--line);
+    }
+
     .tab-button {
       border: 1px solid var(--line-strong);
       background: var(--panel-subtle);
@@ -403,10 +422,34 @@
       cursor: pointer;
     }
 
+    .primary-tabs .tab-button {
+      padding: 9px 14px;
+      font-weight: 800;
+      color: var(--text);
+      background: color-mix(in srgb, var(--panel-subtle) 70%, var(--active-fill) 30%);
+    }
+
+    .secondary-tabs .tab-button {
+      padding: 7px 11px;
+      font-size: 0.88rem;
+    }
+
+    .tertiary-tabs .tab-button {
+      padding: 6px 9px;
+      font-size: 0.8rem;
+      border-color: var(--line);
+      background: transparent;
+    }
+
     .tab-button.active {
       color: var(--text);
       background: var(--active-fill);
       border-color: var(--accent);
+    }
+
+    .tertiary-tabs .tab-button.active {
+      border-color: color-mix(in srgb, var(--accent-2) 70%, var(--line) 30%);
+      background: color-mix(in srgb, var(--accent-2) 12%, transparent);
     }
 
     .tab-button:focus-visible,

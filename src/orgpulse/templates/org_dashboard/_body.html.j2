@@ -127,7 +127,7 @@
         <h2>Weekly and monthly movement, graphed</h2>
         <p class="section-copy">Primary trend surface for throughput, code volume, and approval speed. Dense weekly/monthly tables live in the reference section below.</p>
         <div class="two-col">
-          <div class="tab-strip" id="trend-metric-tabs">
+          <div class="tab-strip primary-tabs" id="trend-metric-tabs">
             <button type="button" class="tab-button active" data-metric="pull_requests" aria-selected="true">PR throughput</button>
             <button type="button" class="tab-button" data-metric="pull_requests_per_active_author" aria-selected="false">PRs / active author</button>
             <button type="button" class="tab-button" data-metric="changed_lines" aria-selected="false">Changed lines</button>
@@ -136,7 +136,7 @@
             <button type="button" class="tab-button" data-metric="median_first_review_hours" aria-selected="false">First review</button>
             <button type="button" class="tab-button" data-metric="median_merge_hours" aria-selected="false">Merge time</button>
           </div>
-          <div class="tab-strip" id="trend-grain-tabs">
+          <div class="tab-strip secondary-tabs" id="trend-grain-tabs">
             <button type="button" class="tab-button active" data-grain="weekly" aria-selected="true">Weekly</button>
             <button type="button" class="tab-button" data-grain="monthly" aria-selected="false">Monthly</button>
           </div>
@@ -172,7 +172,7 @@
         <p class="section-copy">Author delivery and reviewer load share one ranking surface. Each list starts with the top 5 and expands in batches of 5.</p>
         <div class="people-grid">
           <div class="people-ranking-shell">
-            <div class="tab-strip" id="people-ranking-tabs" role="tablist" aria-label="People ranking">
+            <div class="tab-strip primary-tabs" id="people-ranking-tabs" role="tablist" aria-label="People ranking">
               <button type="button" class="tab-button active" id="people-authors-tab" role="tab" data-people-ranking="authors" aria-controls="people-authors-panel" aria-selected="true">Authors</button>
               <button type="button" class="tab-button" id="people-reviewers-tab" role="tab" data-people-ranking="reviewers" aria-controls="people-reviewers-panel" aria-selected="false">Reviewers</button>
             </div>
@@ -288,19 +288,19 @@
               </div>
               <span>Author + reviewer signals</span>
             </div>
-            <div class="detail-tabs" id="author-detail-view-tabs">
+            <div class="detail-tabs secondary-tabs" id="author-detail-view-tabs">
               <button type="button" class="tab-button active" data-author-view="timeline" aria-selected="true">Timeline</button>
               <button type="button" class="tab-button" data-author-view="mix" aria-selected="false">Size mix</button>
             </div>
             <div class="two-col">
-              <div class="detail-tabs" id="author-detail-metric-tabs">
+              <div class="detail-tabs tertiary-tabs" id="author-detail-metric-tabs">
                 <button type="button" class="tab-button active" data-author-metric="pull_requests" aria-selected="true">Throughput</button>
                 <button type="button" class="tab-button" data-author-metric="changed_lines" aria-selected="false">Changed lines</button>
                 <button type="button" class="tab-button" data-author-metric="median_approval_hours" aria-selected="false">Approval speed</button>
                 <button type="button" class="tab-button" data-author-metric="median_first_review_hours" aria-selected="false">First review</button>
                 <button type="button" class="tab-button" data-author-metric="median_merge_hours" aria-selected="false">Merge speed</button>
               </div>
-              <div class="detail-tabs" id="author-detail-grain-tabs">
+              <div class="detail-tabs tertiary-tabs" id="author-detail-grain-tabs">
                 <button type="button" class="tab-button active" data-author-grain="weekly" aria-selected="true">Weekly</button>
                 <button type="button" class="tab-button" data-author-grain="monthly" aria-selected="false">Monthly</button>
               </div>
@@ -484,7 +484,7 @@
         <div class="reference-grid">
           <details class="disclosure" open>
             <summary>Trend tables</summary>
-            <div class="tab-strip" id="reference-trend-tabs" role="tablist" aria-label="Reference trend cadence">
+            <div class="tab-strip secondary-tabs" id="reference-trend-tabs" role="tablist" aria-label="Reference trend cadence">
               <button type="button" class="tab-button active" id="reference-weekly-tab" role="tab" data-reference-trend="weekly" aria-controls="reference-weekly-panel" aria-selected="true">Weekly</button>
               <button type="button" class="tab-button" id="reference-monthly-tab" role="tab" data-reference-trend="monthly" aria-controls="reference-monthly-panel" aria-selected="false">Monthly</button>
             </div>

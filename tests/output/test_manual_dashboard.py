@@ -582,7 +582,7 @@ class TestManualDashboardPayload:
         )
         assert "Median approval time" in html
         assert 'data-metric="median_approval_hours"' in html
-        assert 'data-author-metric="median_approval_hours"' in html
+        assert 'data-people-metric="median_approval_hours"' in html
         assert 'data-label="Median approval"' in html
         assert 'data-label="Median first review"' in html
 
@@ -735,7 +735,9 @@ class TestManualDashboardPayload:
         assert 'id="people-ranking-toggle"' in html
         assert 'class="tab-strip primary-tabs"' in html
         assert 'class="tab-strip secondary-tabs"' in html
+        assert 'id="author-detail-metric-tabs"' not in html
         assert "Size mix" not in html
+        assert "Timeline" not in html
         assert html.index('id="repository-toggle"') > html.index('id="repository-extra"')
         assert html.index('id="weekly-trend-toggle"') > html.index('id="weekly-trend-extra"')
         assert html.index('id="monthly-trend-toggle"') > html.index('id="monthly-trend-extra"')

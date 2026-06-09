@@ -168,116 +168,25 @@
 
       <section id="people" class="panel section-panel">
         <p class="section-kicker">People command center</p>
-        <h2>One person, delivery and review context together</h2>
-        <p class="section-copy">Author delivery and reviewer load share one ranking surface. Each list starts with the top 5 and expands in batches of 5.</p>
+        <h2>Metric-ranked people, selected profile held in context</h2>
+        <p class="section-copy">Switch metrics to reorder people by that signal. The selected person remains active across ranking changes.</p>
         <div class="people-grid">
           <div class="people-ranking-shell">
-            <div class="tab-strip primary-tabs" id="people-ranking-tabs" role="tablist" aria-label="People ranking">
-              <button type="button" class="tab-button active" id="people-authors-tab" role="tab" data-people-ranking="authors" aria-controls="people-authors-panel" aria-selected="true">Authors</button>
-              <button type="button" class="tab-button" id="people-reviewers-tab" role="tab" data-people-ranking="reviewers" aria-controls="people-reviewers-panel" aria-selected="false">Reviewers</button>
+            <div class="tab-strip primary-tabs" id="people-metric-tabs" role="tablist" aria-label="People ranking metric">
+              <button type="button" class="tab-button active" data-people-metric="pull_requests" aria-selected="true">Throughput</button>
+              <button type="button" class="tab-button" data-people-metric="changed_lines" aria-selected="false">Changed lines</button>
+              <button type="button" class="tab-button" data-people-metric="pull_requests_reviewed" aria-selected="false">Reviewed PRs</button>
+              <button type="button" class="tab-button" data-people-metric="reviewed_lines" aria-selected="false">Reviewed lines</button>
+              <button type="button" class="tab-button" data-people-metric="median_approval_hours" aria-selected="false">Approval speed</button>
+              <button type="button" class="tab-button" data-people-metric="median_first_review_hours" aria-selected="false">First review</button>
+              <button type="button" class="tab-button" data-people-metric="median_merge_hours" aria-selected="false">Merge speed</button>
             </div>
-            <div id="people-authors-panel" role="tabpanel" aria-labelledby="people-authors-tab" data-people-ranking-panel="authors">
             <div class="control-row">
-              <span class="control-note">Top 5 cover {{ reference_summary.author_roster_coverage_pct | numfmt }}% of authored PR flow.</span>
-              <div class="control-actions">
-                <input id="author-roster-search" class="search-input" type="search" placeholder="Find a person" aria-label="Find a person">
-              </div>
+              <span class="control-note">Top 5 cover {{ reference_summary.author_roster_coverage_pct | numfmt }}% of authored PR flow on the default throughput lens.</span>
             </div>
-            <div class="person-list">
-              {% for row in authors_roster_top %}
-              <button
-                type="button"
-                class="author-button person-card{% if default_author == row.author_login %} active{% endif %}"
-                data-author="{{ row.author_login }}"
-                data-author-surface="roster"
-                data-overflow="false"
-                aria-pressed="{% if default_author == row.author_login %}true{% else %}false{% endif %}"
-              >
-                <span class="person-card-header">
-                  <strong>{{ row.author_login }}</strong>
-                  <small>#{{ loop.index }}</small>
-                </span>
-                <span class="person-card-metrics">
-                  <span>{{ row.pull_requests | intfmt }} PRs</span>
-                  <span>{{ row.changed_lines | intfmt }} lines</span>
-                  <span>{{ row.median_approval_hours | duration }} approval</span>
-                </span>
-              </button>
-              {% endfor %}
-              {% for row in authors_roster_rest %}
-              <button
-                type="button"
-                class="author-button person-card hidden roster-overflow{% if default_author == row.author_login %} active{% endif %}"
-                data-author="{{ row.author_login }}"
-                data-author-surface="roster"
-                data-overflow="true"
-                aria-pressed="{% if default_author == row.author_login %}true{% else %}false{% endif %}"
-              >
-                <span class="person-card-header">
-                  <strong>{{ row.author_login }}</strong>
-                  <small>#{{ loop.index + authors_roster_top|length }}</small>
-                </span>
-                <span class="person-card-metrics">
-                  <span>{{ row.pull_requests | intfmt }} PRs</span>
-                  <span>{{ row.changed_lines | intfmt }} lines</span>
-                  <span>{{ row.median_approval_hours | duration }} approval</span>
-                </span>
-              </button>
-              {% endfor %}
-            </div>
-            {% if authors_roster_rest %}
+            <div id="people-ranking-list" class="person-list"></div>
             <div class="table-footer">
-              <button type="button" id="author-roster-toggle" class="ghost-button" aria-expanded="false">
-                Show {{ [5, authors_roster_rest|length]|min }} more people
-              </button>
-            </div>
-            {% endif %}
-            </div>
-            <div id="people-reviewers-panel" class="hidden" role="tabpanel" aria-labelledby="people-reviewers-tab" data-people-ranking-panel="reviewers" hidden>
-              <div class="control-row">
-                <span class="control-note">Top 5 reviewers cover {{ reference_summary.reviewers_top_coverage_pct | numfmt }}% of reviewed PR touches.</span>
-              </div>
-              <div class="person-list">
-                {% for row in reviewers_top %}
-                <article class="person-card reviewer-rank-card">
-                  <span class="person-card-header">
-                    <strong>{{ row.reviewer_login }}</strong>
-                    <small>#{{ loop.index }}</small>
-                  </span>
-                  <span class="person-card-metrics">
-                    <span>{{ row.pull_requests_reviewed | intfmt }} PRs reviewed</span>
-                    <span>{{ row.pull_requests_reviewed_per_month | numfmt }} PRs/mo</span>
-                    <span>{{ row.reviewed_lines | intfmt }} lines</span>
-                    <span>{{ row.reviewed_lines_per_month | numfmt }} Lines / month</span>
-                    <span>{{ row.review_submissions | intfmt }} submissions</span>
-                  </span>
-                </article>
-                {% endfor %}
-              </div>
-              {% if reviewers_rest %}
-              <div id="reviewer-extra" class="person-list hidden">
-                {% for row in reviewers_rest %}
-                <article class="person-card reviewer-rank-card hidden reviewer-overflow">
-                  <span class="person-card-header">
-                    <strong>{{ row.reviewer_login }}</strong>
-                    <small>#{{ loop.index + reviewers_top|length }}</small>
-                  </span>
-                  <span class="person-card-metrics">
-                    <span>{{ row.pull_requests_reviewed | intfmt }} PRs reviewed</span>
-                    <span>{{ row.pull_requests_reviewed_per_month | numfmt }} PRs/mo</span>
-                    <span>{{ row.reviewed_lines | intfmt }} lines</span>
-                    <span>{{ row.reviewed_lines_per_month | numfmt }} Lines / month</span>
-                    <span>{{ row.review_submissions | intfmt }} submissions</span>
-                  </span>
-                </article>
-                {% endfor %}
-              </div>
-              <div class="table-footer">
-                <button type="button" id="reviewer-toggle" class="ghost-button" aria-expanded="false">
-                  Show {{ [5, reviewers_rest|length]|min }} more reviewers
-                </button>
-              </div>
-              {% endif %}
+              <button type="button" id="people-ranking-toggle" class="ghost-button" aria-expanded="false"></button>
             </div>
           </div>
           <div id="author-detail" class="person-profile" tabindex="-1">
@@ -288,19 +197,15 @@
               </div>
               <span>Author + reviewer signals</span>
             </div>
-            <div class="detail-tabs secondary-tabs" id="author-detail-view-tabs">
-              <button type="button" class="tab-button active" data-author-view="timeline" aria-selected="true">Timeline</button>
-              <button type="button" class="tab-button" data-author-view="mix" aria-selected="false">Size mix</button>
-            </div>
             <div class="two-col">
-              <div class="detail-tabs tertiary-tabs" id="author-detail-metric-tabs">
+              <div class="detail-tabs secondary-tabs" id="author-detail-metric-tabs">
                 <button type="button" class="tab-button active" data-author-metric="pull_requests" aria-selected="true">Throughput</button>
                 <button type="button" class="tab-button" data-author-metric="changed_lines" aria-selected="false">Changed lines</button>
                 <button type="button" class="tab-button" data-author-metric="median_approval_hours" aria-selected="false">Approval speed</button>
                 <button type="button" class="tab-button" data-author-metric="median_first_review_hours" aria-selected="false">First review</button>
                 <button type="button" class="tab-button" data-author-metric="median_merge_hours" aria-selected="false">Merge speed</button>
               </div>
-              <div class="detail-tabs tertiary-tabs" id="author-detail-grain-tabs">
+              <div class="detail-tabs secondary-tabs" id="author-detail-grain-tabs">
                 <button type="button" class="tab-button active" data-author-grain="weekly" aria-selected="true">Weekly</button>
                 <button type="button" class="tab-button" data-author-grain="monthly" aria-selected="false">Monthly</button>
               </div>

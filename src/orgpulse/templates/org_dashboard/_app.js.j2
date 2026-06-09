@@ -3,20 +3,19 @@
     const themeButtons = Array.from(document.querySelectorAll(".theme-switch-button"));
     const themeSwitch = document.querySelector(".theme-switch");
     const authorDetails = JSON.parse(document.getElementById("author-details-data").textContent);
-    const authorButtons = Array.from(document.querySelectorAll(".author-button"));
-    const rosterButtons = Array.from(document.querySelectorAll('.author-button[data-author-surface="roster"]'));
-    const peopleRankingTabs = Array.from(document.querySelectorAll("#people-ranking-tabs .tab-button"));
-    const peopleRankingPanels = Array.from(document.querySelectorAll("[data-people-ranking-panel]"));
-    const authorRosterSearch = document.getElementById("author-roster-search");
-    const authorRosterToggle = document.getElementById("author-roster-toggle");
+    const peopleRows = Object.entries(authorDetails).map(([authorLogin, detail]) => ({
+      authorLogin,
+      ...detail.summary,
+    }));
+    const peopleMetricTabs = Array.from(document.querySelectorAll("#people-metric-tabs .tab-button"));
+    const peopleRankingList = document.getElementById("people-ranking-list");
+    const peopleRankingToggle = document.getElementById("people-ranking-toggle");
     const authorDetailRoot = document.getElementById("author-detail-root");
     const authorDetailPanel = document.getElementById("author-detail");
     const authorDetailTitle = document.getElementById("author-detail-title");
     const authorChartRoot = document.getElementById("author-chart-root");
     const authorChartReadout = document.getElementById("author-chart-readout");
     const authorChartTitle = document.getElementById("author-chart-title");
-    const reviewerToggle = document.getElementById("reviewer-toggle");
-    const reviewerExtra = document.getElementById("reviewer-extra");
     const repositoryToggle = document.getElementById("repository-toggle");
     const repositoryExtra = document.getElementById("repository-extra");
     const weeklyTrendToggle = document.getElementById("weekly-trend-toggle");
@@ -30,10 +29,8 @@
     const trendChartTitle = document.getElementById("trend-chart-title");
     const trendMetricTabs = Array.from(document.querySelectorAll("#trend-metric-tabs .tab-button"));
     const trendGrainTabs = Array.from(document.querySelectorAll("#trend-grain-tabs .tab-button"));
-    const authorViewTabs = Array.from(document.querySelectorAll("#author-detail-view-tabs .tab-button"));
     const authorMetricTabs = Array.from(document.querySelectorAll("#author-detail-metric-tabs .tab-button"));
     const authorGrainTabs = Array.from(document.querySelectorAll("#author-detail-grain-tabs .tab-button"));
-    const authorGrainPanel = document.getElementById("author-detail-grain-tabs");
     const sectionNavLinks = Array.from(document.querySelectorAll('.section-nav a[href^="#"]'));
     const sectionTargets = sectionNavLinks
       .map((link) => {
@@ -56,13 +53,12 @@
     let activeTrendGrain = trendSeries.weekly.length > 12 ? "monthly" : "weekly";
     let activeTrendPointIndex = null;
     let activeAuthorMetric = "pull_requests";
-    let activeAuthorView = "timeline";
     let activeAuthorGrain = "weekly";
-    let activePeopleRanking = "authors";
+    let activePeopleMetric = "pull_requests";
     let activeReferenceTrend = "weekly";
     let activeAuthorPointIndex = null;
     let activeAuthor = "{{ default_author }}";
-    let rosterVisibleOverflowCount = 0;
+    let visiblePeopleCount = 5;
     if (authorDetails[activeAuthor]?.weekly_trends?.length > 12) {
       activeAuthorGrain = "monthly";
     }
@@ -76,9 +72,9 @@
       authorGrainTabs.find((button) => button.dataset.authorGrain === activeAuthorGrain),
     );
     syncThemeButtons(document.documentElement.dataset.theme || "dark");
-    syncPeopleRankingTabs();
+    syncPeopleMetricTabs();
     syncReferenceTrendTabs();
-    updateAuthorRoster();
+    renderPeopleRanking();
 
     for (const button of themeButtons) {
       button.addEventListener("click", () => {
@@ -86,40 +82,38 @@
       });
     }
 
-    if (authorRosterToggle) {
-      authorRosterToggle.addEventListener("click", () => {
-        const normalizedQuery = String(authorRosterSearch?.value || "").trim().toLowerCase();
-        if (normalizedQuery) {
-          authorRosterSearch.value = "";
-          rosterVisibleOverflowCount = 0;
-        } else if (rosterVisibleOverflowCount >= rosterButtons.filter((button) => button.dataset.overflow === "true").length) {
-          rosterVisibleOverflowCount = 0;
+    if (peopleRankingToggle) {
+      peopleRankingToggle.addEventListener("click", () => {
+        const rankedPeople = sortedPeopleRows(activePeopleMetric);
+        if (visiblePeopleCount >= rankedPeople.length) {
+          visiblePeopleCount = selectedPeopleVisibleCount(rankedPeople);
         } else {
-          rosterVisibleOverflowCount += 5;
+          visiblePeopleCount = Math.min(rankedPeople.length, visiblePeopleCount + 5);
         }
-        updateAuthorRoster(authorRosterSearch?.value || "");
+        renderPeopleRanking();
       });
     }
 
-    if (authorRosterSearch) {
-      authorRosterSearch.addEventListener("input", () => {
-        updateAuthorRoster(authorRosterSearch.value);
-      });
-    }
+    document.addEventListener("click", (event) => {
+      if (!(event.target instanceof Element)) {
+        return;
+      }
+      const button = event.target.closest(".author-button[data-author]");
+      if (!button) {
+        return;
+      }
+      activeAuthor = button.dataset.author;
+      activeAuthorPointIndex = null;
+      renderPeopleRanking();
+      renderAuthorDetail(activeAuthor, { focus: true });
+    });
 
-    for (const button of authorButtons) {
+    for (const button of peopleMetricTabs) {
       button.addEventListener("click", () => {
-        activeAuthor = button.dataset.author;
-        activeAuthorPointIndex = null;
-        syncActiveAuthorButtons();
-        renderAuthorDetail(activeAuthor, { focus: true });
-      });
-    }
-
-    for (const button of peopleRankingTabs) {
-      button.addEventListener("click", () => {
-        activePeopleRanking = button.dataset.peopleRanking;
-        syncPeopleRankingTabs();
+        activePeopleMetric = button.dataset.peopleMetric;
+        visiblePeopleCount = selectedPeopleVisibleCount(sortedPeopleRows(activePeopleMetric));
+        syncPeopleMetricTabs();
+        renderPeopleRanking();
       });
     }
 
@@ -130,13 +124,6 @@
       });
     }
 
-    setupProgressiveToggle({
-      button: reviewerToggle,
-      container: reviewerExtra,
-      items: reviewerExtra ? Array.from(reviewerExtra.querySelectorAll(".reviewer-overflow")) : [],
-      chunkSize: 5,
-      label: "reviewers",
-    });
     setupProgressiveToggle({
       button: repositoryToggle,
       container: repositoryExtra,
@@ -177,16 +164,6 @@
       });
     }
 
-    for (const button of authorViewTabs) {
-      button.addEventListener("click", () => {
-        activeAuthorView = button.dataset.authorView;
-        activeAuthorPointIndex = null;
-        syncTabs(authorViewTabs, button);
-        syncAuthorGrainVisibility();
-        renderAuthorDetail(activeAuthor);
-      });
-    }
-
     for (const button of authorMetricTabs) {
       button.addEventListener("click", () => {
         activeAuthorMetric = button.dataset.authorMetric;
@@ -211,7 +188,6 @@
     });
 
     syncActiveAuthorButtons();
-    syncAuthorGrainVisibility();
     renderTrendChart();
     renderAuthorDetail(activeAuthor);
     syncActiveSectionNav();
@@ -229,51 +205,102 @@
       renderAuthorDetail(activeAuthor);
     }
 
-    function updateAuthorRoster(query = "") {
-      const normalizedQuery = String(query).trim().toLowerCase();
-      const overflowButtons = rosterButtons.filter((button) => button.dataset.overflow === "true");
-      for (const button of rosterButtons) {
-        const isOverflow = button.dataset.overflow === "true";
-        const matches = !normalizedQuery || button.dataset.author.toLowerCase().includes(normalizedQuery);
-        const overflowIndex = isOverflow ? overflowButtons.indexOf(button) : -1;
-        const hiddenByOverflow = (
-          isOverflow
-          && !normalizedQuery
-          && overflowIndex >= rosterVisibleOverflowCount
-        );
-        button.classList.toggle("hidden", hiddenByOverflow || !matches);
-      }
-      if (!authorRosterToggle) {
+    function renderPeopleRanking() {
+      if (!peopleRankingList) {
         return;
       }
-      if (normalizedQuery) {
-        authorRosterToggle.textContent = "Clear search to restore Top 5 view";
-        authorRosterToggle.setAttribute("aria-expanded", "true");
-      } else {
-        const remaining = Math.max(0, overflowButtons.length - rosterVisibleOverflowCount);
-        if (remaining === 0) {
-          authorRosterToggle.textContent = "Collapse roster";
-          authorRosterToggle.setAttribute("aria-expanded", "true");
-        } else {
-          authorRosterToggle.textContent = `Show ${Math.min(5, remaining)} more people`;
-          authorRosterToggle.setAttribute(
-            "aria-expanded",
-            String(rosterVisibleOverflowCount > 0),
-          );
-        }
-      }
+      const rankedPeople = sortedPeopleRows(activePeopleMetric);
+      visiblePeopleCount = Math.min(
+        rankedPeople.length,
+        Math.max(visiblePeopleCount, selectedPeopleVisibleCount(rankedPeople)),
+      );
+      const visibleRows = rankedPeople.slice(0, visiblePeopleCount);
+      peopleRankingList.innerHTML = visibleRows.map(({ row, rank }) => personRankCard(row, rank)).join("");
+      syncActiveAuthorButtons();
+      syncPeopleRankingToggle(rankedPeople.length);
     }
 
-    function syncPeopleRankingTabs() {
-      syncTabs(
-        peopleRankingTabs,
-        peopleRankingTabs.find((button) => button.dataset.peopleRanking === activePeopleRanking),
-      );
-      for (const panel of peopleRankingPanels) {
-        const isActive = panel.dataset.peopleRankingPanel === activePeopleRanking;
-        panel.classList.toggle("hidden", !isActive);
-        panel.toggleAttribute("hidden", !isActive);
+    function sortedPeopleRows(metric) {
+      return peopleRows
+        .map((row) => ({ row, value: toNumeric(row[metric]) }))
+        .sort((left, right) => comparePeopleMetric(left, right, metric))
+        .map((entry, index) => ({ row: entry.row, rank: index + 1 }));
+    }
+
+    function comparePeopleMetric(left, right, metric) {
+      const leftHasValue = left.value !== null;
+      const rightHasValue = right.value !== null;
+      if (leftHasValue !== rightHasValue) {
+        return leftHasValue ? -1 : 1;
       }
+      if (left.value !== right.value) {
+        return peopleMetricSortDirection(metric) * (left.value - right.value);
+      }
+      return left.row.authorLogin.localeCompare(right.row.authorLogin);
+    }
+
+    function peopleMetricSortDirection(metric) {
+      return metric.includes("_hours") ? 1 : -1;
+    }
+
+    function selectedPeopleVisibleCount(rankedPeople) {
+      const selectedIndex = rankedPeople.findIndex(({ row }) => row.authorLogin === activeAuthor);
+      if (selectedIndex < 0) {
+        return 5;
+      }
+      return Math.max(5, selectedIndex + 1);
+    }
+
+    function syncPeopleMetricTabs() {
+      syncTabs(
+        peopleMetricTabs,
+        peopleMetricTabs.find((button) => button.dataset.peopleMetric === activePeopleMetric),
+      );
+    }
+
+    function syncPeopleRankingToggle(totalCount) {
+      if (!peopleRankingToggle) {
+        return;
+      }
+      peopleRankingToggle.classList.toggle("hidden", totalCount <= 5);
+      const remaining = Math.max(0, totalCount - visiblePeopleCount);
+      if (remaining === 0) {
+        peopleRankingToggle.textContent = "Collapse people";
+        peopleRankingToggle.setAttribute("aria-expanded", "true");
+        return;
+      }
+      peopleRankingToggle.textContent = `Show ${Math.min(5, remaining)} more people`;
+      peopleRankingToggle.setAttribute("aria-expanded", String(visiblePeopleCount > 5));
+    }
+
+    function personRankCard(row, rank) {
+      const metricValue = peopleMetricValue(row, activePeopleMetric);
+      return `
+        <button
+          type="button"
+          class="author-button person-card${row.authorLogin === activeAuthor ? " active" : ""}"
+          data-author="${formatAttribute(row.authorLogin)}"
+          aria-pressed="${row.authorLogin === activeAuthor ? "true" : "false"}"
+        >
+          <span class="person-card-header">
+            <strong>${formatCell(row.authorLogin)}</strong>
+            <small>#${rank}</small>
+          </span>
+          <span class="person-card-metrics">
+            <span>${metricLabel(activePeopleMetric)}: ${metricValue}</span>
+            <span>${formatMetric(row.pull_requests)} PRs</span>
+            <span>${formatMetric(row.changed_lines)} lines</span>
+            <span>${formatDuration(row.median_merge_hours)} merge</span>
+          </span>
+        </button>
+      `;
+    }
+
+    function peopleMetricValue(row, metric) {
+      if (metric.includes("_hours")) {
+        return formatDuration(row[metric]);
+      }
+      return formatMetric(row[metric]);
     }
 
     function syncReferenceTrendTabs() {
@@ -289,18 +316,11 @@
     }
 
     function syncActiveAuthorButtons() {
-      for (const other of authorButtons) {
+      for (const other of document.querySelectorAll(".author-button")) {
         const isActive = other.dataset.author === activeAuthor;
         other.classList.toggle("active", isActive);
         other.setAttribute("aria-pressed", String(isActive));
       }
-    }
-
-    function syncAuthorGrainVisibility() {
-      if (!authorGrainPanel) {
-        return;
-      }
-      authorGrainPanel.classList.toggle("hidden", activeAuthorView !== "timeline");
     }
 
     function setupProgressiveToggle({ button, container, items, chunkSize, label }) {
@@ -502,35 +522,6 @@
     }
 
     function renderAuthorChart(detail, authorLogin) {
-      if (activeAuthorView === "mix") {
-        const rows = detail.size_mix;
-        activeAuthorPointIndex = clampSelectedIndex(
-          rows,
-          activeAuthorPointIndex,
-          mixMetricKey(activeAuthorMetric),
-        );
-        authorChartTitle.textContent = `${authorLogin} ${metricLabel(activeAuthorMetric)} by PR size`;
-        authorChartReadout.innerHTML = renderBarReadout({
-          rows,
-          metric: activeAuthorMetric,
-          labelKey: "bucket",
-          valueKey: mixMetricKey(activeAuthorMetric),
-          selectedIndex: activeAuthorPointIndex,
-        });
-        renderBarChart({
-          element: authorChartRoot,
-          rows,
-          labelKey: "bucket",
-          valueKey: mixMetricKey(activeAuthorMetric),
-          metric: activeAuthorMetric,
-          selectedIndex: activeAuthorPointIndex,
-          onSelect: (index) => {
-            activeAuthorPointIndex = index;
-            renderAuthorDetail(activeAuthor);
-          },
-        });
-        return;
-      }
       const rows = detail[`${activeAuthorGrain}_trends`];
       const label = activeAuthorGrain === "weekly" ? "week" : "month";
       activeAuthorPointIndex = clampSelectedIndex(rows, activeAuthorPointIndex, activeAuthorMetric);
@@ -676,69 +667,6 @@
       );
     }
 
-    function renderBarChart({ element, rows, labelKey, valueKey, metric, selectedIndex, onSelect }) {
-      if (!rows || rows.length === 0) {
-        element.innerHTML = `<div class="small-note">No data for this view.</div>`;
-        return;
-      }
-      const width = 920;
-      const height = 320;
-      const padding = { top: 20, right: 18, bottom: 42, left: 56 };
-      const plotWidth = width - padding.left - padding.right;
-      const plotHeight = height - padding.top - padding.bottom;
-      const barValues = rows
-        .map((row) => toNumeric(row[valueKey]))
-        .filter((value) => value !== null);
-      if (barValues.length === 0) {
-        element.innerHTML = `<div class="small-note">No data for this metric in the selected window.</div>`;
-        return;
-      }
-      const maxValue = Math.max(1, ...barValues);
-      const groupWidth = plotWidth / rows.length;
-      const barWidth = Math.min(56, groupWidth * 0.58);
-      const labelInterval = chartLabelInterval(rows.length);
-      const bars = rows.map((row, index) => {
-        const value = toNumeric(row[valueKey]);
-        const isSelected = index === selectedIndex;
-        const barHeight = value === null ? 0 : (value / maxValue) * plotHeight;
-        const x = padding.left + index * groupWidth + (groupWidth - barWidth) / 2;
-        const y = padding.top + plotHeight - barHeight;
-        const labelX = padding.left + index * groupWidth + groupWidth / 2;
-        const showLabel = index === 0 || index === rows.length - 1 || index % labelInterval === 0;
-        return `
-          <g class="chart-node" data-point-index="${index}" data-point-label="${formatAttribute(row[labelKey])}" data-point-value="${formatAttribute(formatChartValue(value, metric))}" tabindex="0" role="button" aria-label="${formatAttribute(row[labelKey])} ${formatAttribute(formatChartValue(value, metric))}">
-            <rect x="${x}" y="${y}" width="${barWidth}" height="${barHeight}" rx="5" fill="${isSelected ? getCss("--accent") : getCss("--accent-2")}" fill-opacity="${value === null ? "0.16" : "1"}" stroke="${isSelected ? getCss("--text") : "transparent"}" stroke-width="${isSelected ? 2 : 0}">
-              <title>${formatCell(row[labelKey])}: ${formatChartValue(value, metric)}</title>
-            </rect>
-          </g>
-          ${value === null ? "" : `<text x="${labelX}" y="${Math.max(y - 8, padding.top + 10)}" text-anchor="middle" class="chart-axis">${formatChartValue(value, metric)}</text>`}
-          ${showLabel ? `<text x="${labelX}" y="${height - 12}" text-anchor="middle" class="chart-axis">${shortLabel(row[labelKey])}</text>` : ""}
-        `;
-      }).join("");
-      const ticks = [0, 0.25, 0.5, 0.75, 1].map((ratio) => {
-        const value = maxValue * ratio;
-        const y = padding.top + plotHeight - plotHeight * ratio;
-        return `
-          <line x1="${padding.left}" x2="${width - padding.right}" y1="${y}" y2="${y}" stroke="${getCss("--grid-stroke")}"></line>
-          <text x="${padding.left - 10}" y="${y + 4}" text-anchor="end" class="chart-axis">${formatChartValue(value, metric)}</text>
-        `;
-      }).join("");
-      element.innerHTML = `
-        <svg viewBox="0 0 ${width} ${height}" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Bar chart">
-          ${ticks}
-          ${bars}
-        </svg>
-      `;
-      bindChartSelection(
-        element,
-        {
-          metricLabel: metricLabel(metric),
-          subtitle: "Select a bucket to pin the readout",
-        },
-        onSelect,
-      );
-    }
-
     function bindChartSelection(element, tooltipMeta, onSelect) {
       if (!element || !onSelect) {
         return;
@@ -877,33 +805,6 @@
       ].map(([label, value]) => `<div class="readout-card"><strong>${label}</strong><span>${value}</span></div>`).join("");
     }
 
-    function renderBarReadout({ rows, metric, labelKey, valueKey, selectedIndex }) {
-      if (!rows || rows.length === 0) {
-        return "";
-      }
-      const ranked = [...rows]
-        .filter((row) => toNumeric(row[valueKey]) !== null)
-        .sort((left, right) => toNumeric(right[valueKey]) - toNumeric(left[valueKey]));
-      if (ranked.length === 0) {
-        return [
-          ["Selected bucket", "-"],
-          ["Selected value", "-"],
-          ["Bucket average", "-"],
-          ["Leading bucket", "-"],
-        ].map(([label, value]) => `<div class="readout-card"><strong>${label}</strong><span>${value}</span></div>`).join("");
-      }
-      const top = ranked[0];
-      const selectedRow = rows[selectedIndex] ?? top;
-      const total = ranked.reduce((sum, row) => sum + toNumeric(row[valueKey]), 0);
-      const average = ranked.length ? total / ranked.length : 0;
-      return [
-        ["Selected bucket", formatCell(selectedRow[labelKey])],
-        ["Selected value", formatChartValue(Number(selectedRow[valueKey] ?? 0), metric)],
-        ["Bucket average", formatChartValue(average, metric)],
-        ["Leading bucket", formatCell(top[labelKey])],
-      ].map(([label, value]) => `<div class="readout-card"><strong>${label}</strong><span>${value}</span></div>`).join("");
-    }
-
     function clampSelectedIndex(rows, currentIndex, metricKey) {
       if (!rows || rows.length === 0) {
         return null;
@@ -933,6 +834,9 @@
     function metricLabel(metric) {
       const labels = {
         pull_requests: "PR throughput",
+        pull_requests_reviewed: "Reviewed PRs",
+        review_submissions_given: "Reviews given",
+        reviewed_lines: "Reviewed lines",
         pull_requests_per_active_author: "PRs per active author",
         changed_lines: "Changed lines",
         changed_lines_per_active_author: "Lines per active author",
@@ -941,17 +845,6 @@
         median_merge_hours: "Median merge",
       };
       return labels[metric] || metric;
-    }
-
-    function mixMetricKey(metric) {
-      const keys = {
-        pull_requests: "pull_requests",
-        changed_lines: "changed_lines",
-        median_approval_hours: "median_approval_hours",
-        median_first_review_hours: "median_first_review_hours",
-        median_merge_hours: "median_merge_hours",
-      };
-      return keys[metric] || "pull_requests";
     }
 
     function syncTabs(buttons, activeButton) {

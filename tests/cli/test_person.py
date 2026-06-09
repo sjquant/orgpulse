@@ -961,6 +961,15 @@ class TestPersonCommand:
         assert 'data-label="Week">2026-W14</td>' in html_result.stdout
         assert 'data-label="State">' in html_result.stdout
         assert 'data-label="Authored PRs">1</td>' in html_result.stdout
+        assert 'id="person-cadence-tabs"' in html_result.stdout
+        assert 'data-person-cadence="weekly"' in html_result.stdout
+        assert 'data-person-cadence="monthly"' in html_result.stdout
+        assert 'id="person-cadence-weekly"' in html_result.stdout
+        assert (
+            'id="person-cadence-monthly" role="tabpanel"'
+            in html_result.stdout
+        )
+        assert 'data-person-cadence-panel="monthly" hidden' in html_result.stdout
         assert 'id="person-trend-grain-tabs"' in html_result.stdout
         assert 'data-person-trend-grain="weekly"' in html_result.stdout
         assert 'data-person-trend-grain="monthly"' in html_result.stdout

@@ -942,7 +942,7 @@ class PersonMetricsService:
         self,
         pull_request: PullRequestFact,
     ) -> float | None:
-        final_decision_submitted_at: datetime | None = None
+        final_decision_key: tuple[datetime, int] | None = None
         final_decision_state: str | None = None
         for review in pull_request.reviews:
             if review.submitted_at is None:
@@ -951,19 +951,17 @@ class PersonMetricsService:
                 continue
             if self._review_is_by_pull_request_author(pull_request, review):
                 continue
-            if (
-                final_decision_submitted_at is None
-                or review.submitted_at > final_decision_submitted_at
-            ):
-                final_decision_submitted_at = review.submitted_at
+            decision_key = (review.submitted_at, review.review_id)
+            if final_decision_key is None or decision_key > final_decision_key:
+                final_decision_key = decision_key
                 final_decision_state = review.state
-        if final_decision_submitted_at is None or final_decision_state != "APPROVED":
+        if final_decision_key is None or final_decision_state != "APPROVED":
             return None
         review_started_at = self._review_started_at(
             pull_request,
-            final_decision_submitted_at,
+            final_decision_key[0],
         )
-        return self._hours_between(review_started_at, final_decision_submitted_at)
+        return self._hours_between(review_started_at, final_decision_key[0])
 
     def _review_started_at(
         self,

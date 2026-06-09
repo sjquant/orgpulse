@@ -5,6 +5,43 @@ from ..helpers.output import *
 
 
 class TestManualDashboardPayload:
+    def test_prepared_overview_uses_filtered_reviewer_submission_count(self) -> None:
+        """Keep prepared overview review submissions aligned with filtered reviewer activity."""
+        # Given
+        payload = {
+            "overview": {
+                "org": "acme",
+                "generated_at": "2026-04-18T00:00:00+00:00",
+                "since": "2026-04-01",
+                "until": "2026-04-18",
+                "time_anchor": "created_at",
+                "unique_reviewers": 0,
+            },
+            "reviewers": [],
+            "pull_requests": [
+                _manual_pull_request(
+                    repository_full_name="acme/api",
+                    pull_request_number=1,
+                    author_login="alice",
+                    created_at="2026-04-17T09:00:00+00:00",
+                    merged_at=None,
+                    changed_lines=12,
+                    additions=9,
+                    deletions=3,
+                    first_review_hours=2.0,
+                    merge_hours=None,
+                    size_bucket="XS",
+                ),
+            ],
+        }
+
+        # When
+        prepared = prepare_dashboard_payload(payload)
+
+        # Then
+        assert prepared.overview["review_submissions"] == 0
+        assert prepared.overview["review_submissions_per_reviewer"] is None
+
     def test_marks_open_week_and_open_month_in_dashboard_data_and_html(self) -> None:
         """Render partial-period dashboard trends with explicit open week and month state."""
         # Given

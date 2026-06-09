@@ -52,6 +52,7 @@ from orgpulse.libs.snapshots.source import LocalSnapshotSource, read_snapshot_cs
 class PullRequestReview:
     """Represent one normalized review event attached to a pull request."""
 
+    review_id: int
     author_login: str
     state: str
     submitted_at: datetime
@@ -352,13 +353,14 @@ def _reviews_by_pull_request(
             )
         ].append(
             PullRequestReview(
+                review_id=int(review_row["review_id"]),
                 author_login=review_row["author_login"] or "ghost",
                 state=review_row["state"],
                 submitted_at=submitted_at,
             )
         )
     for reviews in grouped.values():
-        reviews.sort(key=lambda review: review.submitted_at)
+        reviews.sort(key=lambda review: (review.submitted_at, review.review_id))
     return grouped
 
 

@@ -93,14 +93,15 @@
       aspect-ratio: 16 / 6;
     }
 
-    .person-report #person-trend-grain-tabs {
+    .person-report #person-trend-grain-tabs,
+    .person-report #person-cadence-tabs {
       justify-content: flex-end;
     }
 
     .person-report .cadence-grid {
       display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 16px;
+      grid-template-columns: minmax(0, 1fr);
+      gap: 14px;
     }
 
     .person-report .cadence-panel {
@@ -128,7 +129,8 @@
         display: grid;
       }
 
-      .person-report #person-trend-grain-tabs {
+      .person-report #person-trend-grain-tabs,
+      .person-report #person-cadence-tabs {
         justify-content: flex-start;
       }
     }
@@ -293,11 +295,15 @@
           <div>
             <p class="section-kicker">Cadence Reports</p>
             <h2>Weekly and monthly reports</h2>
-            <p class="section-copy">Both cadences are shown in HTML so review and author movement can be compared without rerunning the extract.</p>
+            <p class="section-copy">Both cadences are available in HTML so review and author movement can be compared without rerunning the extract.</p>
+          </div>
+          <div class="tab-strip" id="person-cadence-tabs" role="tablist" aria-label="Report cadence">
+            <button type="button" class="tab-button active" id="person-cadence-weekly-tab" role="tab" data-person-cadence="weekly" aria-controls="person-cadence-weekly" aria-selected="true">Weekly</button>
+            <button type="button" class="tab-button" id="person-cadence-monthly-tab" role="tab" data-person-cadence="monthly" aria-controls="person-cadence-monthly" aria-selected="false">Monthly</button>
           </div>
         </div>
         <div class="cadence-grid">
-          <article class="cadence-panel">
+          <article class="cadence-panel" id="person-cadence-weekly" role="tabpanel" aria-labelledby="person-cadence-weekly-tab" data-person-cadence-panel="weekly">
             <h3>Weekly report</h3>
             <div class="table-wrap">
               <table>
@@ -330,7 +336,7 @@
               </table>
             </div>
           </article>
-          <article class="cadence-panel">
+          <article class="cadence-panel hidden" id="person-cadence-monthly" role="tabpanel" aria-labelledby="person-cadence-monthly-tab" data-person-cadence-panel="monthly" hidden>
             <h3>Monthly report</h3>
             <div class="table-wrap">
               <table>
@@ -488,6 +494,8 @@
       };
       const trendMetricTabs = Array.from(document.querySelectorAll("#person-trend-metric-tabs .tab-button"));
       const trendGrainTabs = Array.from(document.querySelectorAll("#person-trend-grain-tabs .tab-button"));
+      const cadenceTabs = Array.from(document.querySelectorAll("#person-cadence-tabs .tab-button"));
+      const cadencePanels = Array.from(document.querySelectorAll("[data-person-cadence-panel]"));
       const trendChartTitle = document.getElementById("person-trend-chart-title");
       const trendChartReadout = document.getElementById("person-trend-chart-readout");
       const trendChartRoot = document.getElementById("person-trend-chart-root");
@@ -507,6 +515,7 @@
         .filter(Boolean);
       let activeTrendMetric = "authored_pull_request_count";
       let activeTrendGrain = report.grain === "week" ? "weekly" : "monthly";
+      let activeCadence = report.grain === "week" ? "weekly" : "monthly";
       let activeTrendPointIndex = null;
 
       function activeTheme() {
@@ -543,6 +552,7 @@
       syncThemeButtons();
       syncTrendMetricTabs();
       syncTrendGrainTabs();
+      syncCadenceTabs();
       syncActiveSectionNav();
       setupSectionSpy();
       renderPersonTrendChart();
@@ -560,6 +570,12 @@
           activeTrendPointIndex = null;
           syncTrendGrainTabs();
           renderPersonTrendChart();
+        });
+      });
+      cadenceTabs.forEach(button => {
+        button.addEventListener("click", () => {
+          activeCadence = button.dataset.personCadence;
+          syncCadenceTabs();
         });
       });
       window.addEventListener("resize", renderPersonTrendChart);
@@ -683,6 +699,19 @@
           const isActive = button.dataset.personTrendGrain === activeTrendGrain;
           button.classList.toggle("active", isActive);
           button.setAttribute("aria-selected", String(isActive));
+        });
+      }
+
+      function syncCadenceTabs() {
+        cadenceTabs.forEach(button => {
+          const isActive = button.dataset.personCadence === activeCadence;
+          button.classList.toggle("active", isActive);
+          button.setAttribute("aria-selected", String(isActive));
+        });
+        cadencePanels.forEach(panel => {
+          const isActive = panel.dataset.personCadencePanel === activeCadence;
+          panel.classList.toggle("hidden", !isActive);
+          panel.toggleAttribute("hidden", !isActive);
         });
       }
 

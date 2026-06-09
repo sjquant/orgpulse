@@ -1080,6 +1080,10 @@ class TestPersonCommand:
         assert 'data-person-trend-grain="weekly"' in html_result.stdout
         assert 'data-person-trend-grain="monthly"' in html_result.stdout
         assert '<div class="two-col">' in html_result.stdout
+        assert "grid-template-columns: minmax(0, 1fr) auto;" in html_result.stdout
+        assert "width: fit-content;" in html_result.stdout
+        assert ".two-col > .secondary-tabs" in html_result.stdout
+        assert "margin-left: auto;" in html_result.stdout
         assert (
             '<nav class="section-nav" aria-label="Report sections">'
             in html_result.stdout

@@ -735,6 +735,10 @@ class TestManualDashboardPayload:
         assert 'id="people-ranking-toggle"' in html
         assert 'class="tab-strip primary-tabs"' in html
         assert 'class="tab-strip secondary-tabs"' in html
+        assert "grid-template-columns: minmax(0, 1fr) auto;" in html
+        assert "width: fit-content;" in html
+        assert ".two-col > .secondary-tabs" in html
+        assert ".person-profile > .secondary-tabs" in html
         assert 'id="author-detail-metric-tabs"' not in html
         assert "Size mix" not in html
         assert "Timeline" not in html

@@ -875,6 +875,32 @@ def _build_author_details(
         )
         changed_lines = _untrimmed_summary(author_pull_requests, "changed_lines")
         commits = _untrimmed_summary(author_pull_requests, "commits")
+        weekly_trends = [
+            row.model_dump(mode="json")
+            for row in _build_trend_rows(
+                author_pull_requests,
+                grain="week",
+                since=since,
+                until=until,
+                source_as_of=source_as_of,
+                distribution_percentile=distribution_percentile,
+                distribution_thresholds=None,
+                trim_changed_lines=False,
+            )
+        ]
+        monthly_trends = [
+            row.model_dump(mode="json")
+            for row in _build_trend_rows(
+                author_pull_requests,
+                grain="month",
+                since=since,
+                until=until,
+                source_as_of=source_as_of,
+                distribution_percentile=distribution_percentile,
+                distribution_thresholds=None,
+                trim_changed_lines=False,
+            )
+        ]
         details[author_login] = {
             "summary": {
                 **author,
@@ -933,34 +959,151 @@ def _build_author_details(
                 size_counter=size_counter,
                 distribution_percentile=distribution_percentile,
             ),
-            "weekly_trends": [
-                row.model_dump(mode="json")
-                for row in _build_trend_rows(
-                    author_pull_requests,
+            "weekly_trends": _merge_reviewer_metrics_into_trend_rows(
+                weekly_trends,
+                _build_reviewer_trend_metrics(
+                    pull_requests,
+                    reviewer_login=author_login,
                     grain="week",
                     since=since,
                     until=until,
-                    source_as_of=source_as_of,
-                    distribution_percentile=distribution_percentile,
-                    distribution_thresholds=None,
-                    trim_changed_lines=False,
-                )
-            ],
-            "monthly_trends": [
-                row.model_dump(mode="json")
-                for row in _build_trend_rows(
-                    author_pull_requests,
+                ),
+                grain="week",
+                since=since,
+                until=until,
+                source_as_of=source_as_of,
+            ),
+            "monthly_trends": _merge_reviewer_metrics_into_trend_rows(
+                monthly_trends,
+                _build_reviewer_trend_metrics(
+                    pull_requests,
+                    reviewer_login=author_login,
                     grain="month",
                     since=since,
                     until=until,
-                    source_as_of=source_as_of,
-                    distribution_percentile=distribution_percentile,
-                    distribution_thresholds=None,
-                    trim_changed_lines=False,
-                )
-            ],
+                ),
+                grain="month",
+                since=since,
+                until=until,
+                source_as_of=source_as_of,
+            ),
         }
     return details
+
+
+def _merge_reviewer_metrics_into_trend_rows(
+    authored_rows: list[dict[str, Any]],
+    reviewer_metrics: dict[str, dict[str, int]],
+    *,
+    grain: str,
+    since: date,
+    until: date,
+    source_as_of: date,
+) -> list[dict[str, Any]]:
+    rows_by_period = {str(row["period_key"]): dict(row) for row in authored_rows}
+    for period_key, metrics in reviewer_metrics.items():
+        if period_key not in rows_by_period:
+            rows_by_period[period_key] = _empty_author_trend_row(
+                period_key,
+                grain=grain,
+                since=since,
+                until=until,
+                source_as_of=source_as_of,
+            )
+        rows_by_period[period_key].update(metrics)
+    return [rows_by_period[period_key] for period_key in sorted(rows_by_period)]
+
+
+def _build_reviewer_trend_metrics(
+    pull_requests: list[dict[str, Any]],
+    *,
+    reviewer_login: str,
+    grain: str,
+    since: date,
+    until: date,
+) -> dict[str, dict[str, int]]:
+    review_submissions: Counter[str] = Counter()
+    reviewed_lines: Counter[str] = Counter()
+    reviewed_prs: dict[str, set[str]] = defaultdict(set)
+    for pull_request in pull_requests:
+        pull_request_key = (
+            f"{pull_request['repository_full_name']}#{pull_request['pull_request_number']}"
+        )
+        for review in pull_request.get("reviews", []):
+            review_author = str(review.get("author_login") or "")
+            if not _same_login(review_author, reviewer_login):
+                continue
+            if _same_login(review_author, str(pull_request.get("author_login") or "")):
+                continue
+            submitted_at_value = review.get("submitted_at")
+            if not submitted_at_value:
+                continue
+            submitted_at = _parse_datetime(str(submitted_at_value))
+            submitted_date = submitted_at.date()
+            if submitted_date < since or submitted_date > until:
+                continue
+            period_key = _period_key(submitted_at, grain=grain)
+            review_submissions[period_key] += 1
+            if pull_request_key in reviewed_prs[period_key]:
+                continue
+            reviewed_prs[period_key].add(pull_request_key)
+            reviewed_lines[period_key] += int(pull_request.get("changed_lines") or 0)
+    return {
+        period_key: {
+            "review_submissions_given": review_submissions[period_key],
+            "pull_requests_reviewed": len(reviewed_prs[period_key]),
+            "reviewed_lines": reviewed_lines[period_key],
+        }
+        for period_key in sorted(review_submissions)
+    }
+
+
+def _empty_author_trend_row(
+    period_key: str,
+    *,
+    grain: str,
+    since: date,
+    until: date,
+    source_as_of: date,
+) -> dict[str, Any]:
+    period_start_date, period_end_date = _period_dates(period_key, grain=grain)
+    period_state = build_period_state_payload(
+        period_grain=grain,
+        start_date=period_start_date,
+        end_date=period_end_date,
+        closed=source_as_of >= period_end_date,
+        as_of=source_as_of,
+        since=since,
+        until=until,
+    ).model_dump(mode="json")
+    return DashboardTrendRowPayload(
+        period_key=period_key,
+        pull_requests=0,
+        merged_pull_requests=0,
+        open_pull_requests=0,
+        active_authors=0,
+        changed_lines=0,
+        review_submissions=0,
+        period_start_date=period_start_date.isoformat(),
+        period_end_date=period_end_date.isoformat(),
+        status=str(period_state["status"]),
+        label=str(period_state["label"]),
+        is_open=bool(period_state["is_open"]),
+        is_closed=bool(period_state["is_closed"]),
+        is_partial=bool(period_state["is_partial"]),
+        observed_through_date=period_state["observed_through_date"],
+        open_week=bool(period_state["open_week"]),
+        open_month=bool(period_state["open_month"]),
+    ).model_dump(mode="json")
+
+
+def _same_login(
+    left: str | None,
+    right: str | None,
+) -> bool:
+    if left is None or right is None:
+        return False
+    return left.lower() == right.lower()
 
 
 def _build_author_size_mix_rows(

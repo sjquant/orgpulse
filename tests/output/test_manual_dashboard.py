@@ -1073,3 +1073,87 @@ class TestManualDashboardPayload:
         assert "Reviewed lines" in html
         assert "Reviewed PRs / month" in html
         assert "Reviewed lines / month" in html
+
+    def test_adds_reviewer_period_metrics_to_author_detail_trends(self) -> None:
+        """Add reviewed PR and reviewed line period values to selected profile trends."""
+        # Given
+        payload = {
+            "overview": {
+                "org": "acme",
+                "generated_at": "2026-04-30T00:00:00+00:00",
+                "since": "2026-04-01",
+                "until": "2026-04-30",
+                "time_anchor": "created_at",
+                "top_repository": "acme/api",
+                "top_author": "alice",
+                "unique_reviewers": 1,
+            },
+            "reviewers": [
+                {
+                    "reviewer_login": "alice",
+                    "review_submissions": 1,
+                    "pull_requests_reviewed": 1,
+                    "reviewed_lines": 75,
+                    "pull_requests_reviewed_per_month": 1.0,
+                    "reviewed_lines_per_month": 75.0,
+                    "approvals": 1,
+                    "changes_requested": 0,
+                    "comments": 0,
+                    "authors_supported": 1,
+                },
+            ],
+            "pull_requests": [
+                _manual_pull_request(
+                    repository_full_name="acme/api",
+                    pull_request_number=1,
+                    author_login="alice",
+                    created_at="2026-04-01T09:00:00+00:00",
+                    merged_at="2026-04-02T09:00:00+00:00",
+                    changed_lines=25,
+                    additions=20,
+                    deletions=5,
+                    first_review_hours=1.0,
+                    merge_hours=24.0,
+                    size_bucket="XS",
+                    reviews=[
+                        {
+                            "review_id": 11,
+                            "author_login": "alice",
+                            "state": "APPROVED",
+                            "submitted_at": "2026-04-01T10:00:00+00:00",
+                        },
+                    ],
+                ),
+                _manual_pull_request(
+                    repository_full_name="acme/api",
+                    pull_request_number=2,
+                    author_login="bob",
+                    created_at="2026-04-15T09:00:00+00:00",
+                    merged_at="2026-04-16T09:00:00+00:00",
+                    changed_lines=75,
+                    additions=50,
+                    deletions=25,
+                    first_review_hours=1.0,
+                    merge_hours=24.0,
+                    size_bucket="S",
+                    reviews=[
+                        {
+                            "review_id": 12,
+                            "author_login": "alice",
+                            "state": "APPROVED",
+                            "submitted_at": "2026-04-15T10:00:00+00:00",
+                        },
+                    ],
+                ),
+            ],
+        }
+
+        # When
+        prepared = prepare_dashboard_payload(payload)
+        author_details = json.loads(prepared.author_details_json)
+        alice_month = author_details["alice"]["monthly_trends"][0]
+
+        # Then
+        assert alice_month["pull_requests_reviewed"] == 1
+        assert alice_month["reviewed_lines"] == 75
+        assert alice_month["review_submissions_given"] == 1

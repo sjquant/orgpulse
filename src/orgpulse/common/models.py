@@ -535,6 +535,17 @@ class DashboardReviewerPayload(BaseModel):
     authors_supported: int
 
 
+class DashboardPullRequestReviewPayload(BaseModel):
+    """Store one review event attached to a dashboard pull request row."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    review_id: int
+    author_login: str
+    state: str
+    submitted_at: str
+
+
 class DashboardPullRequestPayload(BaseModel):
     """Store one dashboard-ready pull request row."""
 
@@ -568,6 +579,7 @@ class DashboardPullRequestPayload(BaseModel):
     review_ready_at: str
     review_requested_at: str | None = None
     size_bucket: str
+    reviews: list[DashboardPullRequestReviewPayload] = Field(default_factory=list)
 
 
 class DashboardInsightPayload(BaseModel):

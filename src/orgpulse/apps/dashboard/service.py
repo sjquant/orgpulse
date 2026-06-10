@@ -24,6 +24,7 @@ from orgpulse.common.models import (
     DashboardInsightPayload,
     DashboardOverviewPayload,
     DashboardPullRequestPayload,
+    DashboardPullRequestReviewPayload,
     DashboardRepositoryPayload,
     DashboardRepositoryThroughputPointPayload,
     DashboardReviewerPayload,
@@ -616,7 +617,10 @@ def _write_outputs(
         encoding="utf-8",
     )
     with csv_path.open("w", encoding="utf-8", newline="") as handle:
-        rows = payload_data["pull_requests"]
+        rows = [
+            {field: row[field] for field in DASHBOARD_PULL_REQUEST_FIELDNAMES}
+            for row in payload_data["pull_requests"]
+        ]
         writer = csv.DictWriter(handle, fieldnames=DASHBOARD_PULL_REQUEST_FIELDNAMES)
         writer.writeheader()
         writer.writerows(rows)
@@ -1171,6 +1175,15 @@ def _snapshot_row(snapshot: PullRequestSnapshot) -> DashboardPullRequestPayload:
             else snapshot.review_requested_at.isoformat()
         ),
         size_bucket=snapshot.size_bucket,
+        reviews=[
+            DashboardPullRequestReviewPayload(
+                review_id=review.review_id,
+                author_login=review.author_login,
+                state=review.state,
+                submitted_at=review.submitted_at.isoformat(),
+            )
+            for review in snapshot.reviews
+        ],
     )
 
 

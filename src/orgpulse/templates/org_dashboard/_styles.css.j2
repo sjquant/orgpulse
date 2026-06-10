@@ -29,7 +29,7 @@
       display: grid;
       grid-template-columns: minmax(280px, 0.36fr) minmax(0, 0.64fr);
       grid-template-areas:
-        "people-controls profile-summary"
+        "people-controls people-controls"
         "people-ranking profile-detail";
       gap: 16px;
       align-items: start;
@@ -41,6 +41,10 @@
 
     .people-ranking-controls {
       grid-area: people-controls;
+    }
+
+    .people-ranking-controls .primary-tabs {
+      width: 100%;
     }
 
     .people-ranking-shell {
@@ -124,11 +128,6 @@
       display: grid;
       gap: 14px;
       min-width: 0;
-    }
-
-    .profile-summary {
-      grid-area: profile-summary;
-      align-self: start;
     }
 
     .person-profile > .secondary-tabs {
@@ -342,7 +341,6 @@
         grid-template-columns: 1fr;
         grid-template-areas:
           "people-controls"
-          "profile-summary"
           "people-ranking"
           "profile-detail";
       }

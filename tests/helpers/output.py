@@ -176,6 +176,7 @@ def _manual_pull_request(
     merge_hours: float | None,
     size_bucket: str,
     approval_hours: float | None = None,
+    reviews: list[dict[str, object]] | None = None,
 ) -> dict[str, object]:
     """Build a normalized manual dashboard pull request payload for tests."""
     closed_at = merged_at
@@ -208,4 +209,5 @@ def _manual_pull_request(
         "review_ready_at": created_at,
         "review_requested_at": created_at,
         "size_bucket": size_bucket,
+        "reviews": [] if reviews is None else reviews,
     }

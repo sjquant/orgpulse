@@ -41,10 +41,18 @@
 
     .people-ranking-controls {
       grid-area: people-controls;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 16px;
+      align-items: start;
     }
 
     .people-ranking-controls .primary-tabs {
       width: 100%;
+    }
+
+    .people-ranking-controls .secondary-tabs {
+      justify-self: end;
     }
 
     .people-ranking-shell {
@@ -128,11 +136,6 @@
       display: grid;
       gap: 14px;
       min-width: 0;
-    }
-
-    .person-profile > .secondary-tabs {
-      justify-self: end;
-      align-self: start;
     }
 
     .person-profile > *,
@@ -343,6 +346,10 @@
           "people-controls"
           "people-ranking"
           "profile-detail";
+      }
+
+      .people-ranking-controls {
+        grid-template-columns: 1fr;
       }
     }
 

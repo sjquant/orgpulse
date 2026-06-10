@@ -28,6 +28,9 @@
     .people-grid {
       display: grid;
       grid-template-columns: minmax(280px, 0.36fr) minmax(0, 0.64fr);
+      grid-template-areas:
+        "people-controls profile-summary"
+        "people-ranking profile-detail";
       gap: 16px;
       align-items: start;
     }
@@ -36,7 +39,12 @@
       min-width: 0;
     }
 
+    .people-ranking-controls {
+      grid-area: people-controls;
+    }
+
     .people-ranking-shell {
+      grid-area: people-ranking;
       display: grid;
       gap: 12px;
     }
@@ -112,9 +120,15 @@
     }
 
     .person-profile {
+      grid-area: profile-detail;
       display: grid;
       gap: 14px;
       min-width: 0;
+    }
+
+    .profile-summary {
+      grid-area: profile-summary;
+      align-self: start;
     }
 
     .person-profile > .secondary-tabs {
@@ -326,6 +340,11 @@
     @media (max-width: 860px) {
       .people-grid {
         grid-template-columns: 1fr;
+        grid-template-areas:
+          "people-controls"
+          "profile-summary"
+          "people-ranking"
+          "profile-detail";
       }
     }
 

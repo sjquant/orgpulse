@@ -171,7 +171,7 @@
         <h2>Metric-ranked people, selected profile held in context</h2>
         <p class="section-copy">Switch metrics to reorder people by that signal. The selected person remains active across ranking changes.</p>
         <div class="people-grid">
-          <div class="people-ranking-shell">
+          <div class="people-ranking-controls">
             <div class="tab-strip primary-tabs" id="people-metric-tabs" role="tablist" aria-label="People ranking metric">
               <button type="button" class="tab-button active" data-people-metric="pull_requests" aria-selected="true">Throughput</button>
               <button type="button" class="tab-button" data-people-metric="changed_lines" aria-selected="false">Changed lines</button>
@@ -181,8 +181,17 @@
               <button type="button" class="tab-button" data-people-metric="median_first_review_hours" aria-selected="false">First review</button>
               <button type="button" class="tab-button" data-people-metric="median_merge_hours" aria-selected="false">Merge speed</button>
             </div>
+          </div>
+          <div class="profile-summary">
+            <div>
+              <p class="section-kicker">Selected profile</p>
+              <h2 id="author-detail-title">Person detail</h2>
+            </div>
+            <span>Author + reviewer signals</span>
+          </div>
+          <div class="people-ranking-shell">
             <div class="control-row">
-              <span class="control-note">Top 5 cover {{ reference_summary.author_roster_coverage_pct | numfmt }}% of authored PR flow on the default throughput lens.</span>
+              <span class="control-note">Top 10 people shown first. Expand the ranking to inspect the long tail.</span>
             </div>
             <div id="people-ranking-list" class="person-list"></div>
             <div class="table-footer">
@@ -190,13 +199,6 @@
             </div>
           </div>
           <div id="author-detail" class="person-profile" tabindex="-1">
-            <div class="profile-summary">
-              <div>
-                <p class="section-kicker">Selected profile</p>
-                <h2 id="author-detail-title">Person detail</h2>
-              </div>
-              <span>Author + reviewer signals</span>
-            </div>
             <div class="detail-tabs secondary-tabs" id="author-detail-grain-tabs">
               <button type="button" class="tab-button active" data-author-grain="weekly" aria-selected="true">Weekly</button>
               <button type="button" class="tab-button" data-author-grain="monthly" aria-selected="false">Monthly</button>

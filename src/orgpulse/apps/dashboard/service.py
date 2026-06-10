@@ -24,10 +24,10 @@ from orgpulse.common.models import (
     DashboardInsightPayload,
     DashboardOverviewPayload,
     DashboardPullRequestPayload,
-    DashboardPullRequestReviewPayload,
     DashboardRepositoryPayload,
     DashboardRepositoryThroughputPointPayload,
     DashboardReviewerPayload,
+    DashboardReviewerTrendPayload,
     DashboardReviewLatencyPointPayload,
     DashboardReviewStatePayload,
     DashboardSizeBucketPayload,
@@ -533,6 +533,18 @@ def _build_dashboard_payload(
         since=since,
         until=until,
     )
+    reviewer_weekly_trends = _reviewer_trend_rows(
+        review_facts,
+        grain=PeriodGrain.WEEK,
+        since=since,
+        until=until,
+    )
+    reviewer_monthly_trends = _reviewer_trend_rows(
+        review_facts,
+        grain=PeriodGrain.MONTH,
+        since=since,
+        until=until,
+    )
     repository_rows = _repository_rows(
         snapshots,
         total_pull_requests=total_pull_requests,
@@ -596,6 +608,8 @@ def _build_dashboard_payload(
         repositories=repository_rows,
         size_buckets=size_bucket_rows,
         review_state_rows=review_state_rows,
+        reviewer_weekly_trends=reviewer_weekly_trends,
+        reviewer_monthly_trends=reviewer_monthly_trends,
         pull_requests=[_snapshot_row(snapshot) for snapshot in snapshots],
     )
 
@@ -617,10 +631,7 @@ def _write_outputs(
         encoding="utf-8",
     )
     with csv_path.open("w", encoding="utf-8", newline="") as handle:
-        rows = [
-            {field: row[field] for field in DASHBOARD_PULL_REQUEST_FIELDNAMES}
-            for row in payload_data["pull_requests"]
-        ]
+        rows = payload_data["pull_requests"]
         writer = csv.DictWriter(handle, fieldnames=DASHBOARD_PULL_REQUEST_FIELDNAMES)
         writer.writeheader()
         writer.writerows(rows)
@@ -845,6 +856,54 @@ def _reviewer_rows(
             row.reviewer_login,
         ),
     )
+
+
+def _reviewer_trend_rows(
+    review_facts: tuple[ReviewFact, ...],
+    *,
+    grain: PeriodGrain,
+    since: date,
+    until: date,
+) -> list[DashboardReviewerTrendPayload]:
+    review_counts: Counter[tuple[str, str]] = Counter()
+    reviewed_line_totals: Counter[tuple[str, str]] = Counter()
+    prs_reviewed: dict[tuple[str, str], set[str]] = defaultdict(set)
+    for review in review_facts:
+        if review.author_login is None or review.submitted_at is None:
+            continue
+        if _same_login(review.author_login, review.pull_request_author_login):
+            continue
+        submitted_date = review.submitted_at.date()
+        if submitted_date < since or submitted_date > until:
+            continue
+        period_key = _review_period_key(submitted_date, grain=grain)
+        reviewer_period_key = (review.author_login, period_key)
+        pull_request_key = f"{review.repository_full_name}#{review.pull_request_number}"
+        review_counts[reviewer_period_key] += 1
+        if pull_request_key in prs_reviewed[reviewer_period_key]:
+            continue
+        prs_reviewed[reviewer_period_key].add(pull_request_key)
+        reviewed_line_totals[reviewer_period_key] += review.pull_request_changed_lines
+    return [
+        DashboardReviewerTrendPayload(
+            reviewer_login=reviewer_login,
+            period_key=period_key,
+            review_submissions_given=review_counts[(reviewer_login, period_key)],
+            pull_requests_reviewed=len(prs_reviewed[(reviewer_login, period_key)]),
+            reviewed_lines=reviewed_line_totals[(reviewer_login, period_key)],
+        )
+        for reviewer_login, period_key in sorted(review_counts)
+    ]
+
+
+def _review_period_key(
+    submitted_date: date,
+    *,
+    grain: PeriodGrain,
+) -> str:
+    if grain is PeriodGrain.MONTH:
+        return submitted_date.strftime("%Y-%m")
+    return _week_key(submitted_date)
 
 
 def _same_login(
@@ -1175,15 +1234,6 @@ def _snapshot_row(snapshot: PullRequestSnapshot) -> DashboardPullRequestPayload:
             else snapshot.review_requested_at.isoformat()
         ),
         size_bucket=snapshot.size_bucket,
-        reviews=[
-            DashboardPullRequestReviewPayload(
-                review_id=review.review_id,
-                author_login=review.author_login,
-                state=review.state,
-                submitted_at=review.submitted_at.isoformat(),
-            )
-            for review in snapshot.reviews
-        ],
     )
 
 

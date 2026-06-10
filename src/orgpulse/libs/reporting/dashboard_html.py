@@ -24,6 +24,7 @@ from orgpulse.common.models import (
     DashboardPullRequestPayload,
     DashboardReferenceSummaryPayload,
     DashboardReviewerPayload,
+    DashboardReviewerTrendPayload,
     DashboardReviewStatePayload,
     DashboardSizeDiagnosticPayload,
     DashboardSourcePayload,
@@ -182,6 +183,8 @@ def prepare_dashboard_payload(
     normalized_payload["author_details_json"] = _build_author_details_json(
         authors=normalized_payload["authors"],
         reviewers=normalized_payload["reviewers"],
+        reviewer_weekly_trends=normalized_payload["reviewer_weekly_trends"],
+        reviewer_monthly_trends=normalized_payload["reviewer_monthly_trends"],
         pull_requests=pull_requests,
         since=date.fromisoformat(normalized_payload["overview"]["since"]),
         until=date.fromisoformat(normalized_payload["overview"]["until"]),
@@ -239,6 +242,16 @@ def _sanitize_dashboard_source_payload(
         review_state_rows=[
             _sanitize_model_payload(DashboardReviewStatePayload, row)
             for row in payload.get("review_state_rows", [])
+            if isinstance(row, dict)
+        ],
+        reviewer_weekly_trends=[
+            _sanitize_model_payload(DashboardReviewerTrendPayload, row)
+            for row in payload.get("reviewer_weekly_trends", [])
+            if isinstance(row, dict)
+        ],
+        reviewer_monthly_trends=[
+            _sanitize_model_payload(DashboardReviewerTrendPayload, row)
+            for row in payload.get("reviewer_monthly_trends", [])
             if isinstance(row, dict)
         ],
         pull_requests=[
@@ -341,6 +354,8 @@ def _build_author_details_json(
     *,
     authors: list[dict[str, Any]],
     reviewers: list[dict[str, Any]],
+    reviewer_weekly_trends: list[dict[str, Any]],
+    reviewer_monthly_trends: list[dict[str, Any]],
     pull_requests: list[dict[str, Any]],
     since: date,
     until: date,
@@ -350,6 +365,8 @@ def _build_author_details_json(
     author_details = _build_author_details(
         authors=authors,
         reviewers=reviewers,
+        reviewer_weekly_trends=reviewer_weekly_trends,
+        reviewer_monthly_trends=reviewer_monthly_trends,
         pull_requests=pull_requests,
         since=since,
         until=until,
@@ -852,6 +869,8 @@ def _build_author_details(
     *,
     authors: list[dict[str, Any]],
     reviewers: list[dict[str, Any]],
+    reviewer_weekly_trends: list[dict[str, Any]],
+    reviewer_monthly_trends: list[dict[str, Any]],
     pull_requests: list[dict[str, Any]],
     since: date,
     until: date,
@@ -859,12 +878,15 @@ def _build_author_details(
     distribution_percentile: int,
 ) -> dict[str, Any]:
     grouped = _group_pull_requests(pull_requests, "author_login")
+    author_by_login = {str(author["author_login"]): author for author in authors}
     reviewer_by_login = {
         str(reviewer["reviewer_login"]): reviewer for reviewer in reviewers
     }
+    weekly_reviewer_metrics = _reviewer_trend_metrics_by_login(reviewer_weekly_trends)
+    monthly_reviewer_metrics = _reviewer_trend_metrics_by_login(reviewer_monthly_trends)
     details: dict[str, Any] = {}
-    for author in authors:
-        author_login = author["author_login"]
+    for author_login in _people_detail_logins(authors, reviewers):
+        author = author_by_login.get(author_login, _empty_author_summary(author_login))
         author_pull_requests = grouped.get(author_login, [])
         reviewer = reviewer_by_login.get(author_login, {})
         repository_counter = Counter(
@@ -961,13 +983,7 @@ def _build_author_details(
             ),
             "weekly_trends": _merge_reviewer_metrics_into_trend_rows(
                 weekly_trends,
-                _build_reviewer_trend_metrics(
-                    pull_requests,
-                    reviewer_login=author_login,
-                    grain="week",
-                    since=since,
-                    until=until,
-                ),
+                weekly_reviewer_metrics.get(author_login, {}),
                 grain="week",
                 since=since,
                 until=until,
@@ -975,13 +991,7 @@ def _build_author_details(
             ),
             "monthly_trends": _merge_reviewer_metrics_into_trend_rows(
                 monthly_trends,
-                _build_reviewer_trend_metrics(
-                    pull_requests,
-                    reviewer_login=author_login,
-                    grain="month",
-                    since=since,
-                    until=until,
-                ),
+                monthly_reviewer_metrics.get(author_login, {}),
                 grain="month",
                 since=since,
                 until=until,
@@ -1014,47 +1024,49 @@ def _merge_reviewer_metrics_into_trend_rows(
     return [rows_by_period[period_key] for period_key in sorted(rows_by_period)]
 
 
-def _build_reviewer_trend_metrics(
-    pull_requests: list[dict[str, Any]],
-    *,
-    reviewer_login: str,
-    grain: str,
-    since: date,
-    until: date,
-) -> dict[str, dict[str, int]]:
-    review_submissions: Counter[str] = Counter()
-    reviewed_lines: Counter[str] = Counter()
-    reviewed_prs: dict[str, set[str]] = defaultdict(set)
-    for pull_request in pull_requests:
-        pull_request_key = (
-            f"{pull_request['repository_full_name']}#{pull_request['pull_request_number']}"
-        )
-        for review in pull_request.get("reviews", []):
-            review_author = str(review.get("author_login") or "")
-            if not _same_login(review_author, reviewer_login):
-                continue
-            if _same_login(review_author, str(pull_request.get("author_login") or "")):
-                continue
-            submitted_at_value = review.get("submitted_at")
-            if not submitted_at_value:
-                continue
-            submitted_at = _parse_datetime(str(submitted_at_value))
-            submitted_date = submitted_at.date()
-            if submitted_date < since or submitted_date > until:
-                continue
-            period_key = _period_key(submitted_at, grain=grain)
-            review_submissions[period_key] += 1
-            if pull_request_key in reviewed_prs[period_key]:
-                continue
-            reviewed_prs[period_key].add(pull_request_key)
-            reviewed_lines[period_key] += int(pull_request.get("changed_lines") or 0)
-    return {
-        period_key: {
-            "review_submissions_given": review_submissions[period_key],
-            "pull_requests_reviewed": len(reviewed_prs[period_key]),
-            "reviewed_lines": reviewed_lines[period_key],
+def _reviewer_trend_metrics_by_login(
+    reviewer_trends: list[dict[str, Any]],
+) -> dict[str, dict[str, dict[str, int]]]:
+    metrics_by_login: dict[str, dict[str, dict[str, int]]] = defaultdict(dict)
+    for row in reviewer_trends:
+        metrics_by_login[str(row["reviewer_login"])][str(row["period_key"])] = {
+            "review_submissions_given": int(row["review_submissions_given"]),
+            "pull_requests_reviewed": int(row["pull_requests_reviewed"]),
+            "reviewed_lines": int(row["reviewed_lines"]),
         }
-        for period_key in sorted(review_submissions)
+    return metrics_by_login
+
+
+def _people_detail_logins(
+    authors: list[dict[str, Any]],
+    reviewers: list[dict[str, Any]],
+) -> list[str]:
+    logins = [str(author["author_login"]) for author in authors]
+    seen = set(logins)
+    for reviewer in reviewers:
+        reviewer_login = str(reviewer["reviewer_login"])
+        if reviewer_login in seen:
+            continue
+        seen.add(reviewer_login)
+        logins.append(reviewer_login)
+    return logins
+
+
+def _empty_author_summary(author_login: str) -> dict[str, Any]:
+    return {
+        "author_login": author_login,
+        "pull_requests": 0,
+        "merged_pull_requests": 0,
+        "open_pull_requests": 0,
+        "changed_lines": 0,
+        "commits": 0,
+        "review_submissions_received": 0,
+        "average_reviews_per_pr": None,
+        "median_first_review_hours": None,
+        "median_approval_hours": None,
+        "median_merge_hours": None,
+        "median_changed_lines": None,
+        "share_of_prs_pct": 0,
     }
 
 
@@ -1095,15 +1107,6 @@ def _empty_author_trend_row(
         open_week=bool(period_state["open_week"]),
         open_month=bool(period_state["open_month"]),
     ).model_dump(mode="json")
-
-
-def _same_login(
-    left: str | None,
-    right: str | None,
-) -> bool:
-    if left is None or right is None:
-        return False
-    return left.lower() == right.lower()
 
 
 def _build_author_size_mix_rows(

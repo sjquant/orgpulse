@@ -31,6 +31,7 @@
     const trendGrainTabs = Array.from(document.querySelectorAll("#trend-grain-tabs .tab-button"));
     const authorGrainTabs = Array.from(document.querySelectorAll("#author-detail-grain-tabs .tab-button"));
     const sectionNavLinks = Array.from(document.querySelectorAll('.section-nav a[href^="#"]'));
+    const peopleRankingChunkSize = 10;
     const sectionTargets = sectionNavLinks
       .map((link) => {
         const sectionId = link.getAttribute("href")?.slice(1);
@@ -57,7 +58,7 @@
     let activeReferenceTrend = "weekly";
     let activeAuthorPointIndex = null;
     let activeAuthor = "{{ default_author }}";
-    let visiblePeopleCount = 5;
+    let visiblePeopleCount = peopleRankingChunkSize;
     if (authorDetails[activeAuthor]?.weekly_trends?.length > 12) {
       activeAuthorGrain = "monthly";
     }
@@ -87,7 +88,7 @@
         if (visiblePeopleCount >= rankedPeople.length) {
           visiblePeopleCount = selectedPeopleVisibleCount(rankedPeople);
         } else {
-          visiblePeopleCount = Math.min(rankedPeople.length, visiblePeopleCount + 5);
+          visiblePeopleCount = Math.min(rankedPeople.length, visiblePeopleCount + peopleRankingChunkSize);
         }
         renderPeopleRanking();
       });
@@ -239,9 +240,9 @@
     function selectedPeopleVisibleCount(rankedPeople) {
       const selectedIndex = rankedPeople.findIndex(({ row }) => row.authorLogin === activeAuthor);
       if (selectedIndex < 0) {
-        return 5;
+        return peopleRankingChunkSize;
       }
-      return Math.max(5, selectedIndex + 1);
+      return Math.max(peopleRankingChunkSize, selectedIndex + 1);
     }
 
     function syncPeopleMetricTabs() {
@@ -255,15 +256,15 @@
       if (!peopleRankingToggle) {
         return;
       }
-      peopleRankingToggle.classList.toggle("hidden", totalCount <= 5);
+      peopleRankingToggle.classList.toggle("hidden", totalCount <= peopleRankingChunkSize);
       const remaining = Math.max(0, totalCount - visiblePeopleCount);
       if (remaining === 0) {
         peopleRankingToggle.textContent = "Collapse people";
         peopleRankingToggle.setAttribute("aria-expanded", "true");
         return;
       }
-      peopleRankingToggle.textContent = `Show ${Math.min(5, remaining)} more people`;
-      peopleRankingToggle.setAttribute("aria-expanded", String(visiblePeopleCount > 5));
+      peopleRankingToggle.textContent = `Show ${Math.min(peopleRankingChunkSize, remaining)} more people`;
+      peopleRankingToggle.setAttribute("aria-expanded", String(visiblePeopleCount > peopleRankingChunkSize));
     }
 
     function personRankCard(row, rank) {

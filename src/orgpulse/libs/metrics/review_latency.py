@@ -197,13 +197,27 @@ def _first_external_review_at(
     author_login: str | None,
     reviews: Sequence[ReviewLike],
 ) -> datetime | None:
-    for review in reviews:
+    for review in _reviews_by_submission_time(reviews):
         if review.submitted_at is None:
             continue
         if _same_login(review.author_login, author_login):
             continue
         return review.submitted_at
     return None
+
+
+def _reviews_by_submission_time(
+    reviews: Sequence[ReviewLike],
+) -> tuple[ReviewLike, ...]:
+    return tuple(
+        sorted(
+            reviews,
+            key=lambda review: (
+                review.submitted_at.isoformat() if review.submitted_at else "",
+                review.review_id,
+            ),
+        )
+    )
 
 
 def _last_review_cycle_reference(
@@ -229,7 +243,7 @@ def _review_ready_at(
         created_at=created_at,
         timeline_events=timeline_events,
     )
-    for event in timeline_events:
+    for event in _timeline_events_by_created_time(timeline_events):
         if event.created_at is None:
             continue
         if event.created_at > reference_at:
@@ -260,7 +274,7 @@ def _initial_review_ready_at(
 def _first_draft_transition_event(
     timeline_events: Sequence[TimelineEventLike],
 ) -> str | None:
-    for event in timeline_events:
+    for event in _timeline_events_by_created_time(timeline_events):
         if event.created_at is None:
             continue
         if event.event in {"converted_to_draft", "ready_for_review"}:
@@ -275,7 +289,7 @@ def _review_requested_at(
 ) -> datetime | None:
     active_requests: set[str] = set()
     review_requested_at: datetime | None = None
-    for event in timeline_events:
+    for event in _timeline_events_by_created_time(timeline_events):
         if event.created_at is None:
             continue
         if event.created_at > reference_at:
@@ -295,6 +309,20 @@ def _review_requested_at(
             if not active_requests:
                 review_requested_at = None
     return review_requested_at
+
+
+def _timeline_events_by_created_time(
+    timeline_events: Sequence[TimelineEventLike],
+) -> tuple[TimelineEventLike, ...]:
+    return tuple(
+        sorted(
+            timeline_events,
+            key=lambda event: (
+                event.created_at.isoformat() if event.created_at else "",
+                str(event.event_id),
+            ),
+        )
+    )
 
 
 def _request_key(event: TimelineEventLike) -> str:

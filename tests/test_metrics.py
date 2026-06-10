@@ -25,6 +25,10 @@ REVIEW_TIMING_SCENARIOS = (
         "ignore_pre_ready_review_for_draft_created_pr",
         id="ignore pre-ready review for draft-created PR",
     ),
+    pytest.param(
+        "orders_review_cycle_inputs",
+        id="orders review cycle inputs",
+    ),
 )
 
 AGGREGATION_SCENARIOS = (
@@ -545,6 +549,8 @@ def _review_timing_case_builder(case_name: str):
             return _review_timing_draft_created_stays_null
         case "ignore_pre_ready_review_for_draft_created_pr":
             return _review_timing_ignore_pre_ready_review_for_draft_created_pr
+        case "orders_review_cycle_inputs":
+            return _review_timing_orders_review_cycle_inputs
     raise AssertionError(f"unknown review timing case: {case_name}")
 
 
@@ -847,6 +853,81 @@ def _review_timing_ignore_pre_ready_review_for_draft_created_pr(
             time_to_first_review_seconds=10_800,
             time_to_merge_seconds=100_800,
             changed_lines=11,
+        ),
+    )
+
+
+def _review_timing_orders_review_cycle_inputs(
+    *,
+    pull_request_factory,
+    review_factory,
+    timeline_event_factory,
+) -> ReviewTimingCase:
+    return ReviewTimingCase(
+        pull_request=pull_request_factory(
+            number=47,
+            title="Normalize review event order",
+            state="closed",
+            merged=True,
+            updated_at=datetime.fromisoformat("2026-04-11T15:00:00"),
+            closed_at=datetime.fromisoformat("2026-04-11T15:00:00"),
+            merged_at=datetime.fromisoformat("2026-04-11T15:00:00"),
+            additions=11,
+            deletions=4,
+            changed_files=2,
+            commits=2,
+            html_url="https://example.test/pr/47",
+            reviews=(
+                review_factory(
+                    review_id=706,
+                    author_login="reviewer-b",
+                    submitted_at=datetime.fromisoformat("2026-04-11T15:00:00"),
+                    commit_id="commit-706",
+                ),
+                review_factory(
+                    review_id=705,
+                    state="COMMENTED",
+                    author_login="reviewer-a",
+                    submitted_at=datetime.fromisoformat("2026-04-11T12:00:00"),
+                    commit_id="commit-705",
+                ),
+            ),
+            timeline_events=(
+                timeline_event_factory(
+                    event_id=806,
+                    event="review_request_removed",
+                    created_at=datetime.fromisoformat("2026-04-11T14:00:00"),
+                    requested_reviewer_login="reviewer-a",
+                ),
+                timeline_event_factory(
+                    event_id=805,
+                    event="ready_for_review",
+                    created_at=datetime.fromisoformat("2026-04-11T11:00:00"),
+                    requested_reviewer_login=None,
+                ),
+                timeline_event_factory(
+                    event_id=804,
+                    event="converted_to_draft",
+                    created_at=datetime.fromisoformat("2026-04-11T10:00:00"),
+                    requested_reviewer_login=None,
+                ),
+                timeline_event_factory(
+                    event_id=807,
+                    created_at=datetime.fromisoformat("2026-04-11T11:30:00"),
+                    requested_reviewer_login="reviewer-a",
+                ),
+            ),
+        ),
+        expected=ReviewTimingExpectation(
+            author_login="alice",
+            review_ready_at=datetime.fromisoformat("2026-04-11T11:00:00"),
+            review_requested_at=datetime.fromisoformat("2026-04-11T11:30:00"),
+            review_started_at=datetime.fromisoformat("2026-04-11T11:30:00"),
+            first_review_submitted_at=datetime.fromisoformat("2026-04-11T12:00:00"),
+            merged_at=datetime.fromisoformat("2026-04-11T15:00:00"),
+            time_to_first_review_seconds=1_800,
+            time_to_merge_seconds=108_000,
+            changed_lines=15,
         ),
     )
 

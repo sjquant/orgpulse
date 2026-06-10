@@ -735,8 +735,9 @@ class TestManualDashboardPayload:
         assert 'id="people-ranking-toggle"' in html
         assert "Top 10 people shown first." in html
         assert "peopleRankingChunkSize = 10" in html
-        assert '"people-controls profile-summary"' in html
+        assert '"people-controls people-controls"' in html
         assert '"people-ranking profile-detail"' in html
+        assert ".people-ranking-controls .primary-tabs" in html
         assert 'class="tab-strip primary-tabs"' in html
         assert 'class="tab-strip secondary-tabs"' in html
         assert "grid-template-columns: minmax(0, 1fr) auto;" in html

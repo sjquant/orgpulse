@@ -27,6 +27,7 @@ from orgpulse.common.models import (
     DashboardRepositoryPayload,
     DashboardRepositoryThroughputPointPayload,
     DashboardReviewerPayload,
+    DashboardReviewerTrendPayload,
     DashboardReviewLatencyPointPayload,
     DashboardReviewStatePayload,
     DashboardSizeBucketPayload,
@@ -37,6 +38,15 @@ from orgpulse.common.models import (
     RawSnapshotWriteResult,
     RunManifest,
     RunMode,
+)
+from orgpulse.libs.metrics.review_latency import (
+    approval_hours as calculate_approval_hours,
+)
+from orgpulse.libs.metrics.review_latency import (
+    hours_between as _hours_between,
+)
+from orgpulse.libs.metrics.review_latency import (
+    review_cycle_markers,
 )
 from orgpulse.libs.reporting.contracts import build_time_anchor_context
 from orgpulse.libs.reporting.dashboard_html import (
@@ -52,6 +62,7 @@ from orgpulse.libs.snapshots.source import LocalSnapshotSource, read_snapshot_cs
 class PullRequestReview:
     """Represent one normalized review event attached to a pull request."""
 
+    review_id: int
     author_login: str
     state: str
     submitted_at: datetime
@@ -352,13 +363,14 @@ def _reviews_by_pull_request(
             )
         ].append(
             PullRequestReview(
+                review_id=int(review_row["review_id"]),
                 author_login=review_row["author_login"] or "ghost",
                 state=review_row["state"],
                 submitted_at=submitted_at,
             )
         )
     for reviews in grouped.values():
-        reviews.sort(key=lambda review: review.submitted_at)
+        reviews.sort(key=lambda review: (review.submitted_at, review.review_id))
     return grouped
 
 
@@ -420,14 +432,12 @@ def _snapshot_from_local_rows(
     additions = int(pull_request_row["additions"])
     deletions = int(pull_request_row["deletions"])
     draft = _parse_bool(pull_request_row["draft"])
-    review_ready_at, review_requested_at, first_review_started_at, first_review_at = (
-        _review_cycle_markers(
-            author_login=pull_request_row["author_login"] or "ghost",
-            draft=draft,
-            created_at=created_at,
-            timeline_events=timeline_events,
-            reviews=reviews,
-        )
+    review_markers = review_cycle_markers(
+        author_login=pull_request_row["author_login"] or "ghost",
+        draft=draft,
+        created_at=created_at,
+        timeline_events=timeline_events,
+        reviews=reviews,
     )
     return PullRequestSnapshot(
         repository_full_name=pull_request_row["repository_full_name"],
@@ -455,12 +465,12 @@ def _snapshot_from_local_rows(
             1 for review in reviews if review.state == "COMMENTED"
         ),
         reviewer_count=len({review.author_login for review in reviews}),
-        first_review_at=first_review_at,
+        first_review_at=review_markers.first_review_at,
         first_review_hours=_hours_between(
-            first_review_started_at,
-            first_review_at,
+            review_markers.review_started_at,
+            review_markers.first_review_at,
         ),
-        approval_hours=_approval_hours(
+        approval_hours=calculate_approval_hours(
             author_login=pull_request_row["author_login"] or "ghost",
             draft=draft,
             created_at=created_at,
@@ -481,8 +491,8 @@ def _snapshot_from_local_rows(
         )
         if reviews
         else 0,
-        review_requested_at=review_requested_at,
-        review_ready_at=review_ready_at,
+        review_requested_at=review_markers.review_requested_at,
+        review_ready_at=review_markers.review_ready_at or created_at,
         size_bucket=_size_bucket(additions + deletions),
         reviews=tuple(reviews),
     )
@@ -520,6 +530,18 @@ def _build_dashboard_payload(
     )
     reviewer_rows = _reviewer_rows(
         review_facts,
+        since=since,
+        until=until,
+    )
+    reviewer_weekly_trends = _reviewer_trend_rows(
+        review_facts,
+        grain=PeriodGrain.WEEK,
+        since=since,
+        until=until,
+    )
+    reviewer_monthly_trends = _reviewer_trend_rows(
+        review_facts,
+        grain=PeriodGrain.MONTH,
         since=since,
         until=until,
     )
@@ -586,6 +608,8 @@ def _build_dashboard_payload(
         repositories=repository_rows,
         size_buckets=size_bucket_rows,
         review_state_rows=review_state_rows,
+        reviewer_weekly_trends=reviewer_weekly_trends,
+        reviewer_monthly_trends=reviewer_monthly_trends,
         pull_requests=[_snapshot_row(snapshot) for snapshot in snapshots],
     )
 
@@ -627,230 +651,6 @@ def _write_outputs(
         "pull_requests": payload_data["overview"]["pull_requests"],
         "distribution_percentile": distribution_percentile,
     }
-
-
-def _review_cycle_markers(
-    *,
-    author_login: str,
-    draft: bool,
-    created_at: datetime,
-    timeline_events: list[PullRequestTimelineEvent],
-    reviews: list[PullRequestReview],
-) -> tuple[datetime, datetime | None, datetime | None, datetime | None]:
-    first_review_at = _first_external_review_at(
-        author_login=author_login,
-        reviews=reviews,
-    )
-    reference_at = first_review_at or _last_review_cycle_reference(
-        created_at=created_at,
-        timeline_events=timeline_events,
-    )
-    review_ready_at = _review_ready_at(
-        draft=draft,
-        created_at=created_at,
-        timeline_events=timeline_events,
-        reference_at=reference_at,
-    )
-    review_requested_at = _review_requested_at(
-        timeline_events=timeline_events,
-        reference_at=reference_at,
-    )
-    first_review_started_at = _review_started_at(
-        review_ready_at=review_ready_at,
-        review_requested_at=review_requested_at,
-    )
-    return (
-        review_ready_at or created_at,
-        review_requested_at,
-        first_review_started_at,
-        first_review_at,
-    )
-
-
-def _approval_hours(
-    *,
-    author_login: str,
-    draft: bool,
-    created_at: datetime,
-    timeline_events: list[PullRequestTimelineEvent],
-    reviews: list[PullRequestReview],
-) -> float | None:
-    final_decision_review = _final_external_decision_review(
-        author_login=author_login,
-        reviews=reviews,
-    )
-    if final_decision_review is None or final_decision_review.state != "APPROVED":
-        return None
-    review_started_at = _approval_started_at(
-        draft=draft,
-        created_at=created_at,
-        timeline_events=timeline_events,
-        approval_submitted_at=final_decision_review.submitted_at,
-    )
-    return _hours_between(review_started_at, final_decision_review.submitted_at)
-
-
-def _final_external_decision_review(
-    *,
-    author_login: str,
-    reviews: list[PullRequestReview],
-) -> PullRequestReview | None:
-    final_decision_review = None
-    for review in reviews:
-        if review.state not in {"APPROVED", "CHANGES_REQUESTED"}:
-            continue
-        if _same_login(review.author_login, author_login):
-            continue
-        final_decision_review = review
-    return final_decision_review
-
-
-def _approval_started_at(
-    *,
-    draft: bool,
-    created_at: datetime,
-    timeline_events: list[PullRequestTimelineEvent],
-    approval_submitted_at: datetime,
-) -> datetime | None:
-    review_ready_at = _review_ready_at(
-        draft=draft,
-        created_at=created_at,
-        timeline_events=timeline_events,
-        reference_at=approval_submitted_at,
-    )
-    review_requested_at = _review_requested_at(
-        timeline_events=timeline_events,
-        reference_at=approval_submitted_at,
-    )
-    return _review_started_at(
-        review_ready_at=review_ready_at,
-        review_requested_at=review_requested_at,
-    )
-
-
-def _first_external_review_at(
-    *,
-    author_login: str,
-    reviews: list[PullRequestReview],
-) -> datetime | None:
-    for review in reviews:
-        if _same_login(review.author_login, author_login):
-            continue
-        return review.submitted_at
-    return None
-
-
-def _last_review_cycle_reference(
-    *,
-    created_at: datetime,
-    timeline_events: list[PullRequestTimelineEvent],
-) -> datetime:
-    event_times = [
-        event.created_at for event in timeline_events if event.created_at is not None
-    ]
-    return max(event_times, default=created_at)
-
-
-def _review_ready_at(
-    *,
-    draft: bool,
-    created_at: datetime,
-    timeline_events: list[PullRequestTimelineEvent],
-    reference_at: datetime,
-) -> datetime | None:
-    review_ready_at = _initial_review_ready_at(
-        draft=draft,
-        created_at=created_at,
-        timeline_events=timeline_events,
-    )
-    for event in timeline_events:
-        if event.created_at is None:
-            continue
-        if event.created_at > reference_at:
-            break
-        if event.event == "converted_to_draft":
-            review_ready_at = None
-        elif event.event == "ready_for_review":
-            review_ready_at = event.created_at
-    return review_ready_at
-
-
-def _initial_review_ready_at(
-    *,
-    draft: bool,
-    created_at: datetime,
-    timeline_events: list[PullRequestTimelineEvent],
-) -> datetime | None:
-    first_transition_event = _first_draft_transition_event(timeline_events)
-    if first_transition_event == "ready_for_review":
-        return None
-    if first_transition_event == "converted_to_draft":
-        return created_at
-    if draft:
-        return None
-    return created_at
-
-
-def _first_draft_transition_event(
-    timeline_events: list[PullRequestTimelineEvent],
-) -> str | None:
-    for event in timeline_events:
-        if event.created_at is None:
-            continue
-        if event.event in {"converted_to_draft", "ready_for_review"}:
-            return event.event
-    return None
-
-
-def _review_requested_at(
-    *,
-    timeline_events: list[PullRequestTimelineEvent],
-    reference_at: datetime,
-) -> datetime | None:
-    active_requests: set[str] = set()
-    review_requested_at: datetime | None = None
-    for event in timeline_events:
-        if event.created_at is None:
-            continue
-        if event.created_at > reference_at:
-            break
-        if event.event == "converted_to_draft":
-            active_requests.clear()
-            review_requested_at = None
-            continue
-        if event.event == "review_requested":
-            request_key = _request_key(event)
-            if request_key not in active_requests and not active_requests:
-                review_requested_at = event.created_at
-            active_requests.add(request_key)
-            continue
-        if event.event == "review_request_removed":
-            active_requests.discard(_request_key(event))
-            if not active_requests:
-                review_requested_at = None
-    return review_requested_at
-
-
-def _request_key(
-    event: PullRequestTimelineEvent,
-) -> str:
-    if event.requested_reviewer_login is not None:
-        return f"user:{event.requested_reviewer_login.lower()}"
-    if event.requested_team_name is not None:
-        return f"team:{event.requested_team_name.lower()}"
-    return f"event:{event.event_id}"
-
-
-def _review_started_at(
-    *,
-    review_ready_at: datetime | None,
-    review_requested_at: datetime | None,
-) -> datetime | None:
-    if review_ready_at is None:
-        return None
-    if review_requested_at is None:
-        return review_ready_at
-    return max(review_ready_at, review_requested_at)
 
 
 def _time_series(
@@ -1056,6 +856,54 @@ def _reviewer_rows(
             row.reviewer_login,
         ),
     )
+
+
+def _reviewer_trend_rows(
+    review_facts: tuple[ReviewFact, ...],
+    *,
+    grain: PeriodGrain,
+    since: date,
+    until: date,
+) -> list[DashboardReviewerTrendPayload]:
+    review_counts: Counter[tuple[str, str]] = Counter()
+    reviewed_line_totals: Counter[tuple[str, str]] = Counter()
+    prs_reviewed: dict[tuple[str, str], set[str]] = defaultdict(set)
+    for review in review_facts:
+        if review.author_login is None or review.submitted_at is None:
+            continue
+        if _same_login(review.author_login, review.pull_request_author_login):
+            continue
+        submitted_date = review.submitted_at.date()
+        if submitted_date < since or submitted_date > until:
+            continue
+        period_key = _review_period_key(submitted_date, grain=grain)
+        reviewer_period_key = (review.author_login, period_key)
+        pull_request_key = f"{review.repository_full_name}#{review.pull_request_number}"
+        review_counts[reviewer_period_key] += 1
+        if pull_request_key in prs_reviewed[reviewer_period_key]:
+            continue
+        prs_reviewed[reviewer_period_key].add(pull_request_key)
+        reviewed_line_totals[reviewer_period_key] += review.pull_request_changed_lines
+    return [
+        DashboardReviewerTrendPayload(
+            reviewer_login=reviewer_login,
+            period_key=period_key,
+            review_submissions_given=review_counts[(reviewer_login, period_key)],
+            pull_requests_reviewed=len(prs_reviewed[(reviewer_login, period_key)]),
+            reviewed_lines=reviewed_line_totals[(reviewer_login, period_key)],
+        )
+        for reviewer_login, period_key in sorted(review_counts)
+    ]
+
+
+def _review_period_key(
+    submitted_date: date,
+    *,
+    grain: PeriodGrain,
+) -> str:
+    if grain is PeriodGrain.MONTH:
+        return submitted_date.strftime("%Y-%m")
+    return _week_key(submitted_date)
 
 
 def _same_login(
@@ -1398,24 +1246,6 @@ def _parse_datetime(value: str) -> datetime:
 
 def _parse_bool(value: str) -> bool:
     return value.strip().lower() == "true"
-
-
-def _hours_between(start_at: datetime | None, end_at: datetime | None) -> float | None:
-    if start_at is None or end_at is None:
-        return None
-    start_at, end_at = _matching_datetime_awareness(start_at, end_at)
-    return round((end_at - start_at).total_seconds() / 3600, 2)
-
-
-def _matching_datetime_awareness(
-    start_at: datetime,
-    end_at: datetime,
-) -> tuple[datetime, datetime]:
-    if start_at.tzinfo is None and end_at.tzinfo is not None:
-        return start_at, end_at.replace(tzinfo=None)
-    if start_at.tzinfo is not None and end_at.tzinfo is None:
-        return start_at.replace(tzinfo=None), end_at
-    return start_at, end_at
 
 
 def _size_bucket(changed_lines: int) -> str:

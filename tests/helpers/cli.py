@@ -51,6 +51,7 @@ from orgpulse.libs.output_store.run_outputs import (
     RepositorySummaryCsvWriter,
     RunManifestWriter,
 )
+from orgpulse.libs.reporting.dashboard_html import prepare_dashboard_payload
 
 from .dashboard_source import dashboard_pull_request_row as _dashboard_pull_request_row
 from .dashboard_source import dashboard_review_row as _dashboard_review_row
@@ -111,6 +112,7 @@ __all__ = [
     "PULL_REQUEST_FIELDNAMES",
     "RepositorySummaryCsvWriter",
     "RunManifestWriter",
+    "prepare_dashboard_payload",
     "csv",
     "json",
     "re",

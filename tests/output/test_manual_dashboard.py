@@ -5,6 +5,43 @@ from ..helpers.output import *
 
 
 class TestManualDashboardPayload:
+    def test_prepared_overview_uses_filtered_reviewer_submission_count(self) -> None:
+        """Keep prepared overview review submissions aligned with filtered reviewer activity."""
+        # Given
+        payload = {
+            "overview": {
+                "org": "acme",
+                "generated_at": "2026-04-18T00:00:00+00:00",
+                "since": "2026-04-01",
+                "until": "2026-04-18",
+                "time_anchor": "created_at",
+                "unique_reviewers": 0,
+            },
+            "reviewers": [],
+            "pull_requests": [
+                _manual_pull_request(
+                    repository_full_name="acme/api",
+                    pull_request_number=1,
+                    author_login="alice",
+                    created_at="2026-04-17T09:00:00+00:00",
+                    merged_at=None,
+                    changed_lines=12,
+                    additions=9,
+                    deletions=3,
+                    first_review_hours=2.0,
+                    merge_hours=None,
+                    size_bucket="XS",
+                ),
+            ],
+        }
+
+        # When
+        prepared = prepare_dashboard_payload(payload)
+
+        # Then
+        assert prepared.overview["review_submissions"] == 0
+        assert prepared.overview["review_submissions_per_reviewer"] is None
+
     def test_marks_open_week_and_open_month_in_dashboard_data_and_html(self) -> None:
         """Render partial-period dashboard trends with explicit open week and month state."""
         # Given
@@ -545,7 +582,7 @@ class TestManualDashboardPayload:
         )
         assert "Median approval time" in html
         assert 'data-metric="median_approval_hours"' in html
-        assert 'data-author-metric="median_approval_hours"' in html
+        assert 'data-people-metric="median_approval_hours"' in html
         assert 'data-label="Median approval"' in html
         assert 'data-label="Median first review"' in html
 
@@ -690,11 +727,37 @@ class TestManualDashboardPayload:
 
         # Then
         assert 'class="table-footer"' in html
-        assert html.index('id="author-roster-toggle"') > html.index('class="person-list"')
-        assert html.index('id="reviewer-toggle"') > html.index('id="reviewer-extra"')
+        assert 'id="people-metric-tabs"' in html
+        assert 'data-people-metric="pull_requests"' in html
+        assert 'data-people-metric="changed_lines"' in html
+        assert 'data-people-metric="median_merge_hours"' in html
+        assert 'id="people-ranking-list"' in html
+        assert 'id="people-ranking-toggle"' in html
+        assert "Top 10 people shown first." in html
+        assert "peopleRankingChunkSize = 10" in html
+        assert '"people-controls people-controls"' in html
+        assert '"people-ranking profile-detail"' in html
+        assert ".people-ranking-controls .primary-tabs" in html
+        assert ".people-ranking-controls .secondary-tabs" in html
+        assert html.index('id="author-detail-grain-tabs"') < html.index('id="people-ranking-list"')
+        assert html.index('id="author-detail-grain-tabs"') < html.index('id="author-detail"')
+        assert 'class="tab-strip primary-tabs"' in html
+        assert 'class="tab-strip secondary-tabs"' in html
+        assert "grid-template-columns: minmax(0, 1fr) auto;" in html
+        assert "width: fit-content;" in html
+        assert ".two-col > .secondary-tabs" in html
+        assert 'id="author-detail-metric-tabs"' not in html
+        assert "Size mix" not in html
+        assert "Timeline" not in html
+        assert "activeAuthorMetric = activePeopleMetric" in html
         assert html.index('id="repository-toggle"') > html.index('id="repository-extra"')
         assert html.index('id="weekly-trend-toggle"') > html.index('id="weekly-trend-extra"')
         assert html.index('id="monthly-trend-toggle"') > html.index('id="monthly-trend-extra"')
+        assert 'id="reference-trend-tabs"' in html
+        assert 'data-reference-trend="weekly"' in html
+        assert 'data-reference-trend="monthly"' in html
+        assert "Reviewer leaderboard" not in html
+        assert "Repository leaderboard" in html
 
     def test_reference_trend_tables_render_newest_periods_first(self) -> None:
         """Render recent and older reference trend rows in newest-to-oldest order."""
@@ -755,9 +818,9 @@ class TestManualDashboardPayload:
             "2026-06",
             "2026-05",
             "2026-04",
-            "2026-03",
         ]
         assert [row["period_key"] for row in prepared.monthly_trends_older] == [
+            "2026-03",
             "2026-02",
             "2026-01",
         ]
@@ -1008,6 +1071,145 @@ class TestManualDashboardPayload:
         # Then
         assert "PRs / month" in html
         assert "Reviewed lines" in html
-        assert "Lines / month" in html
         assert "Reviewed PRs / month" in html
         assert "Reviewed lines / month" in html
+
+    def test_adds_reviewer_period_metrics_to_author_detail_trends(self) -> None:
+        """Add reviewed PR and reviewed line period values to selected profile trends."""
+        # Given
+        payload = {
+            "overview": {
+                "org": "acme",
+                "generated_at": "2026-04-30T00:00:00+00:00",
+                "since": "2026-04-01",
+                "until": "2026-04-30",
+                "time_anchor": "created_at",
+                "top_repository": "acme/api",
+                "top_author": "alice",
+                "unique_reviewers": 1,
+            },
+            "reviewers": [
+                {
+                    "reviewer_login": "alice",
+                    "review_submissions": 1,
+                    "pull_requests_reviewed": 1,
+                    "reviewed_lines": 75,
+                    "pull_requests_reviewed_per_month": 1.0,
+                    "reviewed_lines_per_month": 75.0,
+                    "approvals": 1,
+                    "changes_requested": 0,
+                    "comments": 0,
+                    "authors_supported": 1,
+                },
+            ],
+            "reviewer_monthly_trends": [
+                {
+                    "reviewer_login": "alice",
+                    "period_key": "2026-04",
+                    "review_submissions_given": 1,
+                    "pull_requests_reviewed": 1,
+                    "reviewed_lines": 75,
+                },
+            ],
+            "pull_requests": [
+                _manual_pull_request(
+                    repository_full_name="acme/api",
+                    pull_request_number=1,
+                    author_login="alice",
+                    created_at="2026-04-01T09:00:00+00:00",
+                    merged_at="2026-04-02T09:00:00+00:00",
+                    changed_lines=25,
+                    additions=20,
+                    deletions=5,
+                    first_review_hours=1.0,
+                    merge_hours=24.0,
+                    size_bucket="XS",
+                ),
+                _manual_pull_request(
+                    repository_full_name="acme/api",
+                    pull_request_number=2,
+                    author_login="bob",
+                    created_at="2026-04-15T09:00:00+00:00",
+                    merged_at="2026-04-16T09:00:00+00:00",
+                    changed_lines=75,
+                    additions=50,
+                    deletions=25,
+                    first_review_hours=1.0,
+                    merge_hours=24.0,
+                    size_bucket="S",
+                ),
+            ],
+        }
+
+        # When
+        prepared = prepare_dashboard_payload(payload)
+        author_details = json.loads(prepared.author_details_json)
+        alice_month = author_details["alice"]["monthly_trends"][0]
+
+        # Then
+        assert alice_month["pull_requests_reviewed"] == 1
+        assert alice_month["reviewed_lines"] == 75
+        assert alice_month["review_submissions_given"] == 1
+
+    def test_includes_reviewer_only_people_in_author_details(self) -> None:
+        """Include reviewer-only people in the dashboard people command center data."""
+        # Given
+        payload = {
+            "overview": {
+                "org": "acme",
+                "generated_at": "2026-04-30T00:00:00+00:00",
+                "since": "2026-04-01",
+                "until": "2026-04-30",
+                "time_anchor": "created_at",
+                "top_repository": "acme/api",
+                "top_author": "alice",
+                "unique_reviewers": 1,
+            },
+            "reviewers": [
+                {
+                    "reviewer_login": "carol",
+                    "review_submissions": 1,
+                    "pull_requests_reviewed": 1,
+                    "reviewed_lines": 75,
+                    "pull_requests_reviewed_per_month": 1.0,
+                    "reviewed_lines_per_month": 75.0,
+                    "approvals": 1,
+                    "changes_requested": 0,
+                    "comments": 0,
+                    "authors_supported": 1,
+                },
+            ],
+            "reviewer_monthly_trends": [
+                {
+                    "reviewer_login": "carol",
+                    "period_key": "2026-04",
+                    "review_submissions_given": 1,
+                    "pull_requests_reviewed": 1,
+                    "reviewed_lines": 75,
+                },
+            ],
+            "pull_requests": [
+                _manual_pull_request(
+                    repository_full_name="acme/api",
+                    pull_request_number=1,
+                    author_login="alice",
+                    created_at="2026-04-15T09:00:00+00:00",
+                    merged_at="2026-04-16T09:00:00+00:00",
+                    changed_lines=75,
+                    additions=50,
+                    deletions=25,
+                    first_review_hours=1.0,
+                    merge_hours=24.0,
+                    size_bucket="S",
+                ),
+            ],
+        }
+
+        # When
+        prepared = prepare_dashboard_payload(payload)
+        author_details = json.loads(prepared.author_details_json)
+
+        # Then
+        assert author_details["carol"]["summary"]["pull_requests"] == 0
+        assert author_details["carol"]["summary"]["pull_requests_reviewed"] == 1
+        assert author_details["carol"]["monthly_trends"][0]["reviewed_lines"] == 75

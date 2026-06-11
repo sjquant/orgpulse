@@ -1,0 +1,137 @@
+  <style>
+    .person-report .hero-panel {
+      margin-bottom: 16px;
+    }
+
+    .person-report .summary-strip {
+      grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+    }
+
+    .person-report .section-panel {
+      margin-bottom: 16px;
+    }
+
+    .person-report .stats-grid {
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+
+    .person-report .repository-focus-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .person-report .repository-focus-card {
+      display: grid;
+      gap: 10px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius-control);
+      padding: 14px 16px;
+      background: var(--panel-subtle);
+    }
+
+    .person-report .repository-focus-card strong {
+      font-family: var(--font-display);
+      overflow-wrap: anywhere;
+    }
+
+    .person-report .repository-focus-card span {
+      color: var(--muted);
+      font-size: 0.86rem;
+      line-height: 1.45;
+    }
+
+    .person-report .table-heading {
+      display: flex;
+      justify-content: space-between;
+      gap: 14px;
+      align-items: start;
+      margin-bottom: 12px;
+    }
+
+    .person-report .table-heading > div {
+      min-width: 0;
+    }
+
+    .person-report .table-heading .period-state-pill {
+      flex-shrink: 0;
+    }
+
+    .person-report td:first-child {
+      font-weight: 700;
+      color: var(--text);
+    }
+
+    .person-report .metric-split {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 16px;
+    }
+
+    .person-report .person-chart-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr);
+      gap: 14px;
+    }
+
+    .person-report .person-chart-toolbar {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: start;
+    }
+
+    .person-report .chart-root {
+      aspect-ratio: 16 / 6;
+    }
+
+    .person-report #person-trend-grain-tabs,
+    .person-report #person-cadence-tabs {
+      justify-content: flex-end;
+      align-self: start;
+      margin-left: auto;
+    }
+
+    .person-report .cadence-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr);
+      gap: 14px;
+    }
+
+    .person-report .cadence-panel {
+      display: grid;
+      gap: 12px;
+      min-width: 0;
+    }
+
+    .person-report .cadence-panel h3 {
+      margin: 0;
+      font-family: var(--font-display);
+      font-size: 1rem;
+    }
+
+    @media (max-width: 1180px) {
+      .person-report .stats-grid,
+      .person-report .repository-focus-grid,
+      .person-report .metric-split,
+      .person-report .person-chart-toolbar,
+      .person-report .cadence-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .person-report .person-chart-toolbar {
+        display: grid;
+      }
+
+      .person-report #person-trend-grain-tabs,
+      .person-report #person-cadence-tabs {
+        justify-content: flex-end;
+      }
+    }
+
+    @media (max-width: 720px) {
+      .person-report .table-heading {
+        display: grid;
+      }
+    }
+  </style>

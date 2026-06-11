@@ -32,13 +32,21 @@ from orgpulse.common.models import (
     canonicalize_repo_filter,
     repo_filter_matches,
 )
+from orgpulse.libs.metrics.review_latency import (
+    approval_hours as calculate_approval_hours,
+)
+from orgpulse.libs.metrics.review_latency import (
+    first_review_hours as calculate_first_review_hours,
+)
+from orgpulse.libs.metrics.review_latency import (
+    hours_between,
+)
 from orgpulse.libs.reporting.contracts import build_period_state_payload
 from orgpulse.libs.snapshots.person_source import (
     PersonSnapshotSource,
     PullRequestFact,
     PullRequestKey,
     ReviewFact,
-    TimelineEventFact,
 )
 from orgpulse.libs.snapshots.source import LocalSnapshotSource
 
@@ -927,135 +935,25 @@ class PersonMetricsService:
         self,
         pull_request: PullRequestFact,
     ) -> float | None:
-        for review in pull_request.reviews:
-            if review.submitted_at is None:
-                continue
-            if self._review_is_by_pull_request_author(pull_request, review):
-                continue
-            review_started_at = self._review_started_at(
-                pull_request, review.submitted_at
-            )
-            return self._hours_between(review_started_at, review.submitted_at)
-        return None
+        return calculate_first_review_hours(
+            author_login=pull_request.author_login,
+            draft=pull_request.draft,
+            created_at=pull_request.created_at,
+            timeline_events=pull_request.timeline_events,
+            reviews=pull_request.reviews,
+        )
 
     def _approval_hours(
         self,
         pull_request: PullRequestFact,
     ) -> float | None:
-        final_decision_submitted_at: datetime | None = None
-        final_decision_state: str | None = None
-        for review in pull_request.reviews:
-            if review.submitted_at is None:
-                continue
-            if review.state not in {"APPROVED", "CHANGES_REQUESTED"}:
-                continue
-            if self._review_is_by_pull_request_author(pull_request, review):
-                continue
-            if (
-                final_decision_submitted_at is None
-                or review.submitted_at > final_decision_submitted_at
-            ):
-                final_decision_submitted_at = review.submitted_at
-                final_decision_state = review.state
-        if final_decision_submitted_at is None or final_decision_state != "APPROVED":
-            return None
-        review_started_at = self._review_started_at(
-            pull_request,
-            final_decision_submitted_at,
+        return calculate_approval_hours(
+            author_login=pull_request.author_login,
+            draft=pull_request.draft,
+            created_at=pull_request.created_at,
+            timeline_events=pull_request.timeline_events,
+            reviews=pull_request.reviews,
         )
-        return self._hours_between(review_started_at, final_decision_submitted_at)
-
-    def _review_started_at(
-        self,
-        pull_request: PullRequestFact,
-        reference_at: datetime,
-    ) -> datetime | None:
-        review_ready_at = self._review_ready_at(pull_request, reference_at)
-        review_requested_at = self._review_requested_at(pull_request, reference_at)
-        if review_ready_at is None:
-            return None
-        if review_requested_at is None:
-            return review_ready_at
-        return max(review_ready_at, review_requested_at)
-
-    def _review_ready_at(
-        self,
-        pull_request: PullRequestFact,
-        reference_at: datetime,
-    ) -> datetime | None:
-        review_ready_at = self._initial_review_ready_at(pull_request)
-        for event in pull_request.timeline_events:
-            if event.created_at is None:
-                continue
-            if event.created_at > reference_at:
-                break
-            if event.event == "converted_to_draft":
-                review_ready_at = None
-            elif event.event == "ready_for_review":
-                review_ready_at = event.created_at
-        return review_ready_at
-
-    def _initial_review_ready_at(
-        self,
-        pull_request: PullRequestFact,
-    ) -> datetime | None:
-        first_transition_event = self._first_draft_transition_event(pull_request)
-        if first_transition_event == "ready_for_review":
-            return None
-        if first_transition_event == "converted_to_draft":
-            return pull_request.created_at
-        if pull_request.draft:
-            return None
-        return pull_request.created_at
-
-    def _first_draft_transition_event(
-        self,
-        pull_request: PullRequestFact,
-    ) -> str | None:
-        for event in pull_request.timeline_events:
-            if event.created_at is None:
-                continue
-            if event.event in {"converted_to_draft", "ready_for_review"}:
-                return event.event
-        return None
-
-    def _review_requested_at(
-        self,
-        pull_request: PullRequestFact,
-        reference_at: datetime,
-    ) -> datetime | None:
-        active_requests: set[str] = set()
-        review_requested_at: datetime | None = None
-        for event in pull_request.timeline_events:
-            if event.created_at is None:
-                continue
-            if event.created_at > reference_at:
-                break
-            if event.event == "converted_to_draft":
-                active_requests.clear()
-                review_requested_at = None
-                continue
-            if event.event == "review_requested":
-                request_key = self._request_key(event)
-                if request_key not in active_requests and not active_requests:
-                    review_requested_at = event.created_at
-                active_requests.add(request_key)
-                continue
-            if event.event == "review_request_removed":
-                active_requests.discard(self._request_key(event))
-                if not active_requests:
-                    review_requested_at = None
-        return review_requested_at
-
-    def _request_key(
-        self,
-        event: TimelineEventFact,
-    ) -> str:
-        if event.requested_reviewer_login is not None:
-            return f"user:{event.requested_reviewer_login.lower()}"
-        if event.requested_team_name is not None:
-            return f"team:{event.requested_team_name.lower()}"
-        return f"event:{event.event_id}"
 
     def _merge_hours(
         self,
@@ -1063,16 +961,7 @@ class PersonMetricsService:
     ) -> float | None:
         if not pull_request.merged:
             return None
-        return self._hours_between(pull_request.created_at, pull_request.merged_at)
-
-    def _hours_between(
-        self,
-        start_at: datetime | None,
-        end_at: datetime | None,
-    ) -> float | None:
-        if start_at is None or end_at is None or end_at < start_at:
-            return None
-        return _round_metric((end_at - start_at).total_seconds() / 3600)
+        return hours_between(pull_request.created_at, pull_request.merged_at)
 
     def _review_count(
         self,
@@ -1081,13 +970,6 @@ class PersonMetricsService:
         return sum(
             1 for review in pull_request.reviews if review.submitted_at is not None
         )
-
-    def _review_is_by_pull_request_author(
-        self,
-        pull_request: PullRequestFact,
-        review: ReviewFact,
-    ) -> bool:
-        return self._same_login(review.author_login, pull_request.author_login)
 
     def _same_login(
         self,
@@ -1174,7 +1056,7 @@ def build_person_config(
         "org": settings.org if org is None else org,
         "login": login,
         "output_dir": settings.output_dir if output_dir is None else output_dir,
-        "grain": settings.period if grain is None else grain,
+        "grain": PeriodGrain.MONTH if grain is None else grain,
         "time_anchor": settings.time_anchor if time_anchor is None else time_anchor,
         "export_format": (
             PersonExportFormat.JSON if export_format is None else export_format

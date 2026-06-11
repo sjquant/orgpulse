@@ -21,33 +21,36 @@ def render_person_report_html(
 
     progressive_chunk_size = 5
     top_repository_rows = _top_repository_rows(result.repository_rows)
-    period_recent_rows, period_older_rows = _split_recent_rows(
-        result.period_rows,
-        recent_count=progressive_chunk_size,
-    )
     repository_top_rows, repository_rest_rows = _split_ranked_repository_rows(
         result.repository_rows,
         top_count=progressive_chunk_size,
     )
+    weekly_period_rows_recent, weekly_period_rows_older = _split_recent_rows(
+        result.weekly_period_rows,
+        recent_count=progressive_chunk_size,
+    )
+    monthly_period_rows_recent, monthly_period_rows_older = _split_recent_rows(
+        result.monthly_period_rows,
+        recent_count=progressive_chunk_size,
+    )
     window_label = _window_label(result)
-    period_status_label = _period_status_label(result.period_rows)
     report_payload = _html_report_payload(result)
     template = _template_environment().get_template("person_report.html.j2")
     return template.render(
         result=result,
         summary=result.summary,
         reviewer_summary=result.reviewer_summary,
-        period_recent_rows=period_recent_rows,
-        period_older_rows=period_older_rows,
         repository_top_rows=repository_top_rows,
         repository_rest_rows=repository_rest_rows,
+        weekly_period_rows_recent=weekly_period_rows_recent,
+        weekly_period_rows_older=weekly_period_rows_older,
+        monthly_period_rows_recent=monthly_period_rows_recent,
+        monthly_period_rows_older=monthly_period_rows_older,
         top_repository_rows=top_repository_rows,
-        period_total_count=len(result.period_rows),
         repository_total_count=len(result.repository_rows),
         progressive_chunk_size=progressive_chunk_size,
         report_payload=report_payload,
         window_label=window_label,
-        period_status_label=period_status_label,
     )
 
 
@@ -98,18 +101,6 @@ def _window_label(
     since = result.since.isoformat() if result.since is not None else "all"
     until = result.until.isoformat() if result.until is not None else "all"
     return f"{since} to {until}"
-
-
-def _period_status_label(
-    rows: tuple[PersonPeriodRow, ...],
-) -> str:
-    if any(row.open_month for row in rows):
-        return "open month"
-    if any(row.open_week for row in rows):
-        return "open week"
-    if any(row.is_partial for row in rows):
-        return "partial window"
-    return "closed window"
 
 
 def _html_report_payload(

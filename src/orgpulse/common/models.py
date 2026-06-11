@@ -535,6 +535,18 @@ class DashboardReviewerPayload(BaseModel):
     authors_supported: int
 
 
+class DashboardReviewerTrendPayload(BaseModel):
+    """Store one reviewer activity row for a dashboard period."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    reviewer_login: str
+    period_key: str
+    review_submissions_given: int
+    pull_requests_reviewed: int
+    reviewed_lines: int
+
+
 class DashboardPullRequestPayload(BaseModel):
     """Store one dashboard-ready pull request row."""
 
@@ -782,6 +794,8 @@ class DashboardSourcePayload(BaseModel):
     repositories: list[DashboardRepositoryPayload] = Field(default_factory=list)
     size_buckets: list[DashboardSizeBucketPayload] = Field(default_factory=list)
     review_state_rows: list[DashboardReviewStatePayload] = Field(default_factory=list)
+    reviewer_weekly_trends: list[DashboardReviewerTrendPayload] = Field(default_factory=list)
+    reviewer_monthly_trends: list[DashboardReviewerTrendPayload] = Field(default_factory=list)
     pull_requests: list[DashboardPullRequestPayload]
 
 

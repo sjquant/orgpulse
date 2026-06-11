@@ -110,8 +110,6 @@ class TestPersonCommand:
                 "acme",
                 "--login",
                 "ALICE",
-                "--grain",
-                "month",
                 "--since",
                 "2026-04-01",
                 "--until",
@@ -193,7 +191,7 @@ class TestPersonCommand:
         pull_request_factory,
         review_factory,
     ) -> None:
-        """Leave approval timing empty when a later external decision requests changes."""
+        """Leave approval timing empty when the final same-time external decision requests changes."""
         # Given
         collection = PullRequestCollection(
             window=CollectionWindow(
@@ -229,7 +227,7 @@ class TestPersonCommand:
                             review_id=112,
                             author_login="bob",
                             state="CHANGES_REQUESTED",
-                            submitted_at=datetime.fromisoformat("2026-04-03T11:00:00"),
+                            submitted_at=datetime.fromisoformat("2026-04-03T09:00:00"),
                         ),
                     ),
                 ),
@@ -265,8 +263,6 @@ class TestPersonCommand:
                 "acme",
                 "--login",
                 "alice",
-                "--grain",
-                "month",
                 "--since",
                 "2026-04-01",
                 "--until",
@@ -283,6 +279,7 @@ class TestPersonCommand:
         payload = json.loads(result.stdout)
         assert payload["summary"]["median_approval_hours"] is None
         assert payload["period_rows"][0]["median_approval_hours"] is None
+        assert payload["repository_rows"][0]["median_approval_hours"] is None
         assert payload["summary"]["reviews_received"] == 3
 
     def test_counts_approval_time_from_later_review_request_boundary(
@@ -364,8 +361,6 @@ class TestPersonCommand:
                 "acme",
                 "--login",
                 "alice",
-                "--grain",
-                "month",
                 "--since",
                 "2026-04-01",
                 "--until",
@@ -449,8 +444,6 @@ class TestPersonCommand:
                 "acme",
                 "--login",
                 "alice",
-                "--grain",
-                "month",
                 "--since",
                 "2026-04-01",
                 "--until",
@@ -475,6 +468,35 @@ class TestPersonCommand:
                 "commits_total": "0",
                 "is_closed": "True",
                 "is_open": "False",
+                "is_partial": "True",
+                "label": "open week",
+                "median_approval_hours": "",
+                "median_first_review_hours": "",
+                "median_merge_hours": "",
+                "merged_pull_request_count": "0",
+                "observed_through_date": "2026-04-05",
+                "open_month": "False",
+                "open_pull_request_count": "0",
+                "open_week": "False",
+                "period_grain": "week",
+                "period_end_date": "2026-04-05",
+                "period_key": "2026-W14",
+                "period_start_date": "2026-03-30",
+                "pull_requests_reviewed": "1",
+                "reviewed_lines": "10",
+                "review_submissions_given": "1",
+                "reviews_received": "0",
+                "status": "closed",
+            },
+            {
+                "approvals_given": "1",
+                "authored_pull_request_count": "0",
+                "changed_lines_total": "0",
+                "changes_requested_given": "0",
+                "comments_given": "0",
+                "commits_total": "0",
+                "is_closed": "True",
+                "is_open": "False",
                 "is_partial": "False",
                 "label": "closed month",
                 "median_approval_hours": "",
@@ -485,6 +507,7 @@ class TestPersonCommand:
                 "open_month": "False",
                 "open_pull_request_count": "0",
                 "open_week": "False",
+                "period_grain": "month",
                 "period_end_date": "2026-04-30",
                 "period_key": "2026-04",
                 "period_start_date": "2026-04-01",
@@ -594,8 +617,6 @@ class TestPersonCommand:
                 "acme",
                 "--login",
                 "alice",
-                "--grain",
-                "month",
                 "--since",
                 "2026-04-01",
                 "--until",
@@ -679,8 +700,6 @@ class TestPersonCommand:
                 "acme",
                 "--login",
                 "alice",
-                "--grain",
-                "month",
                 "--since",
                 "2026-02-01",
                 "--until",
@@ -774,8 +793,6 @@ class TestPersonCommand:
                 "alice",
                 "--org",
                 "acme",
-                "--period",
-                "month",
                 "--pr-time-anchor",
                 "created_at",
                 "--source-output-dir",
@@ -815,6 +832,102 @@ class TestPersonCommand:
                 "reviews_received": 1,
             }
         ]
+
+    def test_rejects_person_grain_option(
+        self,
+        runner: CliRunner,
+    ) -> None:
+        """Reject obsolete person grain selection because both cadences are reported."""
+        # Given
+        arguments = [
+            "person",
+            "alice",
+            "--org",
+            "acme",
+            "--grain",
+            "month",
+        ]
+
+        # When
+        result = runner.invoke(app, arguments)
+
+        # Then
+        assert result.exit_code == 2
+        assert "No such option: --grain" in result.stderr
+
+    def test_ignores_global_period_for_person_source_selection(
+        self,
+        runner: CliRunner,
+        github_auth_service: None,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path,
+        pull_request_factory,
+    ) -> None:
+        """Keep person extraction cadence-independent when global period is weekly."""
+        # Given
+        collection = PullRequestCollection(
+            window=CollectionWindow(
+                scope=RunScope.FULL_HISTORY,
+                start_date=None,
+                end_date=datetime.fromisoformat("2026-04-30T00:00:00").date(),
+            ),
+            pull_requests=(
+                pull_request_factory(
+                    repository_full_name="acme/api",
+                    number=81,
+                    title="Alice API work",
+                    author_login="alice",
+                    created_at=datetime.fromisoformat("2026-04-02T09:00:00"),
+                    updated_at=datetime.fromisoformat("2026-04-03T10:00:00"),
+                ),
+            ),
+            failures=(),
+        )
+        _configure_production_cli_runtime(
+            monkeypatch,
+            collection=collection,
+        )
+        run_result = runner.invoke(
+            app,
+            [
+                "run",
+                "--org",
+                "acme",
+                "--mode",
+                "full",
+                "--as-of",
+                "2026-04-30",
+                "--output-dir",
+                str(tmp_path),
+            ],
+        )
+        assert run_result.exit_code == 0
+        monkeypatch.setenv("ORGPULSE_PERIOD", "week")
+
+        # When
+        result = runner.invoke(
+            app,
+            [
+                "person",
+                "--org",
+                "acme",
+                "--login",
+                "alice",
+                "--output-dir",
+                str(tmp_path),
+                "--format",
+                "json",
+            ],
+        )
+
+        # Then
+        assert result.exit_code == 0
+        payload = json.loads(result.stdout)
+        assert payload["grain"] == "month"
+        assert [row["period_key"] for row in payload["monthly_period_rows"]] == [
+            "2026-04"
+        ]
+        assert payload["weekly_period_rows"][0]["period_key"] == "2026-W14"
 
     def test_writes_person_metrics_as_markdown_and_html(
         self,
@@ -873,8 +986,6 @@ class TestPersonCommand:
                 "acme",
                 "--login",
                 "alice",
-                "--grain",
-                "month",
                 "--output-dir",
                 str(tmp_path),
                 "--format",
@@ -889,8 +1000,6 @@ class TestPersonCommand:
                 "acme",
                 "--login",
                 "alice",
-                "--grain",
-                "month",
                 "--output-dir",
                 str(tmp_path),
                 "--format",
@@ -915,6 +1024,8 @@ class TestPersonCommand:
         assert 'data-theme-option="dark"' in html_result.stdout
         assert 'id="person-trend-chart-root"' in html_result.stdout
         assert 'id="person-trend-chart-readout"' in html_result.stdout
+        assert 'class="tab-strip primary-tabs"' in html_result.stdout
+        assert 'class="tab-strip secondary-tabs"' in html_result.stdout
         assert (
             'data-person-trend-metric="authored_pull_request_count"'
             in html_result.stdout
@@ -952,19 +1063,32 @@ class TestPersonCommand:
         ]
         assert report_payload["weekly_period_rows"][0]["period_key"] == "2026-W14"
         assert report_payload["weekly_period_rows"][-1]["period_key"] == "2026-W18"
-        assert 'data-label="Period">2026-04</td>' in html_result.stdout
+        assert 'data-label="Month">2026-04</td>' in html_result.stdout
+        assert 'data-label="Week">2026-W14</td>' in html_result.stdout
         assert 'data-label="State">' in html_result.stdout
         assert 'data-label="Authored PRs">1</td>' in html_result.stdout
+        assert 'id="person-cadence-tabs"' in html_result.stdout
+        assert 'data-person-cadence="weekly"' in html_result.stdout
+        assert 'data-person-cadence="monthly"' in html_result.stdout
+        assert 'id="person-cadence-weekly"' in html_result.stdout
+        assert (
+            'id="person-cadence-monthly" role="tabpanel"'
+            in html_result.stdout
+        )
+        assert 'data-person-cadence-panel="monthly" hidden' in html_result.stdout
         assert 'id="person-trend-grain-tabs"' in html_result.stdout
         assert 'data-person-trend-grain="weekly"' in html_result.stdout
         assert 'data-person-trend-grain="monthly"' in html_result.stdout
         assert '<div class="two-col">' in html_result.stdout
+        assert "grid-template-columns: minmax(0, 1fr) auto;" in html_result.stdout
+        assert "width: fit-content;" in html_result.stdout
+        assert ".two-col > .secondary-tabs" in html_result.stdout
+        assert "margin-left: auto;" in html_result.stdout
         assert (
             '<nav class="section-nav" aria-label="Report sections">'
             in html_result.stdout
         )
         assert '<a href="#charts">Charts</a>' in html_result.stdout
-        assert '<a href="#periods">Periods</a>' in html_result.stdout
         assert '<a href="#cadences">Weekly / Monthly</a>' in html_result.stdout
         assert '<a href="#repositories">Repositories</a>' in html_result.stdout
         assert '<a href="#methodology">Methodology</a>' in html_result.stdout
@@ -1129,8 +1253,6 @@ class TestPersonCommand:
                 "acme",
                 "--login",
                 "alice",
-                "--grain",
-                "month",
                 "--since",
                 "2026-01-01",
                 "--until",
@@ -1301,8 +1423,6 @@ class TestPersonCommand:
                 "acme",
                 "--login",
                 "alice",
-                "--grain",
-                "month",
                 "--since",
                 "2026-01-01",
                 "--until",
@@ -1316,12 +1436,12 @@ class TestPersonCommand:
 
         # Then
         assert result.exit_code == 0
-        assert 'id="period-extra" class="hidden"' in result.stdout
-        assert "Show 3 more older month rows" in result.stdout
-        assert (
-            'id="period-toggle" class="ghost-button" aria-expanded="false"'
-            in result.stdout
-        )
+        assert 'id="weekly-period-extra" class="hidden"' in result.stdout
+        assert 'id="weekly-period-toggle" class="ghost-button" aria-expanded="false"' in result.stdout
+        assert "Show 5 more weekly rows" in result.stdout
+        assert 'id="monthly-period-extra" class="hidden"' in result.stdout
+        assert 'id="monthly-period-toggle" class="ghost-button" aria-expanded="false"' in result.stdout
+        assert "Show 3 more monthly rows" in result.stdout
         assert 'id="repository-extra" class="hidden"' in result.stdout
         assert "Show 5 more repositories" in result.stdout
         assert (
@@ -1386,8 +1506,6 @@ class TestPersonCommand:
                 "acme",
                 "--login",
                 "nobody",
-                "--grain",
-                "month",
                 "--since",
                 "2026-04-01",
                 "--until",
@@ -1424,8 +1542,6 @@ class TestPersonCommand:
                 "acme",
                 "--login",
                 "alice",
-                "--grain",
-                "month",
                 "--output-dir",
                 str(tmp_path),
                 "--format",
@@ -1495,8 +1611,6 @@ class TestPersonCommand:
                 "acme",
                 "--login",
                 "alice",
-                "--grain",
-                "month",
                 "--until",
                 "2026-04-30",
                 "--output-dir",
@@ -1568,8 +1682,6 @@ class TestPersonCommand:
                 "acme",
                 "--login",
                 "alice",
-                "--grain",
-                "month",
                 "--output-dir",
                 str(tmp_path),
                 "--format",

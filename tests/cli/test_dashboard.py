@@ -89,6 +89,103 @@ class TestDashboardCommand:
             in Path(payload["html_path"]).read_text(encoding="utf-8")
         )
 
+    def test_counts_reviewer_trends_by_review_submission_date(
+        self,
+        runner: CliRunner,
+        tmp_path,
+    ) -> None:
+        """Count reviewer trend metrics from reviews submitted inside the dashboard window."""
+        # Given
+        source_output_dir = tmp_path / "source"
+        report_output_dir = tmp_path / "report"
+        _write_dashboard_source_period(
+            period_dir=source_output_dir / "raw" / "month" / "created_at" / "2026-03",
+            pull_request_rows=[
+                _dashboard_pull_request_row(
+                    period_key="2026-03",
+                    repository_full_name="acme/api",
+                    pull_request_number=1,
+                    author_login="alice",
+                    created_at="2026-03-20T09:00:00+00:00",
+                    updated_at="2026-04-10T12:00:00+00:00",
+                    closed_at="2026-04-10T12:00:00+00:00",
+                    merged_at="2026-04-10T12:00:00+00:00",
+                    additions=30,
+                    deletions=10,
+                    changed_files=3,
+                    commits=2,
+                ),
+            ],
+            review_rows=[
+                _dashboard_review_row(
+                    period_key="2026-03",
+                    repository_full_name="acme/api",
+                    pull_request_number=1,
+                    review_id=101,
+                    author_login="reviewer-1",
+                    submitted_at="2026-04-10T10:00:00+00:00",
+                ),
+            ],
+            timeline_rows=[],
+        )
+        _write_dashboard_source_period(
+            period_dir=source_output_dir / "raw" / "month" / "created_at" / "2026-04",
+            pull_request_rows=[],
+            review_rows=[],
+            timeline_rows=[],
+        )
+        _write_dashboard_source_manifest(
+            source_output_dir=source_output_dir,
+            refreshed_period_keys=("2026-04",),
+            locked_period_keys=("2026-03",),
+            as_of="2026-04-30",
+        )
+
+        # When
+        result = runner.invoke(
+            app,
+            [
+                "dashboard",
+                "--org",
+                "acme",
+                "--since",
+                "2026-04-01",
+                "--until",
+                "2026-04-30",
+                "--source-output-dir",
+                str(source_output_dir),
+                "--output-dir",
+                str(report_output_dir),
+                "--no-refresh",
+            ],
+        )
+
+        # Then
+        command_payload = json.loads(result.stdout)
+        dashboard_payload = json.loads(
+            Path(command_payload["json_path"]).read_text(encoding="utf-8")
+        )
+        assert result.exit_code == 0
+        assert command_payload["pull_requests"] == 0
+        assert dashboard_payload["reviewers"][0]["reviewer_login"] == "reviewer-1"
+        assert dashboard_payload["reviewers"][0]["pull_requests_reviewed"] == 1
+        assert dashboard_payload["reviewer_monthly_trends"] == [
+            {
+                "reviewer_login": "reviewer-1",
+                "period_key": "2026-04",
+                "review_submissions_given": 1,
+                "pull_requests_reviewed": 1,
+                "reviewed_lines": 40,
+            }
+        ]
+        author_details = json.loads(
+            prepare_dashboard_payload(dashboard_payload).author_details_json
+        )
+        assert author_details["reviewer-1"]["summary"]["pull_requests_reviewed"] == 1
+        assert author_details["reviewer-1"]["monthly_trends"][0][
+            "pull_requests_reviewed"
+        ] == 1
+
     def test_ignores_run_mode_environment_when_rendering_dashboard(
         self,
         runner: CliRunner,

@@ -1,0 +1,554 @@
+  <script>
+    (function () {
+      const storageKey = "orgpulse-manual-dashboard-theme";
+      const root = document.documentElement;
+      const switcher = document.querySelector(".theme-switch");
+      const buttons = Array.from(document.querySelectorAll(".theme-switch-button"));
+      const repositoryToggle = document.getElementById("repository-toggle");
+      const repositoryExtra = document.getElementById("repository-extra");
+      const report = JSON.parse(document.getElementById("person-report-data").textContent);
+      const trendSeries = {
+        weekly: Array.isArray(report.weekly_period_rows) ? report.weekly_period_rows : [],
+        monthly: Array.isArray(report.monthly_period_rows) ? report.monthly_period_rows : [],
+      };
+      const trendMetricTabs = Array.from(document.querySelectorAll("#person-trend-metric-tabs .tab-button"));
+      const trendGrainTabs = Array.from(document.querySelectorAll("#person-trend-grain-tabs .tab-button"));
+      const cadenceTabs = Array.from(document.querySelectorAll("#person-cadence-tabs .tab-button"));
+      const cadencePanels = Array.from(document.querySelectorAll("[data-person-cadence-panel]"));
+      const weeklyPeriodToggle = document.getElementById("weekly-period-toggle");
+      const weeklyPeriodExtra = document.getElementById("weekly-period-extra");
+      const monthlyPeriodToggle = document.getElementById("monthly-period-toggle");
+      const monthlyPeriodExtra = document.getElementById("monthly-period-extra");
+      const trendChartTitle = document.getElementById("person-trend-chart-title");
+      const trendChartReadout = document.getElementById("person-trend-chart-readout");
+      const trendChartRoot = document.getElementById("person-trend-chart-root");
+      const sectionNavLinks = Array.from(document.querySelectorAll('.section-nav a[href^="#"]'));
+      const sectionTargets = sectionNavLinks
+        .map(link => {
+          const sectionId = link.getAttribute("href")?.slice(1);
+          if (!sectionId) {
+            return null;
+          }
+          const section = document.getElementById(sectionId);
+          if (!section) {
+            return null;
+          }
+          return { link, section, sectionId };
+        })
+        .filter(Boolean);
+      let activeTrendMetric = "authored_pull_request_count";
+      let activeTrendGrain = report.grain === "week" ? "weekly" : "monthly";
+      let activeCadence = report.grain === "week" ? "weekly" : "monthly";
+      let activeTrendPointIndex = null;
+
+      function activeTheme() {
+        return root.dataset.theme || "dark";
+      }
+
+      function syncThemeButtons() {
+        const theme = activeTheme();
+        if (switcher) {
+          switcher.dataset.activeTheme = theme;
+        }
+        buttons.forEach(button => {
+          button.setAttribute(
+            "aria-pressed",
+            button.dataset.themeOption === theme ? "true" : "false",
+          );
+        });
+      }
+
+      buttons.forEach(button => {
+        button.addEventListener("click", () => {
+          const theme = button.dataset.themeOption;
+          root.dataset.theme = theme;
+          try {
+            window.localStorage.setItem(storageKey, theme);
+          } catch (_error) {
+            // Ignore localStorage failures; the current page state still updates.
+          }
+          syncThemeButtons();
+          renderPersonTrendChart();
+        });
+      });
+
+      syncThemeButtons();
+      syncTrendMetricTabs();
+      syncTrendGrainTabs();
+      syncCadenceTabs();
+      syncActiveSectionNav();
+      setupSectionSpy();
+      renderPersonTrendChart();
+      trendMetricTabs.forEach(button => {
+        button.addEventListener("click", () => {
+          activeTrendMetric = button.dataset.personTrendMetric;
+          activeTrendPointIndex = null;
+          syncTrendMetricTabs();
+          renderPersonTrendChart();
+        });
+      });
+      trendGrainTabs.forEach(button => {
+        button.addEventListener("click", () => {
+          activeTrendGrain = button.dataset.personTrendGrain;
+          activeTrendPointIndex = null;
+          syncTrendGrainTabs();
+          renderPersonTrendChart();
+        });
+      });
+      cadenceTabs.forEach(button => {
+        button.addEventListener("click", () => {
+          activeCadence = button.dataset.personCadence;
+          syncCadenceTabs();
+        });
+      });
+      window.addEventListener("resize", renderPersonTrendChart);
+      setupProgressiveToggle({
+        button: weeklyPeriodToggle,
+        container: weeklyPeriodExtra,
+        items: weeklyPeriodExtra ? Array.from(weeklyPeriodExtra.querySelectorAll("tr")) : [],
+        chunkSize: {{ progressive_chunk_size }},
+        label: "weekly rows",
+      });
+      setupProgressiveToggle({
+        button: monthlyPeriodToggle,
+        container: monthlyPeriodExtra,
+        items: monthlyPeriodExtra ? Array.from(monthlyPeriodExtra.querySelectorAll("tr")) : [],
+        chunkSize: {{ progressive_chunk_size }},
+        label: "monthly rows",
+      });
+      setupProgressiveToggle({
+        button: repositoryToggle,
+        container: repositoryExtra,
+        items: repositoryExtra ? Array.from(repositoryExtra.querySelectorAll("tr")) : [],
+        chunkSize: {{ progressive_chunk_size }},
+        label: "repositories",
+      });
+
+      function setupProgressiveToggle({ button, container, items, chunkSize, label }) {
+        if (!button || !container || !items.length) {
+          return;
+        }
+        let visibleCount = 0;
+        sync();
+        button.addEventListener("click", () => {
+          if (visibleCount >= items.length) {
+            visibleCount = 0;
+          } else {
+            visibleCount = Math.min(items.length, visibleCount + chunkSize);
+          }
+          sync();
+        });
+
+        function sync() {
+          container.classList.toggle("hidden", visibleCount === 0);
+          items.forEach((item, index) => {
+            item.classList.toggle("hidden", index >= visibleCount);
+          });
+          const remaining = Math.max(0, items.length - visibleCount);
+          if (remaining === 0) {
+            button.textContent = `Collapse ${label}`;
+            button.setAttribute("aria-expanded", "true");
+            return;
+          }
+          button.textContent = `Show ${Math.min(chunkSize, remaining)} more ${label}`;
+          button.setAttribute("aria-expanded", String(visibleCount > 0));
+        }
+      }
+
+      function syncActiveSectionNav(activeSectionId = null) {
+        const fallbackSectionId = activeSectionId || currentSectionId();
+        sectionTargets.forEach(target => {
+          target.link.setAttribute(
+            "aria-current",
+            String(target.sectionId === fallbackSectionId),
+          );
+        });
+      }
+
+      function currentSectionId() {
+        let selected = sectionTargets[0]?.sectionId ?? null;
+        let bestDistance = Number.POSITIVE_INFINITY;
+        sectionTargets.forEach(target => {
+          const rect = target.section.getBoundingClientRect();
+          const distance = Math.abs(rect.top - 116);
+          if (rect.top <= window.innerHeight * 0.55 && distance < bestDistance) {
+            selected = target.sectionId;
+            bestDistance = distance;
+          }
+        });
+        return selected;
+      }
+
+      function setupSectionSpy() {
+        if (!("IntersectionObserver" in window) || !sectionTargets.length) {
+          window.addEventListener("scroll", () => syncActiveSectionNav(), { passive: true });
+          return;
+        }
+        const visibleSections = new Map();
+        const observer = new IntersectionObserver(
+          entries => {
+            entries.forEach(entry => {
+              const sectionId = entry.target.getAttribute("id");
+              if (!sectionId) {
+                return;
+              }
+              if (entry.isIntersecting) {
+                visibleSections.set(sectionId, entry.intersectionRatio);
+              } else {
+                visibleSections.delete(sectionId);
+              }
+            });
+            if (!visibleSections.size) {
+              syncActiveSectionNav();
+              return;
+            }
+            const [activeSectionId] = [...visibleSections.entries()].sort((left, right) => {
+              if (right[1] !== left[1]) {
+                return right[1] - left[1];
+              }
+              return (
+                sectionTargets.findIndex(target => target.sectionId === left[0])
+                - sectionTargets.findIndex(target => target.sectionId === right[0])
+              );
+            })[0];
+            syncActiveSectionNav(activeSectionId);
+          },
+          {
+            root: null,
+            rootMargin: "-18% 0px -58% 0px",
+            threshold: [0.15, 0.3, 0.45, 0.6],
+          },
+        );
+        sectionTargets.forEach(target => observer.observe(target.section));
+        window.addEventListener("scroll", () => syncActiveSectionNav(), { passive: true });
+      }
+
+      function syncTrendMetricTabs() {
+        trendMetricTabs.forEach(button => {
+          const isActive = button.dataset.personTrendMetric === activeTrendMetric;
+          button.classList.toggle("active", isActive);
+          button.setAttribute("aria-selected", String(isActive));
+        });
+      }
+
+      function syncTrendGrainTabs() {
+        trendGrainTabs.forEach(button => {
+          const isActive = button.dataset.personTrendGrain === activeTrendGrain;
+          button.classList.toggle("active", isActive);
+          button.setAttribute("aria-selected", String(isActive));
+        });
+      }
+
+      function syncCadenceTabs() {
+        cadenceTabs.forEach(button => {
+          const isActive = button.dataset.personCadence === activeCadence;
+          button.classList.toggle("active", isActive);
+          button.setAttribute("aria-selected", String(isActive));
+        });
+        cadencePanels.forEach(panel => {
+          const isActive = panel.dataset.personCadencePanel === activeCadence;
+          panel.classList.toggle("hidden", !isActive);
+          panel.toggleAttribute("hidden", !isActive);
+        });
+      }
+
+      function renderPersonTrendChart() {
+        if (!trendChartRoot || !trendChartReadout || !trendChartTitle) {
+          return;
+        }
+        const trendRows = trendSeries[activeTrendGrain] || [];
+        const grainLabel = activeTrendGrain === "weekly" ? "week" : "month";
+        activeTrendPointIndex = clampSelectedIndex(trendRows, activeTrendPointIndex, activeTrendMetric);
+        trendChartTitle.textContent = `${metricLabel(activeTrendMetric)} by ${grainLabel}`;
+        trendChartReadout.innerHTML = renderTrendReadout(trendRows, activeTrendMetric, activeTrendPointIndex);
+        renderSeriesChart({
+          element: trendChartRoot,
+          rows: trendRows,
+          metric: activeTrendMetric,
+          selectedIndex: activeTrendPointIndex,
+          onSelect: index => {
+            activeTrendPointIndex = index;
+            renderPersonTrendChart();
+          },
+        });
+      }
+
+      function renderTrendReadout(rows, metric, selectedIndex) {
+        if (!rows.length) {
+          return readoutCard("Selected period", "-")
+            + readoutCard(metricLabel(metric), "-")
+            + readoutCard("Authored PRs", "-")
+            + readoutCard("Reviews given", "-");
+        }
+        const selectedRow = rows[selectedIndex] || rows[rows.length - 1];
+        return [
+          readoutCard("Selected period", selectedRow.period_key || "-"),
+          readoutCard(metricLabel(metric), formatMetricValue(selectedRow[metric], metric)),
+          readoutCard("Authored PRs", formatMetricValue(selectedRow.authored_pull_request_count, "authored_pull_request_count")),
+          readoutCard("Reviews given", formatMetricValue(selectedRow.review_submissions_given, "review_submissions_given")),
+          readoutCard("PRs reviewed", formatMetricValue(selectedRow.pull_requests_reviewed, "pull_requests_reviewed")),
+          readoutCard("Reviewed lines", formatMetricValue(selectedRow.reviewed_lines, "reviewed_lines")),
+          readoutCard("State", periodStatusText(selectedRow)),
+        ].join("");
+      }
+
+      function readoutCard(label, value) {
+        return `<article class="readout-card"><strong>${escapeHtml(label)}</strong><span>${escapeHtml(value)}</span></article>`;
+      }
+
+      function renderSeriesChart({ element, rows, metric, selectedIndex, onSelect }) {
+        if (!rows.length) {
+          element.innerHTML = `<div class="small-note">No period data available.</div>`;
+          return;
+        }
+        const width = 920;
+        const height = 320;
+        const padding = { top: 20, right: 18, bottom: 42, left: 56 };
+        const plotWidth = width - padding.left - padding.right;
+        const plotHeight = height - padding.top - padding.bottom;
+        const points = rows
+          .map((row, index) => ({ row, index, value: toNumber(row[metric]) }))
+          .filter(point => point.value !== null);
+        if (!points.length) {
+          element.innerHTML = `<div class="small-note">No data for this metric.</div>`;
+          return;
+        }
+        const maxValue = Math.max(1, ...points.map(point => point.value));
+        const stepX = rows.length > 1 ? plotWidth / (rows.length - 1) : plotWidth / 2;
+        const xFor = index => rows.length > 1 ? padding.left + index * stepX : padding.left + plotWidth / 2;
+        const yFor = value => padding.top + plotHeight - (value / maxValue) * plotHeight;
+        const bandStart = index => (
+          index === 0
+            ? padding.left
+            : (xFor(index - 1) + xFor(index)) / 2
+        );
+        const bandEnd = index => (
+          index === rows.length - 1
+            ? width - padding.right
+            : (xFor(index) + xFor(index + 1)) / 2
+        );
+        const linePath = points
+          .map((point, pathIndex) => `${pathIndex === 0 ? "M" : "L"} ${xFor(point.index)} ${yFor(point.value)}`)
+          .join(" ");
+        const areaPath = points.length
+          ? `${linePath} L ${xFor(points.at(-1).index)} ${padding.top + plotHeight} L ${xFor(points[0].index)} ${padding.top + plotHeight} Z`
+          : "";
+        const averageValue = points.reduce((sum, point) => sum + point.value, 0) / points.length;
+        const averageLineY = yFor(averageValue);
+        const labelInterval = chartLabelInterval(rows.length);
+        const partialBands = rows.map((row, index) => {
+          if (!row.is_partial) {
+            return "";
+          }
+          return `<rect class="chart-partial-band" x="${bandStart(index)}" y="${padding.top}" width="${Math.max(8, bandEnd(index) - bandStart(index))}" height="${plotHeight}"></rect>`;
+        }).join("");
+        const ticks = [0, 0.25, 0.5, 0.75, 1].map(ratio => {
+          const value = maxValue * ratio;
+          const y = padding.top + plotHeight - plotHeight * ratio;
+          return `
+            <line x1="${padding.left}" x2="${width - padding.right}" y1="${y}" y2="${y}" stroke="${cssVar("--grid-stroke")}"></line>
+            <text x="${padding.left - 10}" y="${y + 4}" text-anchor="end" class="chart-axis">${formatMetricValue(value, metric)}</text>
+          `;
+        }).join("");
+        const chartNodes = rows.map((row, index) => {
+          const value = toNumber(row[metric]);
+          if (value === null) {
+            return "";
+          }
+          const isSelected = index === selectedIndex;
+          const showLabel = index === 0 || index === rows.length - 1 || index % labelInterval === 0;
+          const stateSuffix = row.is_partial ? ", open period" : "";
+          return `
+            <g class="chart-node ${row.is_partial ? "partial-period" : ""}" data-point-index="${index}" data-point-label="${escapeAttribute(row.period_key || "-")}" data-point-value="${escapeAttribute(formatMetricValue(value, metric))}" data-point-state="${escapeAttribute(periodStatusText(row))}" tabindex="0" role="button" aria-label="${escapeAttribute(`${row.period_key || "Period"} ${formatMetricValue(value, metric)}${stateSuffix}`)}">
+              <circle cx="${xFor(index)}" cy="${yFor(value)}" r="${isSelected ? 6 : 4}" fill="${cssVar("--accent")}" stroke="${isSelected ? cssVar("--text") : "transparent"}" stroke-width="${isSelected ? 2 : 0}">
+                <title>${escapeHtml(row.period_key || "-")}: ${escapeHtml(formatMetricValue(value, metric))}${row.is_partial ? ` (${escapeHtml(periodStatusText(row))})` : ""}</title>
+              </circle>
+            </g>
+            ${showLabel ? `<text x="${xFor(index)}" y="${height - 12}" text-anchor="middle" class="chart-axis">${escapeHtml(shortLabel(row.period_key || ""))}</text>` : ""}
+          `;
+        }).join("");
+        element.innerHTML = `
+          <svg viewBox="0 0 ${width} ${height}" preserveAspectRatio="xMidYMid meet" role="img" aria-label="${escapeAttribute(metricLabel(metric))} chart">
+            <defs>
+              <linearGradient id="person-series-fill-${metric}" x1="0" x2="0" y1="0" y2="1">
+                <stop offset="0%" stop-color="${cssVar("--accent")}" stop-opacity="0.22"></stop>
+                <stop offset="100%" stop-color="${cssVar("--accent")}" stop-opacity="0"></stop>
+              </linearGradient>
+            </defs>
+            ${ticks}
+            ${partialBands}
+            <line x1="${padding.left}" x2="${width - padding.right}" y1="${averageLineY}" y2="${averageLineY}" stroke="${cssVar("--avg-stroke")}" stroke-dasharray="5 5"></line>
+            ${areaPath ? `<path d="${areaPath}" fill="url(#person-series-fill-${metric})"></path>` : ""}
+            <path d="${linePath}" fill="none" stroke="${cssVar("--accent")}" stroke-width="3" stroke-linecap="round"></path>
+            ${chartNodes}
+          </svg>
+        `;
+        bindChartSelection(element, metric, onSelect);
+      }
+
+      function bindChartSelection(element, metric, onSelect) {
+        const tooltip = ensureChartTooltip(element);
+        element.querySelectorAll("[data-point-index]").forEach(node => {
+          const select = event => {
+            onSelect(Number(node.dataset.pointIndex));
+            showChartTooltip(tooltip, element, node, metric, event);
+          };
+          const show = event => showChartTooltip(tooltip, element, node, metric, event);
+          node.addEventListener("click", select);
+          node.addEventListener("focus", select);
+          node.addEventListener("mouseenter", show);
+          node.addEventListener("mousemove", show);
+          node.addEventListener("mouseleave", () => hideChartTooltip(tooltip));
+          node.addEventListener("blur", () => hideChartTooltip(tooltip));
+        });
+        element.addEventListener("mouseleave", () => hideChartTooltip(tooltip));
+      }
+
+      function ensureChartTooltip(element) {
+        let tooltip = element.querySelector(".chart-tooltip");
+        if (tooltip) {
+          return tooltip;
+        }
+        tooltip = document.createElement("div");
+        tooltip.className = "chart-tooltip hidden";
+        tooltip.setAttribute("aria-hidden", "true");
+        element.appendChild(tooltip);
+        return tooltip;
+      }
+
+      function showChartTooltip(tooltip, chartElement, node, metric, event) {
+        tooltip.innerHTML = `
+          <strong>${escapeHtml(node.dataset.pointLabel || "-")}</strong>
+          <span>${escapeHtml(metricLabel(metric))}: ${escapeHtml(node.dataset.pointValue || "-")}</span>
+          ${node.classList.contains("partial-period") ? `<span>${escapeHtml(node.dataset.pointState || "partial period")}</span>` : ""}
+        `;
+        tooltip.classList.remove("hidden");
+        tooltip.setAttribute("aria-hidden", "false");
+        const chartRect = chartElement.getBoundingClientRect();
+        const nodeRect = node.getBoundingClientRect();
+        const left = Math.min(
+          chartRect.width - tooltip.offsetWidth - 10,
+          Math.max(10, (event?.clientX ?? nodeRect.left + nodeRect.width / 2) - chartRect.left + 12),
+        );
+        const top = Math.min(
+          chartRect.height - tooltip.offsetHeight - 10,
+          Math.max(10, nodeRect.top - chartRect.top - tooltip.offsetHeight - 8),
+        );
+        tooltip.style.transform = `translate(${left}px, ${top}px)`;
+      }
+
+      function hideChartTooltip(tooltip) {
+        tooltip.classList.add("hidden");
+        tooltip.setAttribute("aria-hidden", "true");
+      }
+
+      function clampSelectedIndex(rows, selectedIndex, metric) {
+        if (!rows.length) {
+          return null;
+        }
+        if (selectedIndex !== null && rows[selectedIndex] && toNumber(rows[selectedIndex][metric]) !== null) {
+          return selectedIndex;
+        }
+        for (let index = rows.length - 1; index >= 0; index -= 1) {
+          if (toNumber(rows[index][metric]) !== null) {
+            return index;
+          }
+        }
+        return rows.length - 1;
+      }
+
+      function metricLabel(metric) {
+        return {
+          authored_pull_request_count: "Authored PRs",
+          review_submissions_given: "Reviews given",
+          pull_requests_reviewed: "PRs reviewed",
+          reviewed_lines: "Reviewed lines",
+          median_merge_hours: "Median merge",
+          median_first_review_hours: "Median first review",
+          median_approval_hours: "Median approval",
+          changed_lines_total: "Changed lines",
+          commits_total: "Commits",
+        }[metric] || metric;
+      }
+
+      function formatMetricValue(value, metric) {
+        const number = toNumber(value);
+        if (number === null) {
+          return "-";
+        }
+        if (metric === "median_merge_hours" || metric === "median_first_review_hours" || metric === "median_approval_hours") {
+          return formatDuration(number);
+        }
+        return new Intl.NumberFormat("en-US", {
+          maximumFractionDigits: Number.isInteger(number) ? 0 : 2,
+        }).format(number);
+      }
+
+      function formatDuration(hours) {
+        if (hours < 1) {
+          return `${Math.round(hours * 60).toLocaleString("en-US")} min`;
+        }
+        if (hours >= 24) {
+          return `${(hours / 24).toLocaleString("en-US", { maximumFractionDigits: 1 })} d`;
+        }
+        return `${hours.toLocaleString("en-US", { maximumFractionDigits: 1 })} h`;
+      }
+
+      function periodStatusText(row) {
+        if (row.open_week) {
+          return "open week";
+        }
+        if (row.open_month) {
+          return "open month";
+        }
+        if (row.is_partial) {
+          return row.label || "partial period";
+        }
+        return row.label || "closed period";
+      }
+
+      function toNumber(value) {
+        if (value === null || value === undefined || value === "") {
+          return null;
+        }
+        const number = Number(value);
+        return Number.isFinite(number) ? number : null;
+      }
+
+      function chartLabelInterval(length) {
+        if (length <= 8) {
+          return 1;
+        }
+        if (length <= 16) {
+          return 2;
+        }
+        return Math.ceil(length / 8);
+      }
+
+      function shortLabel(value) {
+        const text = String(value);
+        if (text.includes("-W")) {
+          return text.replace(/^(\d{4})-W/, "W");
+        }
+        return text.replace(/^\d{4}-/, "");
+      }
+
+      function cssVar(name) {
+        return getComputedStyle(root).getPropertyValue(name).trim();
+      }
+
+      function escapeHtml(value) {
+        return String(value).replace(/[&<>"']/g, character => ({
+          "&": "&amp;",
+          "<": "&lt;",
+          ">": "&gt;",
+          '"': "&quot;",
+          "'": "&#39;",
+        }[character]));
+      }
+
+      function escapeAttribute(value) {
+        return escapeHtml(value);
+      }
+    }());
+  </script>

@@ -29,17 +29,24 @@ def render_person_metrics_result(
 def _render_csv(
     result: PersonMetricsResult,
 ) -> str:
-    fieldnames = tuple(PersonPeriodRow.model_fields.keys())
+    fieldnames = ("period_grain", *PersonPeriodRow.model_fields.keys())
     buffer = StringIO()
     writer = csv.DictWriter(buffer, fieldnames=fieldnames, lineterminator="\n")
     writer.writeheader()
-    for row in result.period_rows:
-        writer.writerow(
-            {
-                key: "" if value is None else value
-                for key, value in row.model_dump(mode="json").items()
-            }
-        )
+    for period_grain, rows in (
+        ("week", result.weekly_period_rows),
+        ("month", result.monthly_period_rows),
+    ):
+        for row in rows:
+            writer.writerow(
+                {
+                    "period_grain": period_grain,
+                    **{
+                        key: "" if value is None else value
+                        for key, value in row.model_dump(mode="json").items()
+                    },
+                }
+            )
     return buffer.getvalue().rstrip("\n")
 
 
@@ -52,7 +59,7 @@ def _render_markdown(
         f"# orgpulse person metrics: {result.login}",
         "",
         f"- Organization: {result.target_org}",
-        f"- Grain: {result.grain.value}",
+        f"- Source grain: {result.grain.value}",
         f"- Time anchor: {result.time_anchor.value}",
         f"- Since: {result.since.isoformat() if result.since is not None else 'all'}",
         f"- Until: {result.until.isoformat() if result.until is not None else 'all'}",
@@ -85,26 +92,24 @@ def _render_markdown(
         f"- Authors supported: {reviewer.authors_supported}",
         f"- Repositories reviewed: {reviewer.repositories_reviewed}",
         "",
-        "## Periods",
+        "## Weekly Periods",
         "",
         "| Period | Authored PRs | Merged | Open | Changed Lines | Commits | Reviews Received | Approval Hours | Reviews Given | PRs Reviewed | Reviewed Lines |",
         "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
     ]
-    for row in result.period_rows:
-        lines.append(
-            "| "
-            f"{row.period_key} | "
-            f"{row.authored_pull_request_count} | "
-            f"{row.merged_pull_request_count} | "
-            f"{row.open_pull_request_count} | "
-            f"{row.changed_lines_total} | "
-            f"{row.commits_total} | "
-            f"{row.reviews_received} | "
-            f"{_markdown_number(row.median_approval_hours)} | "
-            f"{row.review_submissions_given} | "
-            f"{row.pull_requests_reviewed} | "
-            f"{row.reviewed_lines} |"
-        )
+    for row in result.weekly_period_rows:
+        lines.append(_markdown_period_row(row))
+    lines.extend(
+        [
+            "",
+            "## Monthly Periods",
+            "",
+            "| Period | Authored PRs | Merged | Open | Changed Lines | Commits | Reviews Received | Approval Hours | Reviews Given | PRs Reviewed | Reviewed Lines |",
+            "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+        ]
+    )
+    for row in result.monthly_period_rows:
+        lines.append(_markdown_period_row(row))
     lines.extend(
         [
             "",
@@ -128,6 +133,25 @@ def _render_markdown(
             f"{row.reviewed_lines} |"
         )
     return "\n".join(lines)
+
+
+def _markdown_period_row(
+    row: PersonPeriodRow,
+) -> str:
+    return (
+        "| "
+        f"{row.period_key} | "
+        f"{row.authored_pull_request_count} | "
+        f"{row.merged_pull_request_count} | "
+        f"{row.open_pull_request_count} | "
+        f"{row.changed_lines_total} | "
+        f"{row.commits_total} | "
+        f"{row.reviews_received} | "
+        f"{_markdown_number(row.median_approval_hours)} | "
+        f"{row.review_submissions_given} | "
+        f"{row.pull_requests_reviewed} | "
+        f"{row.reviewed_lines} |"
+    )
 
 
 def _render_json(

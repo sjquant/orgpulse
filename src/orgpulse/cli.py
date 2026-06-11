@@ -381,14 +381,6 @@ def person_command(
             help="GitHub organization whose local outputs should be analyzed. Falls back to ORGPULSE_ORG.",
         ),
     ] = None,
-    grain: Annotated[
-        PeriodGrain | None,
-        typer.Option(
-            "--grain",
-            "--period",
-            help="Snapshot period grain to analyze. Falls back to ORGPULSE_PERIOD.",
-        ),
-    ] = None,
     since: Annotated[
         str | None,
         typer.Option(
@@ -463,7 +455,6 @@ def person_command(
             org=org,
             login=resolved_login,
             output_dir=output_dir,
-            grain=grain,
             time_anchor=time_anchor,
             since=since,
             until=until,

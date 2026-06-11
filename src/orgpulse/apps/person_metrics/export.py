@@ -6,6 +6,7 @@ from io import StringIO
 
 from orgpulse.apps.person_metrics.report import render_person_report_html
 from orgpulse.apps.person_metrics.service import (
+    OrgTrendRow,
     PersonExportFormat,
     PersonMetricsResult,
     PersonPeriodRow,
@@ -132,6 +133,8 @@ def _render_markdown(
             f"{row.pull_requests_reviewed} | "
             f"{row.reviewed_lines} |"
         )
+    if result.include_org_trends:
+        lines.extend(_render_org_trends_markdown(result))
     return "\n".join(lines)
 
 
@@ -154,10 +157,65 @@ def _markdown_period_row(
     )
 
 
+def _render_org_trends_markdown(
+    result: PersonMetricsResult,
+) -> list[str]:
+    lines = [
+        "",
+        "## Org Trends",
+        "",
+        "### Weekly",
+        "",
+        *_render_org_trend_table(result.org_weekly_trend_rows or ()),
+        "",
+        "### Monthly",
+        "",
+        *_render_org_trend_table(result.org_monthly_trend_rows or ()),
+    ]
+    return lines
+
+
+def _render_org_trend_table(
+    rows: tuple[OrgTrendRow, ...],
+) -> list[str]:
+    lines = [
+        "| Period | PRs | Merged | Open | Active Authors | Changed Lines | PRs / Active Author | Lines / Active Author | Reviews | Approval Hours | First Review Hours | Merge Hours |",
+        "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+    ]
+    for row in rows:
+        lines.append(
+            "| "
+            f"{row.period_key} | "
+            f"{row.pull_requests} | "
+            f"{row.merged_pull_requests} | "
+            f"{row.open_pull_requests} | "
+            f"{row.active_authors} | "
+            f"{row.changed_lines} | "
+            f"{_markdown_number(row.pull_requests_per_active_author)} | "
+            f"{_markdown_number(row.changed_lines_per_active_author)} | "
+            f"{row.review_submissions} | "
+            f"{_markdown_number(row.median_approval_hours)} | "
+            f"{_markdown_number(row.median_first_review_hours)} | "
+            f"{_markdown_number(row.median_merge_hours)} |"
+        )
+    return lines
+
+
 def _render_json(
     result: PersonMetricsResult,
 ) -> str:
-    return json.dumps(result.model_dump(mode="json"), indent=2, sort_keys=True)
+    return json.dumps(_json_payload(result), indent=2, sort_keys=True)
+
+
+def _json_payload(
+    result: PersonMetricsResult,
+) -> dict[str, object]:
+    payload = result.model_dump(mode="json")
+    if not result.include_org_trends:
+        payload.pop("include_org_trends", None)
+        payload.pop("org_weekly_trend_rows", None)
+        payload.pop("org_monthly_trend_rows", None)
+    return payload
 
 
 def _markdown_number(

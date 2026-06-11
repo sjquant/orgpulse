@@ -21,6 +21,7 @@ from pydantic import (
 from orgpulse.common.config import get_settings
 from orgpulse.common.distribution import (
     trim_upper_tail,
+    upper_percentile_threshold,
     validate_distribution_percentile,
 )
 from orgpulse.common.models import (
@@ -78,6 +79,7 @@ class PersonConfig(BaseModel):
     export_format: PersonExportFormat = PersonExportFormat.JSON
     include_repos: tuple[RepoSlug, ...] = ()
     exclude_repos: tuple[RepoSlug, ...] = ()
+    include_org_trends: bool = False
 
     @field_validator("include_repos", "exclude_repos", mode="before")
     @classmethod
@@ -252,6 +254,35 @@ class PersonRepositoryRow(BaseModel):
     reviewed_lines: int
 
 
+class OrgTrendRow(BaseModel):
+    """Store one org-wide period row for person report comparison."""
+
+    model_config = ConfigDict(frozen=True)
+
+    period_key: str
+    period_start_date: date
+    period_end_date: date
+    status: str
+    label: str
+    is_open: bool
+    is_closed: bool
+    is_partial: bool
+    observed_through_date: str
+    open_week: bool
+    open_month: bool
+    pull_requests: int
+    merged_pull_requests: int
+    open_pull_requests: int
+    active_authors: int
+    changed_lines: int
+    pull_requests_per_active_author: float | None
+    changed_lines_per_active_author: float | None
+    review_submissions: int
+    median_first_review_hours: float | None
+    median_approval_hours: float | None
+    median_merge_hours: float | None
+
+
 class PersonMetricsResult(BaseModel):
     """Store the fully rendered outcome of a person metrics extraction."""
 
@@ -271,8 +302,31 @@ class PersonMetricsResult(BaseModel):
     period_rows: tuple[PersonPeriodRow, ...]
     weekly_period_rows: tuple[PersonPeriodRow, ...]
     monthly_period_rows: tuple[PersonPeriodRow, ...]
+    org_weekly_trend_rows: tuple[OrgTrendRow, ...] | None = None
+    org_monthly_trend_rows: tuple[OrgTrendRow, ...] | None = None
     repository_rows: tuple[PersonRepositoryRow, ...]
     export_format: PersonExportFormat
+    include_org_trends: bool = False
+
+    @model_validator(mode="after")
+    def validate_org_trend_rows(self) -> "PersonMetricsResult":
+        if self.include_org_trends:
+            if (
+                self.org_weekly_trend_rows is None
+                or self.org_monthly_trend_rows is None
+            ):
+                raise ValueError(
+                    "org trend rows are required when include_org_trends is true"
+                )
+            return self
+        if (
+            self.org_weekly_trend_rows is not None
+            or self.org_monthly_trend_rows is not None
+        ):
+            raise ValueError(
+                "org trend rows must be omitted when include_org_trends is false"
+            )
+        return self
 
 
 class PersonMetricsService:
@@ -320,6 +374,12 @@ class PersonMetricsService:
             authored_pull_requests=authored_pull_requests,
             review_submissions=review_submissions,
         )
+        org_weekly_trend_rows, org_monthly_trend_rows = self._org_trend_result_rows(
+            config=config,
+            periods=snapshot.periods,
+            source_as_of=source.manifest.last_successful_run.as_of,
+            pull_requests=pull_requests,
+        )
         repository_rows = self._repository_rows(
             config=config,
             authored_pull_requests=authored_pull_requests,
@@ -346,8 +406,206 @@ class PersonMetricsService:
             period_rows=period_rows,
             weekly_period_rows=weekly_period_rows,
             monthly_period_rows=monthly_period_rows,
+            org_weekly_trend_rows=org_weekly_trend_rows,
+            org_monthly_trend_rows=org_monthly_trend_rows,
             repository_rows=repository_rows,
             export_format=config.export_format,
+            include_org_trends=config.include_org_trends,
+        )
+
+    def _org_trend_result_rows(
+        self,
+        *,
+        config: PersonConfig,
+        periods: tuple[RawSnapshotPeriod, ...],
+        source_as_of: date,
+        pull_requests: tuple[PullRequestFact, ...],
+    ) -> tuple[tuple[OrgTrendRow, ...] | None, tuple[OrgTrendRow, ...] | None]:
+        if not config.include_org_trends:
+            return None, None
+
+        org_pull_requests = self._org_pull_requests(config, pull_requests)
+        return (
+            self._org_trend_rows(
+                config=config,
+                grain=PeriodGrain.WEEK,
+                periods=periods,
+                source_as_of=source_as_of,
+                pull_requests=org_pull_requests,
+            ),
+            self._org_trend_rows(
+                config=config,
+                grain=PeriodGrain.MONTH,
+                periods=periods,
+                source_as_of=source_as_of,
+                pull_requests=org_pull_requests,
+            ),
+        )
+
+    def _org_pull_requests(
+        self,
+        config: PersonConfig,
+        pull_requests: tuple[PullRequestFact, ...],
+    ) -> tuple[PullRequestFact, ...]:
+        return tuple(
+            pull_request
+            for pull_request in pull_requests
+            if self._in_window(
+                self._anchor_datetime(config.time_anchor, pull_request).date(),
+                since=config.since,
+                until=config.until,
+            )
+        )
+
+    def _org_trend_rows(
+        self,
+        *,
+        config: PersonConfig,
+        grain: PeriodGrain,
+        periods: tuple[RawSnapshotPeriod, ...],
+        source_as_of: date,
+        pull_requests: tuple[PullRequestFact, ...],
+    ) -> tuple[OrgTrendRow, ...]:
+        pull_requests_by_period: dict[str, list[PullRequestFact]] = defaultdict(list)
+        for pull_request in pull_requests:
+            pull_requests_by_period[
+                grain.key_for(
+                    self._anchor_datetime(config.time_anchor, pull_request).date()
+                )
+            ].append(pull_request)
+        period_catalog = self._period_catalog(
+            config,
+            grain,
+            periods,
+            source_as_of=source_as_of,
+            activity_period_keys=tuple(pull_requests_by_period.keys()),
+        )
+        changed_lines_threshold = self._changed_lines_threshold(
+            pull_requests,
+            distribution_percentile=config.distribution_percentile,
+        )
+        return tuple(
+            self._org_trend_row(
+                config=config,
+                grain=grain,
+                period=period,
+                source_as_of=source_as_of,
+                pull_requests=tuple(pull_requests_by_period.get(period.key, ())),
+                changed_lines_threshold=changed_lines_threshold,
+            )
+            for period in period_catalog
+        )
+
+    def _changed_lines_threshold(
+        self,
+        pull_requests: tuple[PullRequestFact, ...],
+        *,
+        distribution_percentile: int,
+    ) -> float | None:
+        return upper_percentile_threshold(
+            tuple(pull_request.changed_lines for pull_request in pull_requests),
+            percentile=distribution_percentile,
+        )
+
+    def _org_trend_row(
+        self,
+        *,
+        config: PersonConfig,
+        grain: PeriodGrain,
+        period: RawSnapshotPeriod,
+        source_as_of: date,
+        pull_requests: tuple[PullRequestFact, ...],
+        changed_lines_threshold: float | None,
+    ) -> OrgTrendRow:
+        period_state = build_period_state_payload(
+            period_grain=grain.value,
+            start_date=period.start_date,
+            end_date=period.end_date,
+            closed=self._period_closed(period, source_as_of=source_as_of),
+            as_of=source_as_of,
+            since=config.since,
+            until=config.until,
+        )
+        pull_request_count = len(pull_requests)
+        active_authors = len(
+            {
+                pull_request.author_login.lower()
+                for pull_request in pull_requests
+                if pull_request.author_login is not None
+            }
+        )
+        changed_lines = self._trimmed_changed_lines(
+            pull_requests,
+            threshold=changed_lines_threshold,
+        )
+        return OrgTrendRow(
+            period_key=period.key,
+            period_start_date=period.start_date,
+            period_end_date=period.end_date,
+            status=period_state.status,
+            label=period_state.label,
+            is_open=period_state.is_open,
+            is_closed=period_state.is_closed,
+            is_partial=period_state.is_partial,
+            observed_through_date=period_state.observed_through_date,
+            open_week=period_state.open_week,
+            open_month=period_state.open_month,
+            pull_requests=pull_request_count,
+            merged_pull_requests=sum(
+                1 for pull_request in pull_requests if pull_request.merged
+            ),
+            open_pull_requests=sum(
+                1 for pull_request in pull_requests if pull_request.state == "open"
+            ),
+            active_authors=active_authors,
+            changed_lines=changed_lines,
+            pull_requests_per_active_author=_round_metric(
+                pull_request_count / active_authors if active_authors else None
+            ),
+            changed_lines_per_active_author=_round_metric(
+                changed_lines / active_authors if active_authors else None
+            ),
+            review_submissions=sum(
+                self._review_count(pull_request) for pull_request in pull_requests
+            ),
+            median_first_review_hours=self._median_metric(
+                tuple(
+                    first_review_hours
+                    for pull_request in pull_requests
+                    if (first_review_hours := self._first_review_hours(pull_request))
+                    is not None
+                ),
+                distribution_percentile=config.distribution_percentile,
+            ),
+            median_approval_hours=self._median_metric(
+                tuple(
+                    approval_hours
+                    for pull_request in pull_requests
+                    if (approval_hours := self._approval_hours(pull_request))
+                    is not None
+                ),
+                distribution_percentile=config.distribution_percentile,
+            ),
+            median_merge_hours=self._median_metric(
+                tuple(
+                    merge_hours
+                    for pull_request in pull_requests
+                    if (merge_hours := self._merge_hours(pull_request)) is not None
+                ),
+                distribution_percentile=config.distribution_percentile,
+            ),
+        )
+
+    def _trimmed_changed_lines(
+        self,
+        pull_requests: tuple[PullRequestFact, ...],
+        *,
+        threshold: float | None,
+    ) -> int:
+        return sum(
+            pull_request.changed_lines
+            for pull_request in pull_requests
+            if threshold is None or pull_request.changed_lines <= threshold
         )
 
     def _review_month_count(
@@ -1048,6 +1306,7 @@ def build_person_config(
     export_format: PersonExportFormat | None = None,
     include_repos: list[str] | None = None,
     exclude_repos: list[str] | None = None,
+    include_org_trends: bool = False,
 ) -> PersonConfig:
     """Build person metric settings from CLI inputs and application defaults."""
 
@@ -1061,6 +1320,7 @@ def build_person_config(
         "export_format": (
             PersonExportFormat.JSON if export_format is None else export_format
         ),
+        "include_org_trends": include_org_trends,
     }
     if since is not None:
         payload["since"] = since

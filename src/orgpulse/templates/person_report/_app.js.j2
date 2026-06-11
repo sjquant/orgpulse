@@ -11,6 +11,15 @@
         weekly: Array.isArray(report.weekly_period_rows) ? report.weekly_period_rows : [],
         monthly: Array.isArray(report.monthly_period_rows) ? report.monthly_period_rows : [],
       };
+      const orgTrendSeries = {
+        weekly: Array.isArray(report.org_weekly_trend_rows) ? report.org_weekly_trend_rows : [],
+        monthly: Array.isArray(report.org_monthly_trend_rows) ? report.org_monthly_trend_rows : [],
+      };
+      const orgTrendMetricTabs = Array.from(document.querySelectorAll("#org-trend-metric-tabs .tab-button"));
+      const orgTrendGrainTabs = Array.from(document.querySelectorAll("#org-trend-grain-tabs .tab-button"));
+      const orgTrendChartTitle = document.getElementById("org-trend-chart-title");
+      const orgTrendChartReadout = document.getElementById("org-trend-chart-readout");
+      const orgTrendChartRoot = document.getElementById("org-trend-chart-root");
       const trendMetricTabs = Array.from(document.querySelectorAll("#person-trend-metric-tabs .tab-button"));
       const trendGrainTabs = Array.from(document.querySelectorAll("#person-trend-grain-tabs .tab-button"));
       const cadenceTabs = Array.from(document.querySelectorAll("#person-cadence-tabs .tab-button"));
@@ -40,6 +49,10 @@
       let activeTrendGrain = report.grain === "week" ? "weekly" : "monthly";
       let activeCadence = report.grain === "week" ? "weekly" : "monthly";
       let activeTrendPointIndex = null;
+      let activeOrgTrendMetric = "pull_requests";
+      let activeOrgTrendGrain = report.grain === "week" ? "weekly" : "monthly";
+      let activeOrgTrendPointIndex = null;
+      let resizeFrameId = null;
 
       function activeTheme() {
         return root.dataset.theme || "dark";
@@ -68,17 +81,37 @@
             // Ignore localStorage failures; the current page state still updates.
           }
           syncThemeButtons();
+          renderOrgTrendChart();
           renderPersonTrendChart();
         });
       });
 
       syncThemeButtons();
+      syncOrgTrendMetricTabs();
+      syncOrgTrendGrainTabs();
       syncTrendMetricTabs();
       syncTrendGrainTabs();
       syncCadenceTabs();
       syncActiveSectionNav();
       setupSectionSpy();
+      renderOrgTrendChart();
       renderPersonTrendChart();
+      orgTrendMetricTabs.forEach(button => {
+        button.addEventListener("click", () => {
+          activeOrgTrendMetric = button.dataset.orgTrendMetric;
+          activeOrgTrendPointIndex = null;
+          syncOrgTrendMetricTabs();
+          renderOrgTrendChart();
+        });
+      });
+      orgTrendGrainTabs.forEach(button => {
+        button.addEventListener("click", () => {
+          activeOrgTrendGrain = button.dataset.orgTrendGrain;
+          activeOrgTrendPointIndex = null;
+          syncOrgTrendGrainTabs();
+          renderOrgTrendChart();
+        });
+      });
       trendMetricTabs.forEach(button => {
         button.addEventListener("click", () => {
           activeTrendMetric = button.dataset.personTrendMetric;
@@ -101,7 +134,7 @@
           syncCadenceTabs();
         });
       });
-      window.addEventListener("resize", renderPersonTrendChart);
+      window.addEventListener("resize", scheduleChartResizeRedraw);
       setupProgressiveToggle({
         button: weeklyPeriodToggle,
         container: weeklyPeriodExtra,
@@ -123,6 +156,20 @@
         chunkSize: {{ progressive_chunk_size }},
         label: "repositories",
       });
+
+      function scheduleChartResizeRedraw() {
+        if (resizeFrameId !== null) {
+          return;
+        }
+        const scheduleFrame = window.requestAnimationFrame
+          ? window.requestAnimationFrame.bind(window)
+          : (callback => window.setTimeout(callback, 16));
+        resizeFrameId = scheduleFrame(() => {
+          resizeFrameId = null;
+          renderOrgTrendChart();
+          renderPersonTrendChart();
+        });
+      }
 
       function setupProgressiveToggle({ button, container, items, chunkSize, label }) {
         if (!button || !container || !items.length) {
@@ -231,9 +278,25 @@
         });
       }
 
+      function syncOrgTrendMetricTabs() {
+        orgTrendMetricTabs.forEach(button => {
+          const isActive = button.dataset.orgTrendMetric === activeOrgTrendMetric;
+          button.classList.toggle("active", isActive);
+          button.setAttribute("aria-selected", String(isActive));
+        });
+      }
+
       function syncTrendGrainTabs() {
         trendGrainTabs.forEach(button => {
           const isActive = button.dataset.personTrendGrain === activeTrendGrain;
+          button.classList.toggle("active", isActive);
+          button.setAttribute("aria-selected", String(isActive));
+        });
+      }
+
+      function syncOrgTrendGrainTabs() {
+        orgTrendGrainTabs.forEach(button => {
+          const isActive = button.dataset.orgTrendGrain === activeOrgTrendGrain;
           button.classList.toggle("active", isActive);
           button.setAttribute("aria-selected", String(isActive));
         });
@@ -250,6 +313,46 @@
           panel.classList.toggle("hidden", !isActive);
           panel.toggleAttribute("hidden", !isActive);
         });
+      }
+
+      function renderOrgTrendChart() {
+        if (!orgTrendChartRoot || !orgTrendChartReadout || !orgTrendChartTitle) {
+          return;
+        }
+        const trendRows = orgTrendSeries[activeOrgTrendGrain] || [];
+        const grainLabel = activeOrgTrendGrain === "weekly" ? "week" : "month";
+        activeOrgTrendPointIndex = clampSelectedIndex(trendRows, activeOrgTrendPointIndex, activeOrgTrendMetric);
+        orgTrendChartTitle.textContent = `${metricLabel(activeOrgTrendMetric)} by ${grainLabel}`;
+        orgTrendChartReadout.innerHTML = renderOrgTrendReadout(trendRows, activeOrgTrendMetric, activeOrgTrendPointIndex);
+        renderSeriesChart({
+          element: orgTrendChartRoot,
+          rows: trendRows,
+          metric: activeOrgTrendMetric,
+          selectedIndex: activeOrgTrendPointIndex,
+          onSelect: index => {
+            activeOrgTrendPointIndex = index;
+            renderOrgTrendChart();
+          },
+        });
+      }
+
+      function renderOrgTrendReadout(rows, metric, selectedIndex) {
+        if (!rows.length) {
+          return readoutCard("Selected period", "-")
+            + readoutCard(metricLabel(metric), "-")
+            + readoutCard("PRs", "-")
+            + readoutCard("Active authors", "-");
+        }
+        const selectedRow = rows[selectedIndex] || rows[rows.length - 1];
+        return [
+          readoutCard("Selected period", selectedRow.period_key || "-"),
+          readoutCard(metricLabel(metric), formatMetricValue(selectedRow[metric], metric)),
+          readoutCard("PRs", formatMetricValue(selectedRow.pull_requests, "pull_requests")),
+          readoutCard("Active authors", formatMetricValue(selectedRow.active_authors, "active_authors")),
+          readoutCard("Changed lines", formatMetricValue(selectedRow.changed_lines, "changed_lines")),
+          readoutCard("Reviews", formatMetricValue(selectedRow.review_submissions, "review_submissions")),
+          readoutCard("State", periodStatusText(selectedRow)),
+        ].join("");
       }
 
       function renderPersonTrendChart() {
@@ -336,6 +439,7 @@
         const averageValue = points.reduce((sum, point) => sum + point.value, 0) / points.length;
         const averageLineY = yFor(averageValue);
         const labelInterval = chartLabelInterval(rows.length);
+        const fillId = `${element.id || "series"}-fill-${metric}`;
         const partialBands = rows.map((row, index) => {
           if (!row.is_partial) {
             return "";
@@ -370,7 +474,7 @@
         element.innerHTML = `
           <svg viewBox="0 0 ${width} ${height}" preserveAspectRatio="xMidYMid meet" role="img" aria-label="${escapeAttribute(metricLabel(metric))} chart">
             <defs>
-              <linearGradient id="person-series-fill-${metric}" x1="0" x2="0" y1="0" y2="1">
+              <linearGradient id="${escapeAttribute(fillId)}" x1="0" x2="0" y1="0" y2="1">
                 <stop offset="0%" stop-color="${cssVar("--accent")}" stop-opacity="0.22"></stop>
                 <stop offset="100%" stop-color="${cssVar("--accent")}" stop-opacity="0"></stop>
               </linearGradient>
@@ -378,7 +482,7 @@
             ${ticks}
             ${partialBands}
             <line x1="${padding.left}" x2="${width - padding.right}" y1="${averageLineY}" y2="${averageLineY}" stroke="${cssVar("--avg-stroke")}" stroke-dasharray="5 5"></line>
-            ${areaPath ? `<path d="${areaPath}" fill="url(#person-series-fill-${metric})"></path>` : ""}
+            ${areaPath ? `<path d="${areaPath}" fill="url(#${escapeAttribute(fillId)})"></path>` : ""}
             <path d="${linePath}" fill="none" stroke="${cssVar("--accent")}" stroke-width="3" stroke-linecap="round"></path>
             ${chartNodes}
           </svg>
@@ -468,6 +572,12 @@
           median_approval_hours: "Median approval",
           changed_lines_total: "Changed lines",
           commits_total: "Commits",
+          pull_requests: "PR throughput",
+          pull_requests_per_active_author: "PRs per active author",
+          changed_lines: "Changed lines",
+          changed_lines_per_active_author: "Lines per active author",
+          active_authors: "Active authors",
+          review_submissions: "Reviews",
         }[metric] || metric;
       }
 

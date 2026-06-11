@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 # ruff: noqa: F403,F405
+from orgpulse.common.config import get_settings
+
 from ..helpers.cli import *
 
 
@@ -1042,6 +1044,49 @@ class TestPersonCommand:
         assert 'data-person-trend-metric="changed_lines_total"' in html_result.stdout
         assert 'data-person-trend-metric="commits_total"' in html_result.stdout
         assert "Yellow band = open period" in html_result.stdout
+        get_settings.cache_clear()
+        env_locale_result = runner.invoke(
+            app,
+            [
+                "person",
+                "--org",
+                "acme",
+                "--login",
+                "alice",
+                "--output-dir",
+                str(tmp_path),
+                "--format",
+                "html",
+            ],
+            env={"ORGPULSE_LOCALE": "ko"},
+        )
+        get_settings.cache_clear()
+        override_locale_result = runner.invoke(
+            app,
+            [
+                "person",
+                "--org",
+                "acme",
+                "--login",
+                "alice",
+                "--output-dir",
+                str(tmp_path),
+                "--format",
+                "html",
+                "--locale",
+                "en",
+            ],
+            env={"ORGPULSE_LOCALE": "ko"},
+        )
+        assert env_locale_result.exit_code == 0
+        assert '<html lang="ko">' in env_locale_result.stdout
+        assert "개인 성과 추출" in env_locale_result.stdout
+        assert "선택한 사람이 작성한 풀 리퀘스트 수입니다." in env_locale_result.stdout
+        assert override_locale_result.exit_code == 0
+        assert '<html lang="en">' in override_locale_result.stdout
+        assert "<title>orgpulse person metrics: alice</title>" in (
+            override_locale_result.stdout
+        )
         assert (
             '<script id="person-report-data" type="application/json">'
             in html_result.stdout

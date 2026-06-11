@@ -28,6 +28,7 @@ from orgpulse.common.models import (
     OrgSlug,
     PeriodGrain,
     RawSnapshotPeriod,
+    ReportLocale,
     RepoSlug,
     TimeAnchor,
     canonicalize_repo_filter,
@@ -77,6 +78,7 @@ class PersonConfig(BaseModel):
     until: date | None = None
     distribution_percentile: int = 100
     export_format: PersonExportFormat = PersonExportFormat.JSON
+    locale: ReportLocale = Field(default=ReportLocale.EN, exclude=True)
     include_repos: tuple[RepoSlug, ...] = ()
     exclude_repos: tuple[RepoSlug, ...] = ()
     include_org_trends: bool = False
@@ -306,6 +308,7 @@ class PersonMetricsResult(BaseModel):
     org_monthly_trend_rows: tuple[OrgTrendRow, ...] | None = None
     repository_rows: tuple[PersonRepositoryRow, ...]
     export_format: PersonExportFormat
+    locale: ReportLocale = ReportLocale.EN
     include_org_trends: bool = False
 
     @model_validator(mode="after")
@@ -410,6 +413,7 @@ class PersonMetricsService:
             org_monthly_trend_rows=org_monthly_trend_rows,
             repository_rows=repository_rows,
             export_format=config.export_format,
+            locale=config.locale,
             include_org_trends=config.include_org_trends,
         )
 
@@ -1304,6 +1308,7 @@ def build_person_config(
     until: date | str | None = None,
     distribution_percentile: int | None = None,
     export_format: PersonExportFormat | None = None,
+    locale: ReportLocale | str | None = None,
     include_repos: list[str] | None = None,
     exclude_repos: list[str] | None = None,
     include_org_trends: bool = False,
@@ -1320,6 +1325,7 @@ def build_person_config(
         "export_format": (
             PersonExportFormat.JSON if export_format is None else export_format
         ),
+        "locale": settings.locale if locale is None else locale,
         "include_org_trends": include_org_trends,
     }
     if since is not None:

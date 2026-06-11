@@ -123,6 +123,34 @@
       letter-spacing: 0.08em;
     }
 
+    .metric-label-with-tooltip {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      min-width: 0;
+      vertical-align: middle;
+    }
+
+    .metric-tooltip {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 16px;
+      height: 16px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      color: var(--strong);
+      font-size: 0.7rem;
+      font-weight: 800;
+      line-height: 1;
+      cursor: help;
+    }
+
+    .metric-tooltip:focus-visible {
+      outline: 2px solid var(--strong);
+      outline-offset: 2px;
+    }
+
     .summary-value {
       font-size: 1.9rem;
       font-weight: 800;

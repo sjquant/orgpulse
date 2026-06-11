@@ -29,10 +29,22 @@ from orgpulse.common.models import (
     DashboardSizeDiagnosticPayload,
     DashboardSourcePayload,
     DashboardTrendRowPayload,
+    ReportLocale,
 )
 from orgpulse.libs.reporting.contracts import (
     build_period_state_payload,
     build_time_anchor_context,
+)
+from orgpulse.libs.reporting.i18n import (
+    format_duration,
+    format_integer,
+    format_number,
+    metric_description,
+    metric_label_html,
+    metric_text,
+    report_i18n_json,
+    report_text,
+    resolve_report_locale,
 )
 
 AUTHOR_ROSTER_LIMIT = 5
@@ -48,6 +60,7 @@ def render_dashboard_artifact(
     input_json: Path,
     output_html: Path,
     distribution_percentile: int,
+    locale: ReportLocale | str | None = None,
 ) -> dict[str, str | int]:
     """Render a dashboard HTML artifact from a stored JSON payload.
 
@@ -64,12 +77,14 @@ def render_dashboard_artifact(
         input_json,
         distribution_percentile=distribution_percentile,
     )
-    html = _render_html(payload)
+    resolved_locale = resolve_report_locale(locale)
+    html = _render_html(payload, locale=resolved_locale)
     output_html.write_text(html, encoding="utf-8")
     return {
         "input_json": str(input_json),
         "output_html": str(output_html),
         "distribution_percentile": distribution_percentile,
+        "locale": resolved_locale.value,
     }
 
 
@@ -88,6 +103,8 @@ def _load_payload(
 
 def render_dashboard_html(
     payload: DashboardPreparedPayload | dict[str, Any],
+    *,
+    locale: ReportLocale | str | None = None,
 ) -> str:
     """Render dashboard HTML from a prepared payload.
 
@@ -98,9 +115,30 @@ def render_dashboard_html(
         Rendered dashboard HTML.
     """
 
+    resolved_locale = resolve_report_locale(locale)
     prepared_payload = _validate_prepared_payload(payload)
-    template = _template_environment().get_template("org_dashboard.html.j2")
+    template = _template_environment(resolved_locale).get_template(
+        "org_dashboard.html.j2"
+    )
     return template.render(
+        locale=resolved_locale.value,
+        t=lambda key: report_text(resolved_locale, key),
+        metric_label=lambda key, fallback=None: metric_label_html(
+            resolved_locale,
+            key,
+            fallback=fallback,
+        ),
+        metric_text=lambda key, fallback=None: metric_text(
+            resolved_locale,
+            key,
+            fallback=fallback,
+        ),
+        metric_description=lambda key, fallback=None: metric_description(
+            resolved_locale,
+            key,
+            fallback=fallback,
+        ),
+        report_i18n_json=report_i18n_json(resolved_locale),
         overview=prepared_payload.overview,
         authors=prepared_payload.authors,
         authors_roster_top=prepared_payload.authors_roster_top,
@@ -125,8 +163,12 @@ def render_dashboard_html(
     )
 
 
-def _render_html(payload: DashboardPreparedPayload) -> str:
-    return render_dashboard_html(payload)
+def _render_html(
+    payload: DashboardPreparedPayload,
+    *,
+    locale: ReportLocale | str | None = None,
+) -> str:
+    return render_dashboard_html(payload, locale=locale)
 
 
 def prepare_dashboard_payload(
@@ -1633,16 +1675,16 @@ def _as_int(value: int | float | None) -> int:
     return int(value)
 
 
-def _template_environment() -> Environment:
+def _template_environment(locale: ReportLocale) -> Environment:
     environment = Environment(
         loader=FileSystemLoader(
             str(Path(__file__).resolve().parents[2] / "templates")
         ),
         autoescape=select_autoescape(["html", "html.j2", "xml"]),
     )
-    environment.filters["intfmt"] = _format_integer
-    environment.filters["numfmt"] = _format_number
-    environment.filters["duration"] = _format_duration
+    environment.filters["intfmt"] = lambda value: format_integer(value, locale)
+    environment.filters["numfmt"] = lambda value: format_number(value, locale)
+    environment.filters["duration"] = lambda value: format_duration(value, locale)
     environment.filters["deltafmt"] = _format_delta
     return environment
 

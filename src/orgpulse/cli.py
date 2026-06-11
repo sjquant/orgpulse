@@ -33,6 +33,7 @@ from orgpulse.common.errors import (
 )
 from orgpulse.common.models import (
     PeriodGrain,
+    ReportLocale,
     RunMode,
     TimeAnchor,
 )
@@ -329,6 +330,13 @@ def analyze_command(
             help="Analysis export format written to stdout.",
         ),
     ] = None,
+    locale: Annotated[
+        ReportLocale | None,
+        typer.Option(
+            "--locale",
+            help="HTML report locale. Falls back to ORGPULSE_LOCALE.",
+        ),
+    ] = None,
 ) -> None:
     """Analyze stored raw data with explicit grouping and export controls."""
 
@@ -344,6 +352,7 @@ def analyze_command(
             until=until,
             distribution_percentile=distribution_percentile,
             export_format=export_format,
+            locale=locale,
         )
     except ValidationError as exc:
         typer.echo(f"orgpulse: invalid analysis configuration\n{exc}", err=True)
@@ -453,6 +462,13 @@ def person_command(
             help="Person metrics export format written to stdout or --output-file.",
         ),
     ] = None,
+    locale: Annotated[
+        ReportLocale | None,
+        typer.Option(
+            "--locale",
+            help="HTML report locale. Falls back to ORGPULSE_LOCALE.",
+        ),
+    ] = None,
 ) -> None:
     """Extract local performance metrics for one GitHub login."""
 
@@ -467,6 +483,7 @@ def person_command(
             until=until,
             distribution_percentile=distribution_percentile,
             export_format=export_format,
+            locale=locale,
             include_repos=include_repos,
             exclude_repos=exclude_repos,
             include_org_trends=include_org_trends,
@@ -715,6 +732,13 @@ def dashboard_command(
             help="Upper-tail percentile retained for distribution-based metrics. Use 95, 99, or 100.",
         ),
     ] = 100,
+    locale: Annotated[
+        ReportLocale | None,
+        typer.Option(
+            "--locale",
+            help="HTML report locale. Falls back to ORGPULSE_LOCALE.",
+        ),
+    ] = None,
 ) -> None:
     """Build a dashboard report from stored local outputs."""
 
@@ -748,6 +772,7 @@ def dashboard_command(
             ),
             refresh=refresh,
             distribution_percentile=distribution_percentile,
+            locale=locale,
         )
     except RuntimeError as exc:
         typer.echo(f"orgpulse: dashboard generation failed\n{exc}", err=True)
@@ -785,6 +810,13 @@ def dashboard_render_command(
             help="Upper-tail percentile retained for distribution-based metrics. Use 95, 99, or 100.",
         ),
     ] = 100,
+    locale: Annotated[
+        ReportLocale | None,
+        typer.Option(
+            "--locale",
+            help="HTML report locale. Falls back to ORGPULSE_LOCALE.",
+        ),
+    ] = None,
 ) -> None:
     """Render dashboard HTML from a previously generated JSON payload."""
 
@@ -796,6 +828,7 @@ def dashboard_render_command(
             input_json=input_json,
             output_html=output_html,
             distribution_percentile=distribution_percentile,
+            locale=locale,
         )
     except (OSError, json.JSONDecodeError, RuntimeError, ValueError) as exc:
         typer.echo(f"orgpulse: dashboard render failed\n{exc}", err=True)

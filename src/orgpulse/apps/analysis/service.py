@@ -20,6 +20,7 @@ from orgpulse.common.models import (
     PullRequestMetricCollection,
     PullRequestMetricRecord,
     RawSnapshotWriteResult,
+    ReportLocale,
     RunConfig,
     RunManifest,
     TimeAnchor,
@@ -63,6 +64,7 @@ class AnalysisConfig(BaseModel):
     until: date | None = None
     distribution_percentile: int = 100
     export_format: AnalysisExportFormat = AnalysisExportFormat.JSON
+    locale: ReportLocale = Field(default=ReportLocale.EN, exclude=True)
 
     @field_validator("output_dir", mode="before")
     @classmethod
@@ -141,6 +143,7 @@ class AnalysisResult(BaseModel):
     matched_pull_request_count: int
     rows: tuple[AnalysisRow, ...]
     export_format: AnalysisExportFormat
+    locale: ReportLocale = ReportLocale.EN
     report_payload: AnalysisReportPayload | None = Field(default=None, exclude=True)
 
 
@@ -178,6 +181,7 @@ class AnalysisService:
             matched_pull_request_count=len(filtered_metrics),
             rows=rows,
             export_format=config.export_format,
+            locale=config.locale,
             report_payload=self._build_report_payload(
                 config,
                 manifest=source.manifest,
@@ -505,6 +509,7 @@ def build_analysis_config(
     until: date | str | None = None,
     distribution_percentile: int | None = None,
     export_format: AnalysisExportFormat | None = None,
+    locale: ReportLocale | str | None = None,
 ) -> AnalysisConfig:
     """Build analysis settings from CLI inputs and application defaults.
 
@@ -534,6 +539,7 @@ def build_analysis_config(
         "export_format": (
             AnalysisExportFormat.JSON if export_format is None else export_format
         ),
+        "locale": settings.locale if locale is None else locale,
     }
     if top_n is not None:
         payload["top_n"] = top_n
@@ -544,4 +550,3 @@ def build_analysis_config(
     if distribution_percentile is not None:
         payload["distribution_percentile"] = distribution_percentile
     return AnalysisConfig.model_validate(payload)
-

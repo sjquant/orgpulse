@@ -12,13 +12,29 @@ from orgpulse.apps.person_metrics.service import (
     PersonPeriodRow,
     PersonRepositoryRow,
 )
+from orgpulse.common.models import ReportLocale
+from orgpulse.libs.reporting.i18n import (
+    format_duration,
+    format_integer,
+    format_number,
+    format_percent,
+    metric_description,
+    metric_label_html,
+    metric_text,
+    report_i18n_json,
+    report_text,
+    resolve_report_locale,
+)
 
 
 def render_person_report_html(
     result: PersonMetricsResult,
+    *,
+    locale: ReportLocale | str | None = None,
 ) -> str:
     """Render a person metrics result as an HTML report."""
 
+    resolved_locale = resolve_report_locale(locale)
     progressive_chunk_size = 5
     top_repository_rows = _top_repository_rows(result.repository_rows)
     repository_top_rows, repository_rest_rows = _split_ranked_repository_rows(
@@ -35,8 +51,28 @@ def render_person_report_html(
     )
     window_label = _window_label(result)
     report_payload = _html_report_payload(result)
-    template = _template_environment().get_template("person_report.html.j2")
+    template = _template_environment(resolved_locale).get_template(
+        "person_report.html.j2"
+    )
     return template.render(
+        locale=resolved_locale.value,
+        t=lambda key: report_text(resolved_locale, key),
+        metric_label=lambda key, fallback=None: metric_label_html(
+            resolved_locale,
+            key,
+            fallback=fallback,
+        ),
+        metric_text=lambda key, fallback=None: metric_text(
+            resolved_locale,
+            key,
+            fallback=fallback,
+        ),
+        metric_description=lambda key, fallback=None: metric_description(
+            resolved_locale,
+            key,
+            fallback=fallback,
+        ),
+        report_i18n_json=report_i18n_json(resolved_locale),
         result=result,
         summary=result.summary,
         reviewer_summary=result.reviewer_summary,
@@ -116,49 +152,17 @@ def _html_report_payload(
     return payload
 
 
-def _template_environment() -> Environment:
+def _template_environment(locale: ReportLocale) -> Environment:
     environment = Environment(
         loader=FileSystemLoader(str(Path(__file__).resolve().parents[2] / "templates")),
         autoescape=select_autoescape(["html", "html.j2", "xml"]),
     )
-    environment.filters["intfmt"] = _format_integer
-    environment.filters["numfmt"] = _format_number
-    environment.filters["duration"] = _format_duration
-    environment.filters["pctfmt"] = _format_percent
+    environment.filters["intfmt"] = lambda value: format_integer(value, locale)
+    environment.filters["numfmt"] = lambda value: format_number(value, locale)
+    environment.filters["duration"] = lambda value: format_duration(value, locale)
+    environment.filters["pctfmt"] = lambda value: format_percent(value, locale)
     environment.filters["json_script"] = _json_script
     return environment
-
-
-def _format_integer(value: Any) -> str:
-    if value is None or value == "":
-        return "-"
-    return f"{int(float(value)):,}"
-
-
-def _format_number(value: Any) -> str:
-    if value is None or value == "":
-        return "-"
-    number = float(value)
-    if number.is_integer():
-        return f"{int(number):,}"
-    return f"{number:,.2f}".rstrip("0").rstrip(".")
-
-
-def _format_duration(value: Any) -> str:
-    if value is None or value == "":
-        return "-"
-    hours = float(value)
-    if hours < 1:
-        return f"{round(hours * 60):,} min"
-    if hours >= 24:
-        return f"{hours / 24:,.1f} d"
-    return f"{hours:,.1f} h"
-
-
-def _format_percent(value: Any) -> str:
-    if value is None or value == "":
-        return "-"
-    return f"{_format_number(value)}%"
 
 
 def _json_script(value: Any) -> Markup:

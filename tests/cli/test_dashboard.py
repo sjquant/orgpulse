@@ -88,6 +88,51 @@ class TestDashboardCommand:
             "Lines / Active Author"
             in Path(payload["html_path"]).read_text(encoding="utf-8")
         )
+        ko_result = runner.invoke(
+            app,
+            [
+                "dashboard",
+                "--org",
+                "acme",
+                "--since",
+                "2026-03-01",
+                "--until",
+                "2026-03-31",
+                "--source-output-dir",
+                str(source_output_dir),
+                "--output-dir",
+                str(report_output_dir),
+                "--base-name",
+                "acme-ko-dashboard",
+                "--no-refresh",
+                "--locale",
+                "ko",
+            ],
+        )
+        assert ko_result.exit_code == 0
+        ko_payload = json.loads(ko_result.stdout)
+        ko_html = Path(ko_payload["html_path"]).read_text(encoding="utf-8")
+        assert '<html lang="ko">' in ko_html
+        assert "엔지니어링 생산성 리더보드" in ko_html
+        assert "24시간 안에 첫 리뷰를 받은 풀 리퀘스트 비율입니다." in ko_html
+
+        render_output_path = report_output_dir / "rendered-ko-dashboard.html"
+        render_result = runner.invoke(
+            app,
+            [
+                "dashboard-render",
+                "--input-json",
+                payload["json_path"],
+                "--output-html",
+                str(render_output_path),
+                "--locale",
+                "ko",
+            ],
+        )
+        assert render_result.exit_code == 0
+        rendered_html = render_output_path.read_text(encoding="utf-8")
+        assert '<html lang="ko">' in rendered_html
+        assert "PR 처리량" in rendered_html
 
     def test_counts_reviewer_trends_by_review_submission_date(
         self,

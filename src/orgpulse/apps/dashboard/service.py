@@ -36,6 +36,7 @@ from orgpulse.common.models import (
     PeriodGrain,
     RawSnapshotPeriod,
     RawSnapshotWriteResult,
+    ReportLocale,
     RunManifest,
     RunMode,
 )
@@ -158,6 +159,7 @@ def generate_dashboard_report(
     base_name: str,
     refresh: bool,
     distribution_percentile: int,
+    locale: ReportLocale | str | None = None,
 ) -> dict[str, Any]:
     """Generate dashboard artifacts from local source data.
 
@@ -196,11 +198,19 @@ def generate_dashboard_report(
             until=until,
             source_output_dir=source_output_dir,
         )
+        if locale is None:
+            return _write_outputs(
+                output_dir=output_dir,
+                base_name=base_name,
+                payload=payload,
+                distribution_percentile=distribution_percentile,
+            )
         return _write_outputs(
             output_dir=output_dir,
             base_name=base_name,
             payload=payload,
             distribution_percentile=distribution_percentile,
+            locale=locale,
         )
     except ValidationError as exc:
         raise RuntimeError(f"dashboard payload validation failed: {exc}") from exc
@@ -620,6 +630,7 @@ def _write_outputs(
     base_name: str,
     payload: DashboardSourcePayload,
     distribution_percentile: int,
+    locale: ReportLocale | str | None = None,
 ) -> dict[str, Any]:
     payload_data = payload.model_dump(mode="json")
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -640,7 +651,8 @@ def _write_outputs(
             prepare_dashboard_payload(
                 payload,
                 distribution_percentile=distribution_percentile,
-            )
+            ),
+            locale=locale,
         ),
         encoding="utf-8",
     )

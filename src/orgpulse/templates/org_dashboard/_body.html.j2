@@ -4,22 +4,18 @@
       <div class="panel hero-panel">
         <div class="hero-head">
           <div class="hero-copy">
-            <p class="eyebrow">Engineering Productivity Leaderboard</p>
-            <h1>{{ overview.org }} review and throughput board</h1>
-            <p class="subtitle">
-              Leaderboard view for the selected window. The page focuses on who shipped,
-              who reviewed, where flow concentrated, and how review latency moved with PR
-              size, with chart tabs for period and person-level inspection.
-            </p>
+            <p class="eyebrow">{{ t("dashboard.eyebrow") }}</p>
+            <h1>{{ overview.org }} {{ t("dashboard.heading_suffix") }}</h1>
+            <p class="subtitle">{{ t("dashboard.subtitle") }}</p>
           </div>
-          <div class="theme-switch" role="group" aria-label="Color theme">
+          <div class="theme-switch" role="group" aria-label="{{ t("theme.color") }}">
             <span class="theme-switch-indicator" aria-hidden="true"></span>
-            <button type="button" class="theme-switch-button" data-theme-option="dark" aria-label="Dark theme" aria-pressed="false" title="Dark theme">
+            <button type="button" class="theme-switch-button" data-theme-option="dark" aria-label="{{ t("theme.dark") }}" aria-pressed="false" title="{{ t("theme.dark") }}">
               <svg class="theme-switch-icon" viewBox="0 0 24 24" aria-hidden="true">
                 <path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 1 0 9.8 9.8Z"></path>
               </svg>
             </button>
-            <button type="button" class="theme-switch-button" data-theme-option="light" aria-label="Light theme" aria-pressed="false" title="Light theme">
+            <button type="button" class="theme-switch-button" data-theme-option="light" aria-label="{{ t("theme.light") }}" aria-pressed="false" title="{{ t("theme.light") }}">
               <svg class="theme-switch-icon" viewBox="0 0 24 24" aria-hidden="true">
                 <circle cx="12" cy="12" r="4.1"></circle>
                 <path d="M12 2.75v2.35"></path>
@@ -36,19 +32,19 @@
         </div>
         <div class="hero-meta">
           <div class="meta-box">
-            <span class="meta-label">Window</span>
+            <span class="meta-label">{{ t("common.window") }}</span>
             <span class="meta-value">{{ overview.since }} to {{ overview.until }}</span>
           </div>
           <div class="meta-box">
-            <span class="meta-label">Open backlog risk</span>
+            <span class="meta-label">{{ metric_label("stale_open_pull_requests") }}</span>
             <span class="meta-value">{{ overview.stale_open_pull_requests | intfmt }} stale open PRs</span>
           </div>
           <div class="meta-box">
-            <span class="meta-label">Review SLA</span>
+            <span class="meta-label">{{ metric_label("review_sla_24h_pct") }}</span>
             <span class="meta-value">{{ overview.review_sla_24h_pct | numfmt }}% within 24h</span>
           </div>
           <div class="meta-box">
-            <span class="meta-label">Open period</span>
+            <span class="meta-label">{{ t("common.open_period_label") }}</span>
             <span class="meta-value">
               {% if overview.open_month %}{{ overview.open_month_key }} open month{% elif overview.open_week %}{{ overview.open_week_key }} open week{% else %}closed window{% endif %}
             </span>
@@ -59,22 +55,22 @@
 
     <section class="stats-grid">
       <article class="stat-card">
-        <span class="stat-label">PR throughput</span>
+        <span class="stat-label">{{ metric_label("pull_requests") }}</span>
         <div class="stat-value">{{ overview.pull_requests | intfmt }}</div>
         <div class="stat-subvalue">{{ overview.merged_pull_requests | intfmt }} merged / {{ overview.open_pull_requests | intfmt }} open</div>
       </article>
       <article class="stat-card">
-        <span class="stat-label">Review coverage</span>
+        <span class="stat-label">{{ metric_label("review_coverage_pct") }}</span>
         <div class="stat-value">{{ overview.review_coverage_pct }}%</div>
         <div class="stat-subvalue">{{ overview.review_submissions | intfmt }} total review submissions</div>
       </article>
       <article class="stat-card">
-        <span class="stat-label">Median approval time</span>
+        <span class="stat-label">{{ metric_label("median_approval_hours") }}</span>
         <div class="stat-value">{{ overview.median_approval_hours | duration }}</div>
         <div class="stat-subvalue">from ready/request to final approval</div>
       </article>
       <article class="stat-card">
-        <span class="stat-label">Median merge time</span>
+        <span class="stat-label">{{ metric_label("median_merge_hours") }}</span>
         <div class="stat-value">{{ overview.median_merge_hours | duration }}</div>
         <div class="stat-subvalue">from PR creation to merge</div>
       </article>
@@ -82,70 +78,70 @@
 
     <section class="summary-strip">
       <article class="summary-card panel">
-        <span class="summary-label">Changed lines</span>
+        <span class="summary-label">{{ metric_label("changed_lines") }}</span>
         <strong>{{ overview.total_changed_lines | intfmt }}</strong>
         <span>{{ overview.average_changed_lines_per_pr | numfmt }} lines per PR</span>
       </article>
       <article class="summary-card panel">
-        <span class="summary-label">Review capacity</span>
+        <span class="summary-label">{{ metric_label("review_submissions") }}</span>
         <strong>{{ overview.unique_reviewers | intfmt }} reviewers</strong>
         <span>{{ overview.average_reviews_per_pr | numfmt }} reviews per PR</span>
       </article>
       <article class="summary-card panel">
-        <span class="summary-label">Per Active Author</span>
+        <span class="summary-label">{{ metric_label("pull_requests_per_active_author") }}</span>
         <strong>{{ overview.pull_requests_per_active_author | numfmt }} PRs</strong>
         <span>{{ overview.average_active_authors_per_month | numfmt }} avg active authors / month</span>
       </article>
       <article class="summary-card panel">
-        <span class="summary-label">Lines / Active Author</span>
+        <span class="summary-label">{{ metric_label("changed_lines_per_active_author") }}</span>
         <strong>{{ overview.changed_lines_per_active_author | numfmt }}</strong>
         <span>normalized changed lines per active author</span>
       </article>
       <article class="summary-card panel">
-        <span class="summary-label">Per Reviewer</span>
+        <span class="summary-label">{{ metric_label("review_submissions_given") }}</span>
         <strong>{{ overview.review_submissions_per_reviewer | numfmt }} reviews</strong>
         <span>{{ overview.unique_reviewers | intfmt }} reviewers in window</span>
       </article>
       <article class="summary-card panel">
-        <span class="summary-label">Repo concentration</span>
+        <span class="summary-label">{{ metric_label("repository_share") }}</span>
         <strong>{{ reference_summary.top3_repository_share_pct | numfmt }}%</strong>
         <span>of PRs came from the top 3 repositories</span>
       </article>
     </section>
 
     <nav class="section-nav" aria-label="Report sections">
-      <a href="#trends">Trends</a>
-      <a href="#people">People</a>
-      <a href="#leaderboards">Repositories</a>
-      <a href="#diagnostics">Diagnostics</a>
-      <a href="#reference">Reference</a>
+      <a href="#trends">{{ t("common.trends") }}</a>
+      <a href="#people">{{ t("common.people") }}</a>
+      <a href="#leaderboards">{{ t("common.repositories") }}</a>
+      <a href="#diagnostics">{{ t("common.diagnostics") }}</a>
+      <a href="#reference">{{ t("common.reference") }}</a>
     </nav>
 
     <div class="section-grid">
       <section id="trends" class="panel section-panel chart-panel">
-        <p class="section-kicker">Trend charts</p>
-        <h2>Weekly and monthly movement, graphed</h2>
+        <p class="section-kicker">{{ t("common.trends") }}</p>
+        <h2>{{ t("common.weekly") }} / {{ t("common.monthly") }}</h2>
         <p class="section-copy">Primary trend surface for throughput, code volume, and approval speed. Dense weekly/monthly tables live in the reference section below.</p>
         <div class="two-col">
           <div class="tab-strip primary-tabs" id="trend-metric-tabs">
-            <button type="button" class="tab-button active" data-metric="pull_requests" aria-selected="true">PR throughput</button>
-            <button type="button" class="tab-button" data-metric="pull_requests_per_active_author" aria-selected="false">PRs / active author</button>
-            <button type="button" class="tab-button" data-metric="changed_lines" aria-selected="false">Changed lines</button>
-            <button type="button" class="tab-button" data-metric="changed_lines_per_active_author" aria-selected="false">Lines / active author</button>
-            <button type="button" class="tab-button" data-metric="median_approval_hours" aria-selected="false">Approval time</button>
-            <button type="button" class="tab-button" data-metric="median_first_review_hours" aria-selected="false">First review</button>
-            <button type="button" class="tab-button" data-metric="median_merge_hours" aria-selected="false">Merge time</button>
+            <button type="button" class="tab-button active" data-metric="pull_requests" aria-selected="true" title="{{ metric_description("pull_requests") }}">{{ metric_text("pull_requests") }}</button>
+            <button type="button" class="tab-button" data-metric="pull_requests_per_active_author" aria-selected="false" title="{{ metric_description("pull_requests_per_active_author") }}">{{ metric_text("pull_requests_per_active_author") }}</button>
+            <button type="button" class="tab-button" data-metric="changed_lines" aria-selected="false" title="{{ metric_description("changed_lines") }}">{{ metric_text("changed_lines") }}</button>
+            <button type="button" class="tab-button" data-metric="changed_lines_per_active_author" aria-selected="false" title="{{ metric_description("changed_lines_per_active_author") }}">{{ metric_text("changed_lines_per_active_author") }}</button>
+            <button type="button" class="tab-button" data-metric="median_approval_hours" aria-selected="false" title="{{ metric_description("median_approval_hours") }}">{{ metric_text("median_approval_hours") }}</button>
+            <button type="button" class="tab-button" data-metric="median_first_review_hours" aria-selected="false" title="{{ metric_description("median_first_review_hours") }}">{{ metric_text("median_first_review_hours") }}</button>
+            <button type="button" class="tab-button" data-metric="median_merge_hours" aria-selected="false" title="{{ metric_description("median_merge_hours") }}">{{ metric_text("median_merge_hours") }}</button>
           </div>
           <div class="tab-strip secondary-tabs" id="trend-grain-tabs">
-            <button type="button" class="tab-button active" data-grain="weekly" aria-selected="true">Weekly</button>
-            <button type="button" class="tab-button" data-grain="monthly" aria-selected="false">Monthly</button>
+            <button type="button" class="tab-button active" data-grain="weekly" aria-selected="true">{{ t("common.weekly") }}</button>
+            <button type="button" class="tab-button" data-grain="monthly" aria-selected="false">{{ t("common.monthly") }}</button>
           </div>
         </div>
         <div class="chart-title">
-          <span id="trend-chart-title">PR throughput by week</span>
+          <span id="trend-chart-title">{{ metric_text("pull_requests") }}</span>
           <div class="chart-legend">
-            <span class="legend-chip"><span class="legend-dot" style="background: var(--accent)"></span>Selected metric</span>
-            <span class="legend-chip"><span class="legend-band" aria-hidden="true"></span>Yellow band = open period</span>
+            <span class="legend-chip"><span class="legend-dot" style="background: var(--accent)"></span>{{ t("common.selected_metric") }}</span>
+            <span class="legend-chip"><span class="legend-band" aria-hidden="true"></span>{{ t("common.open_period_legend") }}</span>
           </div>
         </div>
         <div id="trend-chart-readout" class="chart-readout"></div>
@@ -167,19 +163,19 @@
       </section>
 
       <section id="people" class="panel section-panel">
-        <p class="section-kicker">People command center</p>
-        <h2>Metric-ranked people, selected profile held in context</h2>
+        <p class="section-kicker">{{ t("common.people") }}</p>
+        <h2>{{ t("common.people") }}</h2>
         <p class="section-copy">Switch metrics to reorder people by that signal. The selected person remains active across ranking changes.</p>
         <div class="people-grid">
           <div class="people-ranking-controls">
             <div class="tab-strip primary-tabs" id="people-metric-tabs" role="tablist" aria-label="People ranking metric">
-              <button type="button" class="tab-button active" data-people-metric="pull_requests" aria-selected="true">Throughput</button>
-              <button type="button" class="tab-button" data-people-metric="changed_lines" aria-selected="false">Changed lines</button>
-              <button type="button" class="tab-button" data-people-metric="pull_requests_reviewed" aria-selected="false">Reviewed PRs</button>
-              <button type="button" class="tab-button" data-people-metric="reviewed_lines" aria-selected="false">Reviewed lines</button>
-              <button type="button" class="tab-button" data-people-metric="median_approval_hours" aria-selected="false">Approval speed</button>
-              <button type="button" class="tab-button" data-people-metric="median_first_review_hours" aria-selected="false">First review</button>
-              <button type="button" class="tab-button" data-people-metric="median_merge_hours" aria-selected="false">Merge speed</button>
+              <button type="button" class="tab-button active" data-people-metric="pull_requests" aria-selected="true" title="{{ metric_description("pull_requests") }}">{{ metric_text("pull_requests") }}</button>
+              <button type="button" class="tab-button" data-people-metric="changed_lines" aria-selected="false" title="{{ metric_description("changed_lines") }}">{{ metric_text("changed_lines") }}</button>
+              <button type="button" class="tab-button" data-people-metric="pull_requests_reviewed" aria-selected="false" title="{{ metric_description("pull_requests_reviewed") }}">{{ metric_text("pull_requests_reviewed") }}</button>
+              <button type="button" class="tab-button" data-people-metric="reviewed_lines" aria-selected="false" title="{{ metric_description("reviewed_lines") }}">{{ metric_text("reviewed_lines") }}</button>
+              <button type="button" class="tab-button" data-people-metric="median_approval_hours" aria-selected="false" title="{{ metric_description("median_approval_hours") }}">{{ metric_text("median_approval_hours") }}</button>
+              <button type="button" class="tab-button" data-people-metric="median_first_review_hours" aria-selected="false" title="{{ metric_description("median_first_review_hours") }}">{{ metric_text("median_first_review_hours") }}</button>
+              <button type="button" class="tab-button" data-people-metric="median_merge_hours" aria-selected="false" title="{{ metric_description("median_merge_hours") }}">{{ metric_text("median_merge_hours") }}</button>
             </div>
             <div class="detail-tabs secondary-tabs" id="author-detail-grain-tabs">
               <button type="button" class="tab-button active" data-author-grain="weekly" aria-selected="true">Weekly</button>
@@ -618,4 +614,5 @@
       </section>
     </div>
   </div>
+  <script id="report-i18n" type="application/json">{{ report_i18n_json }}</script>
   <script id="author-details-data" type="application/json">{{ author_details_json | safe }}</script>

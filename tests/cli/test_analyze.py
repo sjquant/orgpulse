@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 # ruff: noqa: F403,F405
+from orgpulse.common.config import get_settings
+
 from ..helpers.cli import *
 
 
@@ -790,6 +792,44 @@ class TestAnalyzeCommand:
         assert set(payload["views"].keys()) == {"author", "period", "repository"}
         assert payload["views"]["period"]["metrics"][0]["label"] == (
             "Pull requests (pull_request.updated_at)"
+        )
+        get_settings.cache_clear()
+        ko_result = runner.invoke(
+            app,
+            [
+                "analyze",
+                "--org",
+                "acme",
+                "--grain",
+                "month",
+                "--group-by",
+                "repository",
+                "--time-anchor",
+                "updated_at",
+                "--output-dir",
+                str(tmp_path),
+                "--format",
+                "html",
+                "--locale",
+                "ko",
+            ],
+        )
+        assert ko_result.exit_code == 0
+        assert '<html lang="ko">' in ko_result.stdout
+        assert "orgpulse 분석 보고서" in ko_result.stdout
+        assert "선택한 보고 기간에 집계된 풀 리퀘스트 수입니다." in ko_result.stdout
+        ko_payload_match = re.search(
+            r'<script id="report-data" type="application/json">(.*?)</script>',
+            ko_result.stdout,
+            re.S,
+        )
+        assert ko_payload_match is not None
+        ko_payload = json.loads(ko_payload_match.group(1))
+        assert ko_payload["views"]["period"]["metrics"][0]["label"] == (
+            "풀 리퀘스트 (pull_request.updated_at)"
+        )
+        assert ko_payload["views"]["period"]["metrics"][0]["description"] == (
+            "선택한 보고 기간에 집계된 풀 리퀘스트 수입니다."
         )
         assert payload["matched_pull_request_count"] == 3
         assert payload["periods"][0]["open_month"] is True

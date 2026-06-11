@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="{{ locale }}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{{ overview.org }} productivity leaderboard</title>
+  <title>{{ overview.org }} {{ t("dashboard.title_suffix") }}</title>
   {% include "common/_theme_bootstrap.js.j2" %}
   {% include "common/_styles.css.j2" %}
   {% include "org_dashboard/_styles.css.j2" %}

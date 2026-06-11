@@ -1,9 +1,10 @@
   <script>
+    const i18n = JSON.parse(document.getElementById("report-i18n").textContent);
     const report = JSON.parse(document.getElementById("report-data").textContent);
     const viewCatalog = {
-      period: { label: "Period", data: report.views.period },
-      repository: { label: "Repository", data: report.views.repository },
-      author: { label: "Author", data: report.views.author }
+      period: { label: t("analysis.period"), data: report.views.period },
+      repository: { label: t("common.repository"), data: report.views.repository },
+      author: { label: t("common.author", "Author"), data: report.views.author }
     };
     const state = {
       view: report.initial_view,
@@ -41,8 +42,10 @@
     initialize();
 
     function initialize() {
-      reportTitle.textContent = `${report.target_org} diagnostics`;
-      reportSubtitle.textContent = `${report.grain} grain anchored on ${report.time_anchor} with ${report.matched_pull_request_count} matched pull requests and a ${report.distribution_percentile}th percentile distribution cutoff`;
+      reportTitle.textContent = i18n.locale === "ko" ? `${report.target_org} 진단` : `${report.target_org} diagnostics`;
+      reportSubtitle.textContent = i18n.locale === "ko"
+        ? `${report.grain} 단위, ${report.time_anchor} 기준, 매칭된 PR ${formatValue(report.matched_pull_request_count, "int")}개, 분포 절단값 ${report.distribution_percentile}퍼센타일`
+        : `${report.grain} grain anchored on ${report.time_anchor} with ${formatValue(report.matched_pull_request_count, "int")} matched pull requests and a ${report.distribution_percentile}th percentile distribution cutoff`;
       populateViewOptions();
       populatePeriodOptions();
       syncMetricOptions();
@@ -108,7 +111,7 @@
     function syncMetricOptions() {
       const viewData = viewCatalog[state.view].data;
       metricSelect.innerHTML = viewData.metrics
-        .map(metric => `<option value="${metric.key}">${metric.label}</option>`)
+        .map(metric => `<option value="${escapeAttribute(metric.key)}" title="${escapeAttribute(metric.description || metric.label)}">${escapeHtml(metric.label)}</option>`)
         .join("");
       if (!viewData.metrics.some(metric => metric.key === state.metric)) {
         state.metric = viewData.default_metric;
@@ -131,28 +134,28 @@
 
     function renderSummaryCards(selectedPeriod) {
       if (!selectedPeriod) {
-        summaryCards.innerHTML = renderEmptyState("No period data available.");
+        summaryCards.innerHTML = renderEmptyState(t("common.no_period_data"));
         return;
       }
       const summary = selectedPeriod.summary;
       summaryCards.innerHTML = [
         summaryCard(
-          "Period",
+          t("analysis.period"),
           selectedPeriod.label,
           `${selectedPeriod.start_date} to ${selectedPeriod.end_date}`,
           selectedPeriod
         ),
-        summaryCard("Pull requests", formatValue(summary.pull_request_count, "int"), `Merged ${formatValue(summary.merged_pull_request_count, "int")}`),
-        summaryCard("Active authors", formatValue(summary.active_author_count, "int"), `Merged PR / author ${formatValue(summary.merged_pull_requests_per_active_author, "float")}`),
-        summaryCard("Median merge", formatValue(summary.time_to_merge_median_hours, "float"), "hours"),
-        summaryCard("Median first review", formatValue(summary.time_to_first_review_median_hours, "float"), "hours")
+        summaryCard(metricLabelHtml("pull_request_count"), formatValue(summary.pull_request_count, "int"), `${metricLabel("merged_pull_request_count")} ${formatValue(summary.merged_pull_request_count, "int")}`),
+        summaryCard(metricLabelHtml("active_author_count"), formatValue(summary.active_author_count, "int"), `${metricLabel("merged_pull_requests_per_active_author")} ${formatValue(summary.merged_pull_requests_per_active_author, "float")}`),
+        summaryCard(metricLabelHtml("time_to_merge_median_hours"), formatValue(summary.time_to_merge_median_hours, "duration"), ""),
+        summaryCard(metricLabelHtml("time_to_first_review_median_hours"), formatValue(summary.time_to_first_review_median_hours, "duration"), "")
       ].join("");
     }
 
     function summaryCard(title, value, meta, period = null) {
       const isPartial = Boolean(period?.is_partial);
       const badge = isPartial
-        ? `<span class="period-badge">${periodStatusText(period)} · observed through ${period.observed_through_date}</span>`
+        ? `<span class="period-badge">${periodStatusText(period)} · ${i18n.locale === "ko" ? "관측일" : "observed through"} ${period.observed_through_date}</span>`
         : "";
       return `
         <article class="summary-card ${isPartial ? "partial-period" : ""}">
@@ -166,34 +169,34 @@
 
     function renderDiagnostics(selectedPeriod) {
       if (!selectedPeriod) {
-        diagnosticsRoot.innerHTML = renderEmptyState("No diagnostics are available.");
-        diagnosticsTitle.textContent = "Spike diagnostics";
+        diagnosticsRoot.innerHTML = renderEmptyState(t("common.no_view_data"));
+        diagnosticsTitle.textContent = t("analysis.spike_diagnostics");
         return;
       }
-      diagnosticsTitle.textContent = `Spike diagnostics for ${selectedPeriod.label}`;
+      diagnosticsTitle.textContent = i18n.locale === "ko" ? `${selectedPeriod.label} 스파이크 진단` : `Spike diagnostics for ${selectedPeriod.label}`;
       const diagnostics = selectedPeriod.diagnostics;
       diagnosticsRoot.innerHTML = `
         <div class="diagnostic-grid">
-          ${diagnosticCard("Same-period created", formatValue(diagnostics.same_period_created_ratio, "percent"), `${formatValue(diagnostics.same_period_created_count, "int")} pull requests`, "good")}
-          ${diagnosticCard("Older PR ratio", formatValue(diagnostics.older_pull_request_ratio, "percent"), `${formatValue(diagnostics.older_pull_request_count, "int")} carried into this period`, "warn")}
-          ${diagnosticCard("Period state", periodStatusText(selectedPeriod), `Observed through ${selectedPeriod.observed_through_date}`, selectedPeriod.is_partial ? "warn" : "good")}
+          ${diagnosticCard(t("analysis.same_period_created", "Same-period created"), formatValue(diagnostics.same_period_created_ratio, "percent"), `${formatValue(diagnostics.same_period_created_count, "int")} ${metricLabel("pull_request_count")}`, "good")}
+          ${diagnosticCard(t("analysis.older_pr_ratio", "Older PR ratio"), formatValue(diagnostics.older_pull_request_ratio, "percent"), i18n.locale === "ko" ? `${formatValue(diagnostics.older_pull_request_count, "int")}개가 이 기간으로 이월` : `${formatValue(diagnostics.older_pull_request_count, "int")} carried into this period`, "warn")}
+          ${diagnosticCard(t("common.period_state"), periodStatusText(selectedPeriod), `${i18n.locale === "ko" ? "관측일" : "Observed through"} ${selectedPeriod.observed_through_date}`, selectedPeriod.is_partial ? "warn" : "good")}
         </div>
         <div class="table-stack">
-          ${renderMiniTable("Top contributing repositories", diagnostics.top_contributing_repositories, [
-            { key: "label", label: "Repository" },
-            { key: "pull_request_count", label: "PRs", format: "int" },
-            { key: "share", label: "Share", format: "percent" }
+          ${renderMiniTable(i18n.locale === "ko" ? "상위 기여 저장소" : "Top contributing repositories", diagnostics.top_contributing_repositories, [
+            { key: "label", label: t("common.repository") },
+            { key: "pull_request_count", label: metricLabelHtml("pull_request_count"), format: "int" },
+            { key: "share", label: metricLabelHtml("repository_share"), format: "percent" }
           ])}
-          ${renderMiniTable("Top updated dates", diagnostics.top_updated_dates, [
-            { key: "label", label: "Date" },
-            { key: "count", label: "PRs", format: "int" },
-            { key: "share", label: "Share", format: "percent" }
+          ${renderMiniTable(i18n.locale === "ko" ? "상위 업데이트 날짜" : "Top updated dates", diagnostics.top_updated_dates, [
+            { key: "label", label: i18n.locale === "ko" ? "날짜" : "Date" },
+            { key: "count", label: metricLabelHtml("pull_request_count"), format: "int" },
+            { key: "share", label: metricLabelHtml("repository_share"), format: "percent" }
           ])}
-          ${renderMiniTable("Timeline event breakdown", diagnostics.timeline_event_breakdown, [
-            { key: "label", label: "Event" },
-            { key: "event_count", label: "Events", format: "int" },
-            { key: "pull_request_count", label: "PRs", format: "int" },
-            { key: "share", label: "Share", format: "percent" }
+          ${renderMiniTable(i18n.locale === "ko" ? "타임라인 이벤트 분석" : "Timeline event breakdown", diagnostics.timeline_event_breakdown, [
+            { key: "label", label: i18n.locale === "ko" ? "이벤트" : "Event" },
+            { key: "event_count", label: i18n.locale === "ko" ? "이벤트 수" : "Events", format: "int" },
+            { key: "pull_request_count", label: metricLabelHtml("pull_request_count"), format: "int" },
+            { key: "share", label: metricLabelHtml("repository_share"), format: "percent" }
           ])}
         </div>
       `;
@@ -215,7 +218,7 @@
         return `
           <section>
             <h3 class="section-title">${title}</h3>
-            ${renderEmptyState("No rows available.")}
+            ${renderEmptyState(i18n.locale === "ko" ? "행이 없습니다." : "No rows available.")}
           </section>
         `;
       }
@@ -239,8 +242,8 @@
     function renderPeriodChart() {
       const periodView = viewCatalog.period.data;
       const metric = metricDefinition(periodView.metrics, state.metric);
-      chartTitle.textContent = `${metric.label} by period`;
-      chartCaption.textContent = "Matched org-wide trend for the selected metric.";
+      chartTitle.textContent = i18n.locale === "ko" ? `기간별 ${metric.label}` : `${metric.label} by period`;
+      chartCaption.textContent = i18n.locale === "ko" ? "선택한 지표의 조직 전체 추세입니다." : "Matched org-wide trend for the selected metric.";
       chartRoot.innerHTML = lineChart([
         {
           label: metric.label,
@@ -253,8 +256,8 @@
           }))
         }
       ], metric.format);
-      chartLegend.innerHTML = `<span class="legend-chip"><span class="legend-swatch" style="background:${palette[0]}"></span>${metric.label}</span>`;
-      focusSeriesSelect.innerHTML = '<option value="">Not applicable</option>';
+      chartLegend.innerHTML = `<span class="legend-chip" title="${escapeAttribute(metric.description || metric.label)}"><span class="legend-swatch" style="background:${palette[0]}"></span>${escapeHtml(metric.label)}</span>`;
+      focusSeriesSelect.innerHTML = `<option value="">${i18n.locale === "ko" ? "해당 없음" : "Not applicable"}</option>`;
       focusSeriesSelect.disabled = true;
     }
 
@@ -266,8 +269,8 @@
         ? entities.filter(entity => entity.key === state.focusSeriesKey)
         : entities;
       const chartEntities = focusedEntities.slice(0, state.focusSeriesKey ? focusedEntities.length : state.topN);
-      chartTitle.textContent = `${metric.label} by ${viewCatalog[state.view].label.toLowerCase()}`;
-      chartCaption.textContent = `Top ${chartEntities.length} series across ${viewData.periods.length} periods.`;
+      chartTitle.textContent = i18n.locale === "ko" ? `${viewCatalog[state.view].label}별 ${metric.label}` : `${metric.label} by ${viewCatalog[state.view].label.toLowerCase()}`;
+      chartCaption.textContent = i18n.locale === "ko" ? `${viewData.periods.length}개 기간의 상위 ${chartEntities.length}개 시리즈입니다.` : `Top ${chartEntities.length} series across ${viewData.periods.length} periods.`;
       chartRoot.innerHTML = chartEntities.length
         ? lineChart(chartEntities.map((entity, index) => ({
             key: entity.key,
@@ -280,7 +283,7 @@
               statusText: periodStatusText(periodValue)
             }))
           })), metric.format)
-        : renderEmptyState("No matching series for the current filter.");
+        : renderEmptyState(i18n.locale === "ko" ? "현재 필터와 일치하는 시리즈가 없습니다." : "No matching series for the current filter.");
       chartLegend.innerHTML = chartEntities.map((entity, index) => `
         <button type="button" class="legend-chip" data-entity-key="${entity.key}">
           <span class="legend-swatch" style="background:${palette[index % palette.length]}"></span>
@@ -296,8 +299,8 @@
         });
       });
       focusSeriesSelect.disabled = false;
-      focusSeriesSelect.innerHTML = ['<option value="">All visible series</option>']
-        .concat(entities.map(entity => `<option value="${entity.key}">${entity.label}</option>`))
+      focusSeriesSelect.innerHTML = [`<option value="">${i18n.locale === "ko" ? "표시된 모든 시리즈" : "All visible series"}</option>`]
+        .concat(entities.map(entity => `<option value="${escapeAttribute(entity.key)}">${escapeHtml(entity.label)}</option>`))
         .join("");
       focusSeriesSelect.value = state.focusSeriesKey;
     }
@@ -305,8 +308,8 @@
     function renderPeriodTable() {
       const periodView = viewCatalog.period.data;
       const metric = metricDefinition(periodView.metrics, state.metric);
-      tableTitle.textContent = `${metric.label} across periods`;
-      tableRoot.innerHTML = renderMiniTable("Periods", periodView.periods.map(period => ({
+      tableTitle.textContent = i18n.locale === "ko" ? `기간별 ${metric.label}` : `${metric.label} across periods`;
+      tableRoot.innerHTML = renderMiniTable(i18n.locale === "ko" ? "기간" : "Periods", periodView.periods.map(period => ({
         label: period.label,
         start_date: period.start_date,
         end_date: period.end_date,
@@ -314,11 +317,11 @@
         is_partial: period.is_partial,
         value: period.values[state.metric]
       })), [
-        { key: "label", label: "Period" },
-        { key: "start_date", label: "Start" },
-        { key: "end_date", label: "End" },
-        { key: "state", label: "State" },
-        { key: "value", label: metric.label, format: metric.format }
+        { key: "label", label: t("analysis.period") },
+        { key: "start_date", label: i18n.locale === "ko" ? "시작" : "Start" },
+        { key: "end_date", label: i18n.locale === "ko" ? "종료" : "End" },
+        { key: "state", label: t("common.state") },
+        { key: "value", label: metricLabelHtml(metric.key, metric.label, metric.description), format: metric.format }
       ]);
     }
 
@@ -327,11 +330,11 @@
       const metric = metricDefinition(viewData.metrics, state.metric);
       const rows = rankedEntitiesForPeriod(viewData.entities, state.metric, state.periodKey)
         .slice(0, state.topN);
-      tableTitle.textContent = `${viewCatalog[state.view].label} ranking for ${state.periodKey}`;
-      tableRoot.innerHTML = renderMiniTable(`Top ${viewCatalog[state.view].label.toLowerCase()}s`, rows, [
+      tableTitle.textContent = i18n.locale === "ko" ? `${state.periodKey} ${viewCatalog[state.view].label} 순위` : `${viewCatalog[state.view].label} ranking for ${state.periodKey}`;
+      tableRoot.innerHTML = renderMiniTable(i18n.locale === "ko" ? `상위 ${viewCatalog[state.view].label}` : `Top ${viewCatalog[state.view].label.toLowerCase()}s`, rows, [
         { key: "label", label: viewCatalog[state.view].label },
-        { key: "value", label: `Selected period ${metric.label}`, format: metric.format },
-        { key: "total", label: `All-period ${metric.label}`, format: metric.format }
+        { key: "value", label: `${t("common.selected_period")} ${metricLabelHtml(metric.key, metric.label, metric.description)}`, format: metric.format },
+        { key: "total", label: i18n.locale === "ko" ? `전체 기간 ${metricLabelHtml(metric.key, metric.label, metric.description)}` : `All-period ${metricLabelHtml(metric.key, metric.label, metric.description)}`, format: metric.format }
       ]);
     }
 
@@ -381,7 +384,7 @@
     function lineChart(seriesList, format) {
       const allValues = seriesList.flatMap(series => series.points.map(point => point.value).filter(value => value !== null && value !== undefined));
       if (!allValues.length) {
-        return renderEmptyState("No values are available for this metric.");
+        return renderEmptyState(t("common.no_metric_data"));
       }
       const width = 960;
       const height = 320;
@@ -433,7 +436,7 @@
       }).join("");
 
       return `
-        <svg viewBox="0 0 ${width} ${height}" width="100%" height="${height}" role="img" aria-label="Line chart">
+        <svg viewBox="0 0 ${width} ${height}" width="100%" height="${height}" role="img" aria-label="${i18n.locale === "ko" ? "선 그래프" : "Line chart"}">
           ${partialBands}
           ${gridLines}
           ${lines}
@@ -460,15 +463,60 @@
       if (value === null || value === undefined || Number.isNaN(Number(value))) {
         return "n/a";
       }
+      if (format === "duration") {
+        return formatDuration(Number(value));
+      }
       if (format === "int") {
-        return Intl.NumberFormat("en-US", { maximumFractionDigits: 0 }).format(Number(value));
+        return Intl.NumberFormat(i18n.locale === "ko" ? "ko-KR" : "en-US", { maximumFractionDigits: 0 }).format(Number(value));
       }
       if (format === "percent") {
-        return Intl.NumberFormat("en-US", { style: "percent", maximumFractionDigits: 1 }).format(Number(value));
+        return Intl.NumberFormat(i18n.locale === "ko" ? "ko-KR" : "en-US", { style: "percent", maximumFractionDigits: 1 }).format(Number(value));
       }
       if (format === "float") {
-        return Intl.NumberFormat("en-US", { minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(Number(value));
+        return Intl.NumberFormat(i18n.locale === "ko" ? "ko-KR" : "en-US", { minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(Number(value));
       }
       return String(value);
+    }
+
+    function t(key, fallback = null) {
+      return i18n.static[key] || fallback || key;
+    }
+
+    function metricLabel(metricKey, fallback = null) {
+      return i18n.metrics[metricKey]?.label || fallback || metricKey;
+    }
+
+    function metricDescription(metricKey, fallback = null) {
+      return i18n.metrics[metricKey]?.description || fallback || metricLabel(metricKey);
+    }
+
+    function metricLabelHtml(metricKey, fallback = null, description = null) {
+      const label = fallback || metricLabel(metricKey);
+      const tooltip = description || metricDescription(metricKey, label);
+      return `<span class="metric-label-with-tooltip"><span>${escapeHtml(label)}</span><span class="metric-tooltip" tabindex="0" role="note" title="${escapeAttribute(tooltip)}" aria-label="${escapeAttribute(tooltip)}">?</span></span>`;
+    }
+
+    function formatDuration(hours) {
+      if (hours < 1) {
+        return `${Intl.NumberFormat(i18n.locale === "ko" ? "ko-KR" : "en-US").format(Math.round(hours * 60))}${i18n.locale === "ko" ? "분" : " min"}`;
+      }
+      if (hours >= 24) {
+        return `${Intl.NumberFormat(i18n.locale === "ko" ? "ko-KR" : "en-US", { maximumFractionDigits: 1 }).format(hours / 24)}${i18n.locale === "ko" ? "일" : " d"}`;
+      }
+      return `${Intl.NumberFormat(i18n.locale === "ko" ? "ko-KR" : "en-US", { maximumFractionDigits: 1 }).format(hours)}${i18n.locale === "ko" ? "시간" : " h"}`;
+    }
+
+    function escapeHtml(value) {
+      return String(value).replace(/[&<>"']/g, character => ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        '"': "&quot;",
+        "'": "&#39;",
+      }[character]));
+    }
+
+    function escapeAttribute(value) {
+      return escapeHtml(value);
     }
   </script>

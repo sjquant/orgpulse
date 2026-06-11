@@ -2,6 +2,7 @@
     const themeStorageKey = "orgpulse-manual-dashboard-theme";
     const themeButtons = Array.from(document.querySelectorAll(".theme-switch-button"));
     const themeSwitch = document.querySelector(".theme-switch");
+    const i18n = JSON.parse(document.getElementById("report-i18n").textContent);
     const authorDetails = JSON.parse(document.getElementById("author-details-data").textContent);
     const peopleRows = Object.entries(authorDetails).map(([authorLogin, detail]) => ({
       authorLogin,
@@ -282,9 +283,9 @@
           </span>
           <span class="person-card-metrics">
             <span>${metricLabel(activePeopleMetric)}: ${metricValue}</span>
-            <span>${formatMetric(row.pull_requests)} PRs</span>
-            <span>${formatMetric(row.changed_lines)} lines</span>
-            <span>${formatDuration(row.median_merge_hours)} merge</span>
+            <span>${metricLabel("pull_requests")}: ${formatMetric(row.pull_requests)}</span>
+            <span>${metricLabel("changed_lines")}: ${formatMetric(row.changed_lines)}</span>
+            <span>${metricLabel("median_merge_hours")}: ${formatDuration(row.median_merge_hours)}</span>
           </span>
         </button>
       `;
@@ -422,33 +423,33 @@
       const detail = authorDetails[authorLogin];
       if (!detail) {
         authorDetailRoot.innerHTML = "";
-        authorDetailTitle.textContent = "Person detail";
+        authorDetailTitle.textContent = i18n.locale === "ko" ? "개인 상세" : "Person detail";
         return;
       }
       const summary = detail.summary;
-      authorDetailTitle.textContent = `${authorLogin} profile`;
+      authorDetailTitle.textContent = i18n.locale === "ko" ? `${authorLogin} 프로필` : `${authorLogin} profile`;
       renderAuthorChart(detail, authorLogin);
       authorDetailRoot.innerHTML = `
         <div class="detail-grid">
-          ${detailCard("Authored PRs", summary.pull_requests)}
-          ${detailCard("Reviewed PRs", summary.pull_requests_reviewed)}
-          ${detailCard("Reviewed PRs / month", formatMetric(summary.pull_requests_reviewed_per_month))}
-          ${detailCard("Reviews given", summary.review_submissions_given)}
-          ${detailCard("Reviewed lines", formatMetric(summary.reviewed_lines))}
-          ${detailCard("Reviewed lines / month", formatMetric(summary.reviewed_lines_per_month))}
-          ${detailCard("Merge rate", formatMetric(summary.merge_rate_pct, "%"))}
-          ${detailCard("Avg lines / PR", formatMetric(summary.average_changed_lines_per_pr))}
-          ${detailCard("Approval time", formatDuration(summary.median_approval_hours))}
-          ${detailCard("First review", formatDuration(summary.median_first_review_hours))}
+          ${detailCard(metricLabel("authored_pull_request_count"), summary.pull_requests)}
+          ${detailCard(metricLabel("pull_requests_reviewed"), summary.pull_requests_reviewed)}
+          ${detailCard(i18n.locale === "ko" ? "월별 리뷰한 PR" : "Reviewed PRs / month", formatMetric(summary.pull_requests_reviewed_per_month))}
+          ${detailCard(metricLabel("review_submissions_given"), summary.review_submissions_given)}
+          ${detailCard(metricLabel("reviewed_lines"), formatMetric(summary.reviewed_lines))}
+          ${detailCard(metricLabel("reviewed_lines_per_month"), formatMetric(summary.reviewed_lines_per_month))}
+          ${detailCard(metricLabel("merge_rate_pct"), formatMetric(summary.merge_rate_pct, "%"))}
+          ${detailCard(metricLabel("average_changed_lines_per_pr"), formatMetric(summary.average_changed_lines_per_pr))}
+          ${detailCard(metricLabel("median_approval_hours"), formatDuration(summary.median_approval_hours))}
+          ${detailCard(metricLabel("median_first_review_hours"), formatDuration(summary.median_first_review_hours))}
         </div>
         <div class="profile-subgrid">
           <div>
             <p class="section-kicker">Delivery footprint</p>
             ${renderMiniTable(
               [
-                ["Repository", "repository_full_name"],
-                ["PRs", "pull_requests", true],
-                ["Changed lines", "changed_lines", true],
+                [t("common.repository"), "repository_full_name"],
+                [metricLabel("pull_requests"), "pull_requests", true],
+                [metricLabel("changed_lines"), "changed_lines", true],
               ],
               detail.top_repositories,
             )}
@@ -457,14 +458,14 @@
             <p class="section-kicker">Review footprint</p>
             ${renderMiniTable(
               [
-                ["Signal", "label"],
-                ["Count", "value", true],
+                [i18n.locale === "ko" ? "신호" : "Signal", "label"],
+                [i18n.locale === "ko" ? "수" : "Count", "value", true],
               ],
               [
-                { label: "Approvals", value: summary.approvals_given },
-                { label: "Changes requested", value: summary.changes_requested_given },
-                { label: "Comments", value: summary.review_comments_given },
-                { label: "Authors supported", value: summary.authors_supported },
+                { label: i18n.locale === "ko" ? "승인" : "Approvals", value: summary.approvals_given },
+                { label: i18n.locale === "ko" ? "변경 요청" : "Changes requested", value: summary.changes_requested_given },
+                { label: i18n.locale === "ko" ? "코멘트" : "Comments", value: summary.review_comments_given },
+                { label: i18n.locale === "ko" ? "지원한 작성자" : "Authors supported", value: summary.authors_supported },
               ],
             )}
           </div>
@@ -476,10 +477,10 @@
                 ["Value", "value", true],
               ],
               [
-                { label: "Share of org PRs", value: formatMetric(summary.share_of_prs_pct, "%") },
-                { label: "Avg commits / PR", value: formatMetric(summary.average_commits_per_pr) },
-                { label: "Approvals given", value: summary.approvals_given },
-                { label: "Authors supported", value: summary.authors_supported },
+                { label: metricLabel("repository_share"), value: formatMetric(summary.share_of_prs_pct, "%") },
+                { label: i18n.locale === "ko" ? "PR당 평균 커밋" : "Avg commits / PR", value: formatMetric(summary.average_commits_per_pr) },
+                { label: i18n.locale === "ko" ? "제공한 승인" : "Approvals given", value: summary.approvals_given },
+                { label: i18n.locale === "ko" ? "지원한 작성자" : "Authors supported", value: summary.authors_supported },
               ],
             )}
           </div>
@@ -493,9 +494,9 @@
 
     function renderTrendChart() {
       const rows = trendSeries[activeTrendGrain];
-      const label = activeTrendGrain === "weekly" ? "week" : "month";
+      const label = activeTrendGrain === "weekly" ? t("common.week") : t("common.month");
       activeTrendPointIndex = clampSelectedIndex(rows, activeTrendPointIndex, activeTrendMetric);
-      trendChartTitle.textContent = `${metricLabel(activeTrendMetric)} by ${label}`;
+      trendChartTitle.textContent = i18n.locale === "ko" ? `${label}별 ${metricLabel(activeTrendMetric)}` : `${metricLabel(activeTrendMetric)} by ${label}`;
       trendChartReadout.innerHTML = renderSeriesReadout({
         rows,
         metric: activeTrendMetric,
@@ -517,9 +518,9 @@
 
     function renderAuthorChart(detail, authorLogin) {
       const rows = detail[`${activeAuthorGrain}_trends`];
-      const label = activeAuthorGrain === "weekly" ? "week" : "month";
+      const label = activeAuthorGrain === "weekly" ? t("common.week") : t("common.month");
       activeAuthorPointIndex = clampSelectedIndex(rows, activeAuthorPointIndex, activeAuthorMetric);
-      authorChartTitle.textContent = `${authorLogin} ${metricLabel(activeAuthorMetric)} by ${label}`;
+      authorChartTitle.textContent = i18n.locale === "ko" ? `${authorLogin} ${label}별 ${metricLabel(activeAuthorMetric)}` : `${authorLogin} ${metricLabel(activeAuthorMetric)} by ${label}`;
       authorChartReadout.innerHTML = renderSeriesReadout({
         rows,
         metric: activeAuthorMetric,
@@ -549,7 +550,7 @@
       onSelect,
     }) {
       if (!rows || rows.length === 0) {
-        element.innerHTML = `<div class="small-note">No data for this view.</div>`;
+        element.innerHTML = `<div class="small-note">${formatCell(t("common.no_view_data"))}</div>`;
         return;
       }
       const width = 920;
@@ -560,7 +561,7 @@
       const metricValues = rows.map((row) => toNumeric(row[metric]));
       const primaryValues = metricValues.filter((value) => value !== null);
       if (primaryValues.length === 0) {
-        element.innerHTML = `<div class="small-note">No data for this metric in the selected window.</div>`;
+        element.innerHTML = `<div class="small-note">${formatCell(t("common.no_metric_data"))}</div>`;
         return;
       }
       const secondaryValues = secondaryMetric
@@ -655,7 +656,7 @@
         element,
         {
           metricLabel: metricLabel(metric),
-          subtitle: secondaryMetric ? "Compare primary and secondary movement" : "Select a point to pin the readout",
+          subtitle: secondaryMetric ? (i18n.locale === "ko" ? "주요 지표와 보조 지표 움직임 비교" : "Compare primary and secondary movement") : (i18n.locale === "ko" ? "점을 선택해 읽기 값을 고정" : "Select a point to pin the readout"),
         },
         onSelect,
       );
@@ -754,14 +755,14 @@
 
     function renderMiniTable(columns, rows) {
       const head = columns
-        .map(([label, _key, isNumeric = false]) => `<th${isNumeric ? ' class="num"' : ""}>${label}</th>`)
+        .map(([label, _key, isNumeric = false]) => `<th${isNumeric ? ' class="num"' : ""}>${displayLabel(label)}</th>`)
         .join("");
       const body = rows.map((row) => `
         <tr>
           ${columns.map(([label, key, isNumeric = false]) => {
             const value = row[key];
             const numericClass = isNumeric || typeof value === "number" ? ` class="num"` : "";
-            return `<td${numericClass} data-label="${formatCell(label)}">${formatCell(value)}</td>`;
+            return `<td${numericClass} data-label="${formatCell(displayLabel(label))}">${formatCell(value)}</td>`;
           }).join("")}
         </tr>
       `).join("");
@@ -779,10 +780,10 @@
       const rowsWithValues = rows.filter((row) => toNumeric(row[metric]) !== null);
       if (rowsWithValues.length === 0) {
         return [
-          ["Selected period", "-"],
-          ["Selected value", "-"],
-          ["Window average", "-"],
-          ["Peak period", "-"],
+          [t("common.selected_period"), "-"],
+          [t("common.selected_value"), "-"],
+          [t("common.window_average"), "-"],
+          [i18n.locale === "ko" ? "최고 기간" : "Peak period", "-"],
         ].map(([label, value]) => `<div class="readout-card"><strong>${label}</strong><span>${value}</span></div>`).join("");
       }
       const selectedRow = rows[selectedIndex] ?? rowsWithValues.at(-1);
@@ -792,10 +793,10 @@
         return toNumeric(row[metric]) > toNumeric(best[metric]) ? row : best;
       }, rowsWithValues[0]);
       return [
-        ["Selected period", selectedRow[labelKey]],
-        ["Selected value", formatChartValue(selectedValue, metric)],
-        ["Window average", formatChartValue(average, metric)],
-        ["Period state", periodStatusText(selectedRow)],
+        [t("common.selected_period"), selectedRow[labelKey]],
+        [t("common.selected_value"), formatChartValue(selectedValue, metric)],
+        [t("common.window_average"), formatChartValue(average, metric)],
+        [t("common.period_state"), periodStatusText(selectedRow)],
       ].map(([label, value]) => `<div class="readout-card"><strong>${label}</strong><span>${value}</span></div>`).join("");
     }
 
@@ -827,18 +828,28 @@
 
     function metricLabel(metric) {
       const labels = {
-        pull_requests: "PR throughput",
-        pull_requests_reviewed: "Reviewed PRs",
-        review_submissions_given: "Reviews given",
-        reviewed_lines: "Reviewed lines",
-        pull_requests_per_active_author: "PRs per active author",
-        changed_lines: "Changed lines",
-        changed_lines_per_active_author: "Lines per active author",
-        median_approval_hours: "Median approval",
-        median_first_review_hours: "Median first review",
-        median_merge_hours: "Median merge",
+        pull_requests: i18n.metrics.pull_requests?.label,
+        pull_requests_reviewed: i18n.metrics.pull_requests_reviewed?.label,
+        review_submissions_given: i18n.metrics.review_submissions_given?.label,
+        reviewed_lines: i18n.metrics.reviewed_lines?.label,
+        pull_requests_per_active_author: i18n.metrics.pull_requests_per_active_author?.label,
+        changed_lines: i18n.metrics.changed_lines?.label,
+        changed_lines_per_active_author: i18n.metrics.changed_lines_per_active_author?.label,
+        median_approval_hours: i18n.metrics.median_approval_hours?.label,
+        median_first_review_hours: i18n.metrics.median_first_review_hours?.label,
+        median_merge_hours: i18n.metrics.median_merge_hours?.label,
       };
       return labels[metric] || metric;
+    }
+
+    function displayLabel(label) {
+      if (i18n.locale !== "ko") {
+        return label;
+      }
+      return {
+        Metric: t("analysis.metric"),
+        Value: "값",
+      }[label] || label;
     }
 
     function syncTabs(buttons, activeButton) {
@@ -891,13 +902,13 @@
         return "-";
       }
       if (row.open_week) {
-        return "open week";
+        return t("common.open_week");
       }
       if (row.open_month) {
-        return "open month";
+        return t("common.open_month");
       }
       if (row.is_partial) {
-        return "open period";
+        return t("common.open_period");
       }
       return row.status || "closed";
     }
@@ -916,12 +927,20 @@
       }
       const numericHours = Number(hours);
       if (numericHours < 1) {
-        return `${Math.round(numericHours * 60)} min`;
+        return `${Math.round(numericHours * 60).toLocaleString(numberLocale())}${i18n.locale === "ko" ? "분" : " min"}`;
       }
       if (numericHours >= 24) {
-        return `${(numericHours / 24).toLocaleString(undefined, { maximumFractionDigits: 1 })} d`;
+        return `${(numericHours / 24).toLocaleString(numberLocale(), { maximumFractionDigits: 1 })}${i18n.locale === "ko" ? "일" : " d"}`;
       }
-      return `${numericHours.toLocaleString(undefined, { maximumFractionDigits: 1 })} h`;
+      return `${numericHours.toLocaleString(numberLocale(), { maximumFractionDigits: 1 })}${i18n.locale === "ko" ? "시간" : " h"}`;
+    }
+
+    function t(key) {
+      return i18n.static[key] || key;
+    }
+
+    function numberLocale() {
+      return i18n.locale === "ko" ? "ko-KR" : "en-US";
     }
 
     function getCss(variableName) {
@@ -933,7 +952,7 @@
         return "-";
       }
       if (typeof value === "number") {
-        return value.toLocaleString(undefined, { maximumFractionDigits: 2 });
+        return value.toLocaleString(numberLocale(), { maximumFractionDigits: 2 });
       }
       return String(value)
         .replaceAll("&", "&amp;")

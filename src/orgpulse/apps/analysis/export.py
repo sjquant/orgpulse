@@ -98,7 +98,7 @@ def _render_html(
 ) -> str:
     if result.report_payload is None:
         raise AnalysisInputError("analysis report payload is unavailable")
-    return render_analysis_report_html(result.report_payload)
+    return render_analysis_report_html(result.report_payload, locale=result.locale)
 
 
 def _markdown_number(

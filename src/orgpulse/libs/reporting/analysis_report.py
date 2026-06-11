@@ -19,6 +19,7 @@ from orgpulse.common.models import (
     PullRequestMetricRecord,
     RawSnapshotPeriod,
     RawSnapshotWriteResult,
+    ReportLocale,
     RepositoryMetricCollection,
     RunConfig,
 )
@@ -26,6 +27,13 @@ from orgpulse.libs.reporting.contracts import (
     build_anchored_metric_label,
     build_period_state_payload,
     build_time_anchor_context,
+)
+from orgpulse.libs.reporting.i18n import (
+    metric_description,
+    metric_text,
+    report_i18n_json,
+    report_text,
+    resolve_report_locale,
 )
 from orgpulse.libs.snapshots.source import pull_request_row_key, read_snapshot_csv_rows
 
@@ -751,6 +759,8 @@ def _hours_from_seconds(value: float | None) -> float | None:
 
 def render_analysis_report_html(
     report_payload: AnalysisReportPayload | dict[str, object],
+    *,
+    locale: ReportLocale | str | None = None,
 ) -> str:
     """Render analysis report HTML from a typed or raw payload.
 
@@ -761,24 +771,65 @@ def render_analysis_report_html(
         Rendered analysis report HTML.
     """
 
+    resolved_locale = resolve_report_locale(locale)
     normalized_payload = _validate_analysis_report_payload(report_payload)
     serialized_payload = json.dumps(
-        normalized_payload.model_dump(mode="json"),
+        _localized_analysis_payload(normalized_payload, resolved_locale),
+        ensure_ascii=False,
         sort_keys=True,
     ).replace(
         "</script>",
         "<\\/script>",
     )
     return _analysis_report_template().render(
+        locale=resolved_locale.value,
+        t=lambda key: report_text(resolved_locale, key),
+        report_i18n_json=report_i18n_json(resolved_locale),
         report_payload_json=serialized_payload,
     )
 
 
 def render_organization_report_html(
     report_payload: AnalysisReportPayload | dict[str, object],
+    *,
+    locale: ReportLocale | str | None = None,
 ) -> str:
     """Render the legacy organization report HTML wrapper."""
-    return render_analysis_report_html(report_payload)
+    return render_analysis_report_html(report_payload, locale=locale)
+
+
+def _localized_analysis_payload(
+    report_payload: AnalysisReportPayload,
+    locale: ReportLocale,
+) -> dict[str, object]:
+    payload = report_payload.model_dump(mode="json")
+    for view in payload.get("views", {}).values():
+        if not isinstance(view, dict):
+            continue
+        for metric in view.get("metrics", []):
+            if not isinstance(metric, dict):
+                continue
+            metric_key = str(metric.get("key", ""))
+            metric["description"] = metric_description(locale, metric_key)
+            if locale is not ReportLocale.EN:
+                metric["label"] = _localized_analysis_metric_label(
+                    locale,
+                    metric_key,
+                    time_anchor=str(payload.get("time_anchor", "")),
+                )
+    return payload
+
+
+def _localized_analysis_metric_label(
+    locale: ReportLocale,
+    metric_key: str,
+    *,
+    time_anchor: str,
+) -> str:
+    label = metric_text(locale, metric_key)
+    if not time_anchor:
+        return label
+    return build_anchored_metric_label(label, time_anchor)
 
 
 def _validate_analysis_report_payload(

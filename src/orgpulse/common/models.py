@@ -107,6 +107,13 @@ class TimeAnchor(StrEnum):
         return self is not TimeAnchor.MERGED_AT
 
 
+class ReportLocale(StrEnum):
+    """Enumerate supported report presentation locales."""
+
+    EN = "en"
+    KO = "ko"
+
+
 class RunScope(StrEnum):
     """Enumerate effective collection scopes derived from run mode."""
 

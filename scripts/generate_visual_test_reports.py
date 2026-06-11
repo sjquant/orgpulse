@@ -7,6 +7,13 @@ from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any
 
+from orgpulse.apps.analysis.export import render_analysis_result
+from orgpulse.apps.analysis.service import (
+    AnalysisExportFormat,
+    AnalysisGrouping,
+    AnalysisService,
+    build_analysis_config,
+)
 from orgpulse.apps.dashboard.service import generate_dashboard_report
 from orgpulse.apps.person_metrics.export import render_person_metrics_result
 from orgpulse.apps.person_metrics.service import (
@@ -18,6 +25,7 @@ from orgpulse.common.models import (
     PeriodGrain,
     PullRequestCollection,
     PullRequestRecord,
+    ReportLocale,
     RunConfig,
     RunMode,
     TimeAnchor,
@@ -41,6 +49,7 @@ def main() -> None:
         demo=demo,
         output_root=args.output_root,
         base_name=args.base_name,
+        locale=ReportLocale(args.locale),
     )
     _print_summary(paths)
 
@@ -66,6 +75,12 @@ def _parse_args() -> argparse.Namespace:
         default="acme-cloud-org-dashboard",
         help="Base filename for the organization dashboard outputs.",
     )
+    parser.add_argument(
+        "--locale",
+        choices=[locale.value for locale in ReportLocale],
+        default=ReportLocale.EN.value,
+        help="HTML report locale.",
+    )
     return parser.parse_args()
 
 
@@ -78,6 +93,7 @@ def _render_reports(
     demo: dict[str, Any],
     output_root: Path,
     base_name: str,
+    locale: ReportLocale,
 ) -> dict[str, Path]:
     source_dir = output_root / "source"
     report_dir = output_root / "reports"
@@ -99,10 +115,17 @@ def _render_reports(
         raw_snapshot,
         repository_count=int(demo["repository_count"]),
     )
+    analysis_path = _write_analysis_report(
+        demo=demo,
+        source_dir=source_dir,
+        report_dir=report_dir,
+        locale=locale,
+    )
     person_path = _write_person_report(
         demo=demo,
         source_dir=source_dir,
         report_dir=report_dir,
+        locale=locale,
     )
     dashboard_outputs = generate_dashboard_report(
         org=str(demo["org"]),
@@ -113,8 +136,10 @@ def _render_reports(
         base_name=base_name,
         refresh=False,
         distribution_percentile=int(demo["distribution_percentile"]),
+        locale=locale,
     )
     return {
+        "analysis_html": analysis_path,
         "person_html": person_path,
         "org_html": Path(str(dashboard_outputs["html_path"])),
         "org_json": Path(str(dashboard_outputs["json_path"])),
@@ -151,6 +176,7 @@ def _write_person_report(
     demo: dict[str, Any],
     source_dir: Path,
     report_dir: Path,
+    locale: ReportLocale,
 ) -> Path:
     config = build_person_config(
         org=str(demo["org"]),
@@ -162,6 +188,7 @@ def _write_person_report(
         until=date.fromisoformat(str(demo["until"])),
         distribution_percentile=int(demo["distribution_percentile"]),
         export_format=PersonExportFormat.HTML,
+        locale=locale,
         include_org_trends=True,
     )
     result = PersonMetricsService().extract(config)
@@ -170,8 +197,34 @@ def _write_person_report(
     return person_path
 
 
+def _write_analysis_report(
+    *,
+    demo: dict[str, Any],
+    source_dir: Path,
+    report_dir: Path,
+    locale: ReportLocale,
+) -> Path:
+    config = build_analysis_config(
+        org=str(demo["org"]),
+        output_dir=source_dir,
+        grain=PeriodGrain.MONTH,
+        time_anchor=TimeAnchor.CREATED_AT,
+        grouping=AnalysisGrouping.REPOSITORY,
+        since=date.fromisoformat(str(demo["since"])),
+        until=date.fromisoformat(str(demo["until"])),
+        distribution_percentile=int(demo["distribution_percentile"]),
+        export_format=AnalysisExportFormat.HTML,
+        locale=locale,
+    )
+    result = AnalysisService().analyze(config)
+    analysis_path = report_dir / "analysis-report.html"
+    analysis_path.write_text(render_analysis_result(result), encoding="utf-8")
+    return analysis_path
+
+
 def _print_summary(paths: dict[str, Path]) -> None:
     print(f"source_dir={paths['source_dir']}")
+    print(f"analysis_html={paths['analysis_html']}")
     print(f"person_html={paths['person_html']}")
     print(f"org_html={paths['org_html']}")
     print(f"org_json={paths['org_json']}")

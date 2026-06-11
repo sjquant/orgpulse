@@ -516,7 +516,7 @@ class TestPersonCommand:
                 "review_submissions_given": "1",
                 "reviews_received": "0",
                 "status": "closed",
-            }
+            },
         ]
 
     def test_calculates_person_reviewer_monthly_rates_and_reviewed_lines(
@@ -1072,10 +1072,7 @@ class TestPersonCommand:
         assert 'data-person-cadence="weekly"' in html_result.stdout
         assert 'data-person-cadence="monthly"' in html_result.stdout
         assert 'id="person-cadence-weekly"' in html_result.stdout
-        assert (
-            'id="person-cadence-monthly" role="tabpanel"'
-            in html_result.stdout
-        )
+        assert 'id="person-cadence-monthly" role="tabpanel"' in html_result.stdout
         assert 'data-person-cadence-panel="monthly" hidden' in html_result.stdout
         assert 'id="person-trend-grain-tabs"' in html_result.stdout
         assert 'data-person-trend-grain="weekly"' in html_result.stdout
@@ -1183,8 +1180,6 @@ class TestPersonCommand:
                 "alice",
                 "--org",
                 "acme",
-                "--grain",
-                "month",
                 "--output-dir",
                 str(tmp_path),
                 "--format",
@@ -1201,8 +1196,6 @@ class TestPersonCommand:
                 "alice",
                 "--org",
                 "acme",
-                "--grain",
-                "month",
                 "--output-dir",
                 str(tmp_path),
                 "--format",
@@ -1219,8 +1212,6 @@ class TestPersonCommand:
                 "alice",
                 "--org",
                 "acme",
-                "--grain",
-                "month",
                 "--output-dir",
                 str(tmp_path),
                 "--format",
@@ -1347,8 +1338,6 @@ class TestPersonCommand:
                 "alice",
                 "--org",
                 "acme",
-                "--grain",
-                "month",
                 "--output-dir",
                 str(tmp_path),
                 "--format",
@@ -1716,10 +1705,16 @@ class TestPersonCommand:
         # Then
         assert result.exit_code == 0
         assert 'id="weekly-period-extra" class="hidden"' in result.stdout
-        assert 'id="weekly-period-toggle" class="ghost-button" aria-expanded="false"' in result.stdout
+        assert (
+            'id="weekly-period-toggle" class="ghost-button" aria-expanded="false"'
+            in result.stdout
+        )
         assert "Show 5 more weekly rows" in result.stdout
         assert 'id="monthly-period-extra" class="hidden"' in result.stdout
-        assert 'id="monthly-period-toggle" class="ghost-button" aria-expanded="false"' in result.stdout
+        assert (
+            'id="monthly-period-toggle" class="ghost-button" aria-expanded="false"'
+            in result.stdout
+        )
         assert "Show 3 more monthly rows" in result.stdout
         assert 'id="repository-extra" class="hidden"' in result.stdout
         assert "Show 5 more repositories" in result.stdout

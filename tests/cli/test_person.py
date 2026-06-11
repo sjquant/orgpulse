@@ -1014,14 +1014,13 @@ class TestPersonCommand:
             "| 2026-04 | 1 | 0 | 1 | 10 | 1 | 0 | - | 0 | 0 | 0 |"
             in markdown_result.stdout
         )
-        assert (
-            "| acme/api | 1 | 0 | 1 | 10 | - | 0 | 0 | 0 |"
-            in markdown_result.stdout
-        )
+        assert "| acme/api | 1 | 0 | 1 | 10 | - | 0 | 0 | 0 |" in markdown_result.stdout
+        assert "## Org Trends" not in markdown_result.stdout
         assert html_result.exit_code == 0
         assert "<title>orgpulse person metrics: alice</title>" in html_result.stdout
         assert '<div class="shell person-report">' in html_result.stdout
         assert 'data-theme-option="dark"' in html_result.stdout
+        assert 'id="org-trend-chart-root"' not in html_result.stdout
         assert 'id="person-trend-chart-root"' in html_result.stdout
         assert 'id="person-trend-chart-readout"' in html_result.stdout
         assert 'class="tab-strip primary-tabs"' in html_result.stdout
@@ -1054,6 +1053,8 @@ class TestPersonCommand:
         assert report_payload_match is not None
         report_payload = json.loads(report_payload_match.group(1))
         assert report_payload["login"] == "alice"
+        assert "org_weekly_trend_rows" not in report_payload
+        assert "org_monthly_trend_rows" not in report_payload
         assert report_payload["period_rows"][0]["period_key"] == "2026-04"
         assert report_payload["period_rows"][0]["label"] == "closed month"
         assert report_payload["period_rows"][0]["is_partial"] is False
@@ -1095,6 +1096,246 @@ class TestPersonCommand:
         assert "<h3>Weekly report</h3>" in html_result.stdout
         assert "<h3>Monthly report</h3>" in html_result.stdout
         assert str(tmp_path) not in html_result.stdout
+
+    def test_includes_org_trends_in_person_json_markdown_and_html(
+        self,
+        runner: CliRunner,
+        github_auth_service: None,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path,
+        pull_request_factory,
+        review_factory,
+    ) -> None:
+        """Render scoped org trends in flagged person JSON, Markdown, and HTML exports."""
+        # Given
+        collection = PullRequestCollection(
+            window=CollectionWindow(
+                scope=RunScope.FULL_HISTORY,
+                start_date=None,
+                end_date=datetime.fromisoformat("2026-04-30T00:00:00").date(),
+            ),
+            pull_requests=(
+                pull_request_factory(
+                    repository_full_name="acme/api",
+                    number=33,
+                    title="Alice API work",
+                    author_login="alice",
+                    created_at=datetime.fromisoformat("2026-04-02T09:00:00"),
+                    updated_at=datetime.fromisoformat("2026-04-03T10:00:00"),
+                    additions=20,
+                    deletions=5,
+                    reviews=(
+                        review_factory(
+                            review_id=3301,
+                            author_login="bob",
+                            submitted_at=datetime.fromisoformat("2026-04-03T09:00:00"),
+                        ),
+                    ),
+                ),
+                pull_request_factory(
+                    repository_full_name="acme/web",
+                    number=34,
+                    title="Bob web work",
+                    author_login="bob",
+                    created_at=datetime.fromisoformat("2026-04-09T09:00:00"),
+                    updated_at=datetime.fromisoformat("2026-04-10T10:00:00"),
+                    additions=30,
+                    deletions=10,
+                ),
+            ),
+            failures=(),
+        )
+        _configure_production_cli_runtime(
+            monkeypatch,
+            collection=collection,
+        )
+        run_result = runner.invoke(
+            app,
+            [
+                "run",
+                "--org",
+                "acme",
+                "--mode",
+                "full",
+                "--as-of",
+                "2026-04-30",
+                "--output-dir",
+                str(tmp_path),
+            ],
+        )
+        assert run_result.exit_code == 0
+
+        # When
+        json_result = runner.invoke(
+            app,
+            [
+                "person",
+                "alice",
+                "--org",
+                "acme",
+                "--grain",
+                "month",
+                "--output-dir",
+                str(tmp_path),
+                "--format",
+                "json",
+                "--include-org-trends",
+            ],
+        )
+        markdown_result = runner.invoke(
+            app,
+            [
+                "person",
+                "alice",
+                "--org",
+                "acme",
+                "--grain",
+                "month",
+                "--output-dir",
+                str(tmp_path),
+                "--format",
+                "markdown",
+                "--include-org-trends",
+            ],
+        )
+        html_result = runner.invoke(
+            app,
+            [
+                "person",
+                "alice",
+                "--org",
+                "acme",
+                "--grain",
+                "month",
+                "--output-dir",
+                str(tmp_path),
+                "--format",
+                "html",
+                "--include-org-trends",
+            ],
+        )
+
+        # Then
+        assert json_result.exit_code == 0
+        payload = json.loads(json_result.stdout)
+        assert payload["include_org_trends"] is True
+        assert payload["org_monthly_trend_rows"][0]["period_key"] == "2026-04"
+        assert payload["org_monthly_trend_rows"][0]["pull_requests"] == 2
+        assert payload["org_monthly_trend_rows"][0]["active_authors"] == 2
+        assert payload["org_monthly_trend_rows"][0]["changed_lines"] == 65
+        assert payload["org_monthly_trend_rows"][0]["review_submissions"] == 1
+        assert payload["org_weekly_trend_rows"][0]["period_key"] == "2026-W14"
+        assert markdown_result.exit_code == 0
+        assert "## Org Trends" in markdown_result.stdout
+        assert "### Weekly" in markdown_result.stdout
+        assert "### Monthly" in markdown_result.stdout
+        assert "| 2026-04 | 2 | 0 | 2 | 2 | 65 | 1 | 32.5 | 1 |" in (
+            markdown_result.stdout
+        )
+        assert html_result.exit_code == 0
+        assert 'id="org-trend-chart-root"' in html_result.stdout
+        assert 'id="org-trend-chart-readout"' in html_result.stdout
+        assert 'data-org-trend-metric="pull_requests"' in html_result.stdout
+        assert 'data-org-trend-metric="pull_requests_per_active_author"' in (
+            html_result.stdout
+        )
+        report_payload_match = re.search(
+            r'<script id="person-report-data" type="application/json">(.*?)</script>',
+            html_result.stdout,
+        )
+        assert report_payload_match is not None
+        report_payload = json.loads(report_payload_match.group(1))
+        assert report_payload["org_monthly_trend_rows"][0]["pull_requests"] == 2
+        assert report_payload["org_weekly_trend_rows"][0]["period_key"] == "2026-W14"
+
+    def test_applies_repo_filters_to_person_org_trends(
+        self,
+        runner: CliRunner,
+        github_auth_service: None,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path,
+        pull_request_factory,
+    ) -> None:
+        """Apply person repository filters to flagged org trend exports."""
+        # Given
+        collection = PullRequestCollection(
+            window=CollectionWindow(
+                scope=RunScope.FULL_HISTORY,
+                start_date=None,
+                end_date=datetime.fromisoformat("2026-04-30T00:00:00").date(),
+            ),
+            pull_requests=(
+                pull_request_factory(
+                    repository_full_name="acme/api",
+                    number=35,
+                    title="Alice API work",
+                    author_login="alice",
+                    created_at=datetime.fromisoformat("2026-04-02T09:00:00"),
+                    updated_at=datetime.fromisoformat("2026-04-03T10:00:00"),
+                    additions=20,
+                    deletions=5,
+                ),
+                pull_request_factory(
+                    repository_full_name="acme/web",
+                    number=36,
+                    title="Bob web work",
+                    author_login="bob",
+                    created_at=datetime.fromisoformat("2026-04-09T09:00:00"),
+                    updated_at=datetime.fromisoformat("2026-04-10T10:00:00"),
+                    additions=30,
+                    deletions=10,
+                ),
+            ),
+            failures=(),
+        )
+        _configure_production_cli_runtime(
+            monkeypatch,
+            collection=collection,
+        )
+        run_result = runner.invoke(
+            app,
+            [
+                "run",
+                "--org",
+                "acme",
+                "--mode",
+                "full",
+                "--as-of",
+                "2026-04-30",
+                "--output-dir",
+                str(tmp_path),
+            ],
+        )
+        assert run_result.exit_code == 0
+
+        # When
+        result = runner.invoke(
+            app,
+            [
+                "person",
+                "alice",
+                "--org",
+                "acme",
+                "--grain",
+                "month",
+                "--output-dir",
+                str(tmp_path),
+                "--format",
+                "json",
+                "--repo",
+                "api",
+                "--include-org-trends",
+            ],
+        )
+
+        # Then
+        assert result.exit_code == 0
+        payload = json.loads(result.stdout)
+        assert payload["org_monthly_trend_rows"][0]["pull_requests"] == 1
+        assert payload["org_monthly_trend_rows"][0]["active_authors"] == 1
+        assert payload["org_monthly_trend_rows"][0]["changed_lines"] == 25
+        assert payload["org_monthly_trend_rows"][0]["review_submissions"] == 0
+        assert payload["repository_rows"][0]["repository_full_name"] == "acme/api"
 
     def test_applies_distribution_percentile_to_person_latency_metrics(
         self,

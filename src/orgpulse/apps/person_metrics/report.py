@@ -109,14 +109,16 @@ def _html_report_payload(
     payload = result.model_dump(mode="json")
     payload.pop("source_manifest_path", None)
     payload.pop("output_dir", None)
+    if not result.include_org_trends:
+        payload.pop("include_org_trends", None)
+        payload.pop("org_weekly_trend_rows", None)
+        payload.pop("org_monthly_trend_rows", None)
     return payload
 
 
 def _template_environment() -> Environment:
     environment = Environment(
-        loader=FileSystemLoader(
-            str(Path(__file__).resolve().parents[2] / "templates")
-        ),
+        loader=FileSystemLoader(str(Path(__file__).resolve().parents[2] / "templates")),
         autoescape=select_autoescape(["html", "html.j2", "xml"]),
     )
     environment.filters["intfmt"] = _format_integer

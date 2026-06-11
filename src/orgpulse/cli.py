@@ -439,6 +439,13 @@ def person_command(
             help="Exclude a repository from person metrics. May be provided multiple times.",
         ),
     ] = None,
+    include_org_trends: Annotated[
+        bool,
+        typer.Option(
+            "--include-org-trends",
+            help="Include scoped org-wide weekly and monthly trend rows in person outputs.",
+        ),
+    ] = False,
     export_format: Annotated[
         PersonExportFormat | None,
         typer.Option(
@@ -462,6 +469,7 @@ def person_command(
             export_format=export_format,
             include_repos=include_repos,
             exclude_repos=exclude_repos,
+            include_org_trends=include_org_trends,
         )
     except (ValidationError, ValueError) as exc:
         typer.echo(f"orgpulse: invalid person metrics configuration\n{exc}", err=True)
@@ -830,9 +838,7 @@ def _resolve_dashboard_source(
 
 def _validate_dashboard_distribution_percentile(value: int) -> None:
     if value not in {95, 99, 100}:
-        raise ValueError(
-            "distribution percentile must be one of 95, 99, or 100"
-        )
+        raise ValueError("distribution percentile must be one of 95, 99, or 100")
 
 
 def main() -> None:

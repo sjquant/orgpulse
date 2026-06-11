@@ -1142,6 +1142,16 @@ class TestPersonCommand:
                     additions=30,
                     deletions=10,
                 ),
+                pull_request_factory(
+                    repository_full_name="acme/mobile",
+                    number=37,
+                    title="Carol mobile rewrite",
+                    author_login="carol",
+                    created_at=datetime.fromisoformat("2026-04-16T09:00:00"),
+                    updated_at=datetime.fromisoformat("2026-04-17T10:00:00"),
+                    additions=900,
+                    deletions=100,
+                ),
             ),
             failures=(),
         )
@@ -1179,6 +1189,8 @@ class TestPersonCommand:
                 str(tmp_path),
                 "--format",
                 "json",
+                "--distribution-percentile",
+                "95",
                 "--include-org-trends",
             ],
         )
@@ -1195,6 +1207,8 @@ class TestPersonCommand:
                 str(tmp_path),
                 "--format",
                 "markdown",
+                "--distribution-percentile",
+                "95",
                 "--include-org-trends",
             ],
         )
@@ -1211,6 +1225,8 @@ class TestPersonCommand:
                 str(tmp_path),
                 "--format",
                 "html",
+                "--distribution-percentile",
+                "95",
                 "--include-org-trends",
             ],
         )
@@ -1220,16 +1236,20 @@ class TestPersonCommand:
         payload = json.loads(json_result.stdout)
         assert payload["include_org_trends"] is True
         assert payload["org_monthly_trend_rows"][0]["period_key"] == "2026-04"
-        assert payload["org_monthly_trend_rows"][0]["pull_requests"] == 2
-        assert payload["org_monthly_trend_rows"][0]["active_authors"] == 2
+        assert payload["org_monthly_trend_rows"][0]["pull_requests"] == 3
+        assert payload["org_monthly_trend_rows"][0]["active_authors"] == 3
         assert payload["org_monthly_trend_rows"][0]["changed_lines"] == 65
+        assert (
+            payload["org_monthly_trend_rows"][0]["changed_lines_per_active_author"]
+            == 21.67
+        )
         assert payload["org_monthly_trend_rows"][0]["review_submissions"] == 1
         assert payload["org_weekly_trend_rows"][0]["period_key"] == "2026-W14"
         assert markdown_result.exit_code == 0
         assert "## Org Trends" in markdown_result.stdout
         assert "### Weekly" in markdown_result.stdout
         assert "### Monthly" in markdown_result.stdout
-        assert "| 2026-04 | 2 | 0 | 2 | 2 | 65 | 1 | 32.5 | 1 |" in (
+        assert "| 2026-04 | 3 | 0 | 3 | 3 | 65 | 1 | 21.67 | 1 |" in (
             markdown_result.stdout
         )
         assert html_result.exit_code == 0
@@ -1245,7 +1265,8 @@ class TestPersonCommand:
         )
         assert report_payload_match is not None
         report_payload = json.loads(report_payload_match.group(1))
-        assert report_payload["org_monthly_trend_rows"][0]["pull_requests"] == 2
+        assert report_payload["org_monthly_trend_rows"][0]["pull_requests"] == 3
+        assert report_payload["org_monthly_trend_rows"][0]["changed_lines"] == 65
         assert report_payload["org_weekly_trend_rows"][0]["period_key"] == "2026-W14"
 
     def test_applies_repo_filters_to_person_org_trends(
@@ -1285,6 +1306,16 @@ class TestPersonCommand:
                     additions=30,
                     deletions=10,
                 ),
+                pull_request_factory(
+                    repository_full_name="acme/api",
+                    number=38,
+                    title="Alice future API work",
+                    author_login="alice",
+                    created_at=datetime.fromisoformat("2026-05-02T09:00:00"),
+                    updated_at=datetime.fromisoformat("2026-05-03T10:00:00"),
+                    additions=200,
+                    deletions=50,
+                ),
             ),
             failures=(),
         )
@@ -1322,6 +1353,10 @@ class TestPersonCommand:
                 str(tmp_path),
                 "--format",
                 "json",
+                "--since",
+                "2026-04-01",
+                "--until",
+                "2026-04-30",
                 "--repo",
                 "api",
                 "--include-org-trends",
@@ -1335,6 +1370,9 @@ class TestPersonCommand:
         assert payload["org_monthly_trend_rows"][0]["active_authors"] == 1
         assert payload["org_monthly_trend_rows"][0]["changed_lines"] == 25
         assert payload["org_monthly_trend_rows"][0]["review_submissions"] == 0
+        assert [row["period_key"] for row in payload["org_monthly_trend_rows"]] == [
+            "2026-04"
+        ]
         assert payload["repository_rows"][0]["repository_full_name"] == "acme/api"
 
     def test_applies_distribution_percentile_to_person_latency_metrics(

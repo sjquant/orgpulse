@@ -21,6 +21,7 @@ from pydantic import (
 from orgpulse.common.config import get_settings
 from orgpulse.common.distribution import (
     trim_upper_tail,
+    upper_percentile_threshold,
     validate_distribution_percentile,
 )
 from orgpulse.common.models import (
@@ -307,6 +308,26 @@ class PersonMetricsResult(BaseModel):
     export_format: PersonExportFormat
     include_org_trends: bool = False
 
+    @model_validator(mode="after")
+    def validate_org_trend_rows(self) -> "PersonMetricsResult":
+        if self.include_org_trends:
+            if (
+                self.org_weekly_trend_rows is None
+                or self.org_monthly_trend_rows is None
+            ):
+                raise ValueError(
+                    "org trend rows are required when include_org_trends is true"
+                )
+            return self
+        if (
+            self.org_weekly_trend_rows is not None
+            or self.org_monthly_trend_rows is not None
+        ):
+            raise ValueError(
+                "org trend rows must be omitted when include_org_trends is false"
+            )
+        return self
+
 
 class PersonMetricsService:
     """Build a focused person performance extract from normalized local snapshots."""
@@ -327,7 +348,6 @@ class PersonMetricsService:
             config,
             snapshot.pull_requests,
         )
-        org_pull_requests = self._org_pull_requests(config, pull_requests)
         authored_pull_requests = self._authored_pull_requests(config, pull_requests)
         review_submissions = self._review_submissions(config, pull_requests)
         period_rows = self._period_rows(
@@ -353,6 +373,12 @@ class PersonMetricsService:
             source_as_of=source.manifest.last_successful_run.as_of,
             authored_pull_requests=authored_pull_requests,
             review_submissions=review_submissions,
+        )
+        org_weekly_trend_rows, org_monthly_trend_rows = self._org_trend_result_rows(
+            config=config,
+            periods=snapshot.periods,
+            source_as_of=source.manifest.last_successful_run.as_of,
+            pull_requests=pull_requests,
         )
         repository_rows = self._repository_rows(
             config=config,
@@ -380,31 +406,40 @@ class PersonMetricsService:
             period_rows=period_rows,
             weekly_period_rows=weekly_period_rows,
             monthly_period_rows=monthly_period_rows,
-            org_weekly_trend_rows=(
-                self._org_trend_rows(
-                    config=config,
-                    grain=PeriodGrain.WEEK,
-                    periods=snapshot.periods,
-                    source_as_of=source.manifest.last_successful_run.as_of,
-                    pull_requests=org_pull_requests,
-                )
-                if config.include_org_trends
-                else None
-            ),
-            org_monthly_trend_rows=(
-                self._org_trend_rows(
-                    config=config,
-                    grain=PeriodGrain.MONTH,
-                    periods=snapshot.periods,
-                    source_as_of=source.manifest.last_successful_run.as_of,
-                    pull_requests=org_pull_requests,
-                )
-                if config.include_org_trends
-                else None
-            ),
+            org_weekly_trend_rows=org_weekly_trend_rows,
+            org_monthly_trend_rows=org_monthly_trend_rows,
             repository_rows=repository_rows,
             export_format=config.export_format,
             include_org_trends=config.include_org_trends,
+        )
+
+    def _org_trend_result_rows(
+        self,
+        *,
+        config: PersonConfig,
+        periods: tuple[RawSnapshotPeriod, ...],
+        source_as_of: date,
+        pull_requests: tuple[PullRequestFact, ...],
+    ) -> tuple[tuple[OrgTrendRow, ...] | None, tuple[OrgTrendRow, ...] | None]:
+        if not config.include_org_trends:
+            return None, None
+
+        org_pull_requests = self._org_pull_requests(config, pull_requests)
+        return (
+            self._org_trend_rows(
+                config=config,
+                grain=PeriodGrain.WEEK,
+                periods=periods,
+                source_as_of=source_as_of,
+                pull_requests=org_pull_requests,
+            ),
+            self._org_trend_rows(
+                config=config,
+                grain=PeriodGrain.MONTH,
+                periods=periods,
+                source_as_of=source_as_of,
+                pull_requests=org_pull_requests,
+            ),
         )
 
     def _org_pull_requests(
@@ -445,6 +480,10 @@ class PersonMetricsService:
             source_as_of=source_as_of,
             activity_period_keys=tuple(pull_requests_by_period.keys()),
         )
+        changed_lines_threshold = self._changed_lines_threshold(
+            pull_requests,
+            distribution_percentile=config.distribution_percentile,
+        )
         return tuple(
             self._org_trend_row(
                 config=config,
@@ -452,8 +491,20 @@ class PersonMetricsService:
                 period=period,
                 source_as_of=source_as_of,
                 pull_requests=tuple(pull_requests_by_period.get(period.key, ())),
+                changed_lines_threshold=changed_lines_threshold,
             )
             for period in period_catalog
+        )
+
+    def _changed_lines_threshold(
+        self,
+        pull_requests: tuple[PullRequestFact, ...],
+        *,
+        distribution_percentile: int,
+    ) -> float | None:
+        return upper_percentile_threshold(
+            tuple(pull_request.changed_lines for pull_request in pull_requests),
+            percentile=distribution_percentile,
         )
 
     def _org_trend_row(
@@ -464,6 +515,7 @@ class PersonMetricsService:
         period: RawSnapshotPeriod,
         source_as_of: date,
         pull_requests: tuple[PullRequestFact, ...],
+        changed_lines_threshold: float | None,
     ) -> OrgTrendRow:
         period_state = build_period_state_payload(
             period_grain=grain.value,
@@ -482,8 +534,9 @@ class PersonMetricsService:
                 if pull_request.author_login is not None
             }
         )
-        changed_lines = sum(
-            pull_request.changed_lines for pull_request in pull_requests
+        changed_lines = self._trimmed_changed_lines(
+            pull_requests,
+            threshold=changed_lines_threshold,
         )
         return OrgTrendRow(
             period_key=period.key,
@@ -541,6 +594,18 @@ class PersonMetricsService:
                 ),
                 distribution_percentile=config.distribution_percentile,
             ),
+        )
+
+    def _trimmed_changed_lines(
+        self,
+        pull_requests: tuple[PullRequestFact, ...],
+        *,
+        threshold: float | None,
+    ) -> int:
+        return sum(
+            pull_request.changed_lines
+            for pull_request in pull_requests
+            if threshold is None or pull_request.changed_lines <= threshold
         )
 
     def _review_month_count(

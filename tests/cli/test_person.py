@@ -1246,6 +1246,12 @@ class TestPersonCommand:
         assert html_result.exit_code == 0
         assert 'class="chart-card org-chart-card"' in html_result.stdout
         assert 'class="chart-card person-trend-card"' in html_result.stdout
+        assert 'class="tab-strip primary-tabs" id="org-trend-metric-tabs"' in (
+            html_result.stdout
+        )
+        assert 'class="tab-strip secondary-tabs" id="org-trend-grain-tabs"' in (
+            html_result.stdout
+        )
         assert 'id="org-trend-chart-root"' in html_result.stdout
         assert 'id="org-trend-chart-readout"' in html_result.stdout
         assert 'data-org-trend-metric="pull_requests"' in html_result.stdout

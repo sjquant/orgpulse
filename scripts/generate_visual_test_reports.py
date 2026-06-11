@@ -162,6 +162,7 @@ def _write_person_report(
         until=date.fromisoformat(str(demo["until"])),
         distribution_percentile=int(demo["distribution_percentile"]),
         export_format=PersonExportFormat.HTML,
+        include_org_trends=True,
     )
     result = PersonMetricsService().extract(config)
     person_path = report_dir / f"{config.login}-person-report.html"

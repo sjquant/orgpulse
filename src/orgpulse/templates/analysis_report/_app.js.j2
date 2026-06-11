@@ -4,7 +4,7 @@
     const viewCatalog = {
       period: { label: t("analysis.period"), data: report.views.period },
       repository: { label: t("common.repository"), data: report.views.repository },
-      author: { label: t("common.author", "Author"), data: report.views.author }
+      author: { label: t("common.author"), data: report.views.author }
     };
     const state = {
       view: report.initial_view,
@@ -155,7 +155,7 @@
     function summaryCard(title, value, meta, period = null) {
       const isPartial = Boolean(period?.is_partial);
       const badge = isPartial
-        ? `<span class="period-badge">${periodStatusText(period)} · ${i18n.locale === "ko" ? "관측일" : "observed through"} ${period.observed_through_date}</span>`
+        ? `<span class="period-badge">${periodStatusText(period)} · ${t("common.observed_through")} ${period.observed_through_date}</span>`
         : "";
       return `
         <article class="summary-card ${isPartial ? "partial-period" : ""}">
@@ -177,9 +177,9 @@
       const diagnostics = selectedPeriod.diagnostics;
       diagnosticsRoot.innerHTML = `
         <div class="diagnostic-grid">
-          ${diagnosticCard(t("analysis.same_period_created", "Same-period created"), formatValue(diagnostics.same_period_created_ratio, "percent"), `${formatValue(diagnostics.same_period_created_count, "int")} ${metricLabel("pull_request_count")}`, "good")}
-          ${diagnosticCard(t("analysis.older_pr_ratio", "Older PR ratio"), formatValue(diagnostics.older_pull_request_ratio, "percent"), i18n.locale === "ko" ? `${formatValue(diagnostics.older_pull_request_count, "int")}개가 이 기간으로 이월` : `${formatValue(diagnostics.older_pull_request_count, "int")} carried into this period`, "warn")}
-          ${diagnosticCard(t("common.period_state"), periodStatusText(selectedPeriod), `${i18n.locale === "ko" ? "관측일" : "Observed through"} ${selectedPeriod.observed_through_date}`, selectedPeriod.is_partial ? "warn" : "good")}
+          ${diagnosticCard(t("analysis.same_period_created"), formatValue(diagnostics.same_period_created_ratio, "percent"), `${formatValue(diagnostics.same_period_created_count, "int")} ${metricLabel("pull_request_count")}`, "good")}
+          ${diagnosticCard(t("analysis.older_pr_ratio"), formatValue(diagnostics.older_pull_request_ratio, "percent"), i18n.locale === "ko" ? `${formatValue(diagnostics.older_pull_request_count, "int")}개가 이 기간으로 이월` : `${formatValue(diagnostics.older_pull_request_count, "int")} carried into this period`, "warn")}
+          ${diagnosticCard(t("common.period_state"), periodStatusText(selectedPeriod), `${t("common.observed_through")} ${selectedPeriod.observed_through_date}`, selectedPeriod.is_partial ? "warn" : "good")}
         </div>
         <div class="table-stack">
           ${renderMiniTable(i18n.locale === "ko" ? "상위 기여 저장소" : "Top contributing repositories", diagnostics.top_contributing_repositories, [
@@ -447,12 +447,18 @@
 
     function periodStatusText(period) {
       if (!period) {
-        return "unknown period";
+        return t("common.no_period_data");
       }
-      if (period.state_label) {
-        return period.state_label;
+      if (period.open_week) {
+        return t("common.open_week");
       }
-      return period.status || "closed";
+      if (period.open_month) {
+        return t("common.open_month");
+      }
+      if (period.is_partial) {
+        return t("common.partial_period");
+      }
+      return period.state_label || t("common.closed_period");
     }
 
     function renderEmptyState(message) {

@@ -194,11 +194,11 @@
           });
           const remaining = Math.max(0, items.length - visibleCount);
           if (remaining === 0) {
-            button.textContent = `Collapse ${label}`;
+            button.textContent = t("common.collapse");
             button.setAttribute("aria-expanded", "true");
             return;
           }
-          button.textContent = `Show ${Math.min(chunkSize, remaining)} more ${label}`;
+          button.textContent = i18n.locale === "ko" ? `${Math.min(chunkSize, remaining)}개 ${t("common.show_more_rows")}` : `Show ${Math.min(chunkSize, remaining)} more ${label}`;
           button.setAttribute("aria-expanded", String(visibleCount > 0));
         }
       }
@@ -597,9 +597,24 @@
           return t("common.open_month");
         }
         if (row.is_partial) {
-          return row.label || t("common.partial_period");
+          return t("common.partial_period");
         }
-        return row.label || t("common.closed_period");
+        return localizedPeriodLabel(row.label);
+      }
+
+      function localizedPeriodLabel(label) {
+        if (i18n.locale !== "ko") {
+          return label || t("common.closed_period");
+        }
+        return {
+          "open week": t("common.open_week"),
+          "open month": t("common.open_month"),
+          "partial period": t("common.partial_period"),
+          "closed week": t("common.closed_week"),
+          "closed month": t("common.closed_month"),
+          "closed window": t("common.closed_window"),
+          "closed period": t("common.closed_period"),
+        }[label] || t("common.closed_period");
       }
 
       function t(key) {

@@ -260,11 +260,11 @@
       peopleRankingToggle.classList.toggle("hidden", totalCount <= peopleRankingChunkSize);
       const remaining = Math.max(0, totalCount - visiblePeopleCount);
       if (remaining === 0) {
-        peopleRankingToggle.textContent = "Collapse people";
+        peopleRankingToggle.textContent = t("common.collapse");
         peopleRankingToggle.setAttribute("aria-expanded", "true");
         return;
       }
-      peopleRankingToggle.textContent = `Show ${Math.min(peopleRankingChunkSize, remaining)} more people`;
+      peopleRankingToggle.textContent = i18n.locale === "ko" ? `${Math.min(peopleRankingChunkSize, remaining)}명 ${t("common.show_more_people")}` : `Show ${Math.min(peopleRankingChunkSize, remaining)} more people`;
       peopleRankingToggle.setAttribute("aria-expanded", String(visiblePeopleCount > peopleRankingChunkSize));
     }
 
@@ -340,11 +340,11 @@
         });
         const remaining = Math.max(0, items.length - visibleCount);
         if (remaining === 0) {
-          button.textContent = `Collapse ${label}`;
+          button.textContent = t("common.collapse");
           button.setAttribute("aria-expanded", "true");
           return;
         }
-        button.textContent = `Show ${Math.min(chunkSize, remaining)} more ${label}`;
+        button.textContent = i18n.locale === "ko" ? `${Math.min(chunkSize, remaining)}개 ${t("common.show_more_rows")}` : `Show ${Math.min(chunkSize, remaining)} more ${label}`;
         button.setAttribute("aria-expanded", String(visibleCount > 0));
       }
     }
@@ -827,19 +827,7 @@
     }
 
     function metricLabel(metric) {
-      const labels = {
-        pull_requests: i18n.metrics.pull_requests?.label,
-        pull_requests_reviewed: i18n.metrics.pull_requests_reviewed?.label,
-        review_submissions_given: i18n.metrics.review_submissions_given?.label,
-        reviewed_lines: i18n.metrics.reviewed_lines?.label,
-        pull_requests_per_active_author: i18n.metrics.pull_requests_per_active_author?.label,
-        changed_lines: i18n.metrics.changed_lines?.label,
-        changed_lines_per_active_author: i18n.metrics.changed_lines_per_active_author?.label,
-        median_approval_hours: i18n.metrics.median_approval_hours?.label,
-        median_first_review_hours: i18n.metrics.median_first_review_hours?.label,
-        median_merge_hours: i18n.metrics.median_merge_hours?.label,
-      };
-      return labels[metric] || metric;
+      return i18n.metrics[metric]?.label || metric;
     }
 
     function displayLabel(label) {

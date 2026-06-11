@@ -31,6 +31,7 @@ from orgpulse.libs.reporting.contracts import (
 from orgpulse.libs.reporting.i18n import (
     metric_description,
     metric_text,
+    period_state_text,
     report_i18n_json,
     report_text,
     resolve_report_locale,
@@ -111,53 +112,53 @@ def build_analysis_report_payload(
         identity_builder=lambda metric: _author_identity(metric.author_login),
         distribution_percentile=distribution_percentile,
     )
-    return AnalysisReportPayload.model_validate({
-        "target_org": target_org,
-        "grain": grain,
-        "time_anchor": time_anchor,
-        "time_anchor_context": build_time_anchor_context(
-            time_anchor
-        ).model_dump(mode="json"),
-        "initial_view": initial_view,
-        "default_top_n": default_top_n,
-        "since": None if since is None else since.isoformat(),
-        "until": None if until is None else until.isoformat(),
-        "distribution_percentile": distribution_percentile,
-        "matched_pull_request_count": matched_pull_request_count,
-        "default_period_key": (
-            period_reports[-1]["key"] if period_reports else ""
-        ),
-        "periods": period_reports,
-        "views": {
-            "period": {
-                "default_metric": "pull_request_count",
-                "metrics": _period_metric_definitions(time_anchor),
-                "periods": [
-                    {
-                        "key": period_report["key"],
-                        "label": period_report["label"],
-                        "start_date": period_report["start_date"],
-                        "end_date": period_report["end_date"],
-                        "closed": period_report["closed"],
-                        "status": period_report["status"],
-                        "state_label": period_report["state_label"],
-                        "is_open": period_report["is_open"],
-                        "is_closed": period_report["is_closed"],
-                        "is_partial": period_report["is_partial"],
-                        "observed_through_date": period_report[
-                            "observed_through_date"
-                        ],
-                        "open_week": period_report["open_week"],
-                        "open_month": period_report["open_month"],
-                        "values": period_report["values"],
-                    }
-                    for period_report in period_reports
-                ],
+    return AnalysisReportPayload.model_validate(
+        {
+            "target_org": target_org,
+            "grain": grain,
+            "time_anchor": time_anchor,
+            "time_anchor_context": build_time_anchor_context(time_anchor).model_dump(
+                mode="json"
+            ),
+            "initial_view": initial_view,
+            "default_top_n": default_top_n,
+            "since": None if since is None else since.isoformat(),
+            "until": None if until is None else until.isoformat(),
+            "distribution_percentile": distribution_percentile,
+            "matched_pull_request_count": matched_pull_request_count,
+            "default_period_key": (period_reports[-1]["key"] if period_reports else ""),
+            "periods": period_reports,
+            "views": {
+                "period": {
+                    "default_metric": "pull_request_count",
+                    "metrics": _period_metric_definitions(time_anchor),
+                    "periods": [
+                        {
+                            "key": period_report["key"],
+                            "label": period_report["label"],
+                            "start_date": period_report["start_date"],
+                            "end_date": period_report["end_date"],
+                            "closed": period_report["closed"],
+                            "status": period_report["status"],
+                            "state_label": period_report["state_label"],
+                            "is_open": period_report["is_open"],
+                            "is_closed": period_report["is_closed"],
+                            "is_partial": period_report["is_partial"],
+                            "observed_through_date": period_report[
+                                "observed_through_date"
+                            ],
+                            "open_week": period_report["open_week"],
+                            "open_month": period_report["open_month"],
+                            "values": period_report["values"],
+                        }
+                        for period_report in period_reports
+                    ],
+                },
+                "repository": repository_view,
+                "author": author_view,
             },
-            "repository": repository_view,
-            "author": author_view,
-        },
-    })
+        }
+    )
 
 
 def build_organization_report_payload(
@@ -180,8 +181,7 @@ def build_organization_report_payload(
         until=None,
         distribution_percentile=100,
         matched_pull_request_count=sum(
-            len(period.pull_request_metrics)
-            for period in pull_request_metrics.periods
+            len(period.pull_request_metrics) for period in pull_request_metrics.periods
         ),
         filtered_metrics=tuple(
             metric
@@ -594,8 +594,8 @@ def _build_entity_view(
     identity_builder,
     distribution_percentile: int,
 ) -> dict[str, object]:
-    entities_by_period: dict[str, dict[str, list[PullRequestMetricRecord]]] = defaultdict(
-        lambda: defaultdict(list)
+    entities_by_period: dict[str, dict[str, list[PullRequestMetricRecord]]] = (
+        defaultdict(lambda: defaultdict(list))
     )
     entity_metrics: dict[str, list[PullRequestMetricRecord]] = defaultdict(list)
     entity_labels: dict[str, str] = {}
@@ -803,6 +803,13 @@ def _localized_analysis_payload(
     locale: ReportLocale,
 ) -> dict[str, object]:
     payload = report_payload.model_dump(mode="json")
+    for period in payload.get("periods", []):
+        if not isinstance(period, dict):
+            continue
+        period["state_label"] = period_state_text(locale, period)
+        diagnostics = period.get("diagnostics")
+        if isinstance(diagnostics, dict):
+            diagnostics["period_state_label"] = period["state_label"]
     for view in payload.get("views", {}).values():
         if not isinstance(view, dict):
             continue

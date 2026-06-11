@@ -308,7 +308,7 @@ class PersonMetricsResult(BaseModel):
     org_monthly_trend_rows: tuple[OrgTrendRow, ...] | None = None
     repository_rows: tuple[PersonRepositoryRow, ...]
     export_format: PersonExportFormat
-    locale: ReportLocale = ReportLocale.EN
+    locale: ReportLocale = Field(default=ReportLocale.EN, exclude=True)
     include_org_trends: bool = False
 
     @model_validator(mode="after")

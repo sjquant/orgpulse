@@ -17,7 +17,7 @@
             <p class="eyebrow">{{ t("person.eyebrow") }}</p>
             <h1>{{ result.login }} {{ t("person.heading_suffix") }}</h1>
             <p class="subtitle">
-              Authored pull request metrics use {{ result.time_anchor.value }}.
+              {{ t("person.authored_anchor_prefix") }} {{ result.time_anchor.value }}.
               {{ t("person.subtitle_suffix") }}
             </p>
           </div>
@@ -58,7 +58,7 @@
           </div>
           <div class="meta-box">
             <span class="meta-label">{{ t("common.distribution_cutoff") }}</span>
-            <span class="meta-value">{{ result.distribution_percentile }}th percentile</span>
+            <span class="meta-value">{{ result.distribution_percentile }}{{ t("common.percentile") }}</span>
           </div>
         </div>
       </div>
@@ -68,22 +68,22 @@
       <article class="stat-card">
         <span class="stat-label">{{ metric_label("authored_pull_request_count") }}</span>
         <div class="stat-value">{{ summary.authored_pull_request_count | intfmt }}</div>
-        <div class="stat-subvalue">{{ summary.merged_pull_request_count | intfmt }} merged / {{ summary.open_pull_request_count | intfmt }} open</div>
+        <div class="stat-subvalue">{{ summary.merged_pull_request_count | intfmt }} {{ t("metric.merged") }} / {{ summary.open_pull_request_count | intfmt }} {{ t("metric.open") }}</div>
       </article>
       <article class="stat-card">
         <span class="stat-label">{{ metric_label("merge_rate_pct") }}</span>
         <div class="stat-value">{{ summary.merge_rate_pct | pctfmt }}</div>
-        <div class="stat-subvalue">{{ summary.median_merge_hours | duration }} median merge time</div>
+        <div class="stat-subvalue">{{ summary.median_merge_hours | duration }} {{ t("metric.median_merge_time") }}</div>
       </article>
       <article class="stat-card">
         <span class="stat-label">{{ metric_label("review_coverage_pct") }}</span>
         <div class="stat-value">{{ summary.review_coverage_pct | pctfmt }}</div>
-        <div class="stat-subvalue">{{ summary.reviews_received | intfmt }} review submissions received</div>
+        <div class="stat-subvalue">{{ summary.reviews_received | intfmt }} {{ t("metric.review_submissions_received") }}</div>
       </article>
       <article class="stat-card">
         <span class="stat-label">{{ metric_label("pull_requests_reviewed") }}</span>
         <div class="stat-value">{{ reviewer_summary.pull_requests_reviewed | intfmt }}</div>
-        <div class="stat-subvalue">{{ reviewer_summary.review_submissions | intfmt }} review submissions / {{ reviewer_summary.pull_requests_reviewed_per_month | numfmt }} PRs per month</div>
+        <div class="stat-subvalue">{{ reviewer_summary.review_submissions | intfmt }} {{ t("metric.review_submissions") }} / {{ reviewer_summary.pull_requests_reviewed_per_month | numfmt }} {{ t("metric.prs_per_month") }}</div>
       </article>
     </section>
 
@@ -91,26 +91,26 @@
       <article class="summary-card panel">
         <span class="summary-label">{{ metric_label("changed_lines_total") }}</span>
         <strong>{{ summary.changed_lines_total | intfmt }}</strong>
-        <span>{{ summary.commits_total | intfmt }} commits across authored PRs</span>
+        <span>{{ summary.commits_total | intfmt }} {{ t("metric.commits_across_authored_prs") }}</span>
       </article>
       <article class="summary-card panel">
         <span class="summary-label">{{ metric_label("median_approval_hours") }}</span>
         <strong>{{ summary.median_approval_hours | duration }}</strong>
-        <span>median time to final approval on authored PRs</span>
+        <span>{{ t("metric.median_approval_time") }}</span>
       </article>
       <article class="summary-card panel">
         <span class="summary-label">{{ metric_label("review_submissions_given") }}</span>
-        <strong>{{ reviewer_summary.approvals | intfmt }} approvals</strong>
-        <span>{{ reviewer_summary.changes_requested | intfmt }} changes requested / {{ reviewer_summary.comments | intfmt }} comments</span>
+        <strong>{{ reviewer_summary.approvals | intfmt }} {{ t("metric.approvals") }}</strong>
+        <span>{{ reviewer_summary.changes_requested | intfmt }} {{ t("metric.changes_requested") }} / {{ reviewer_summary.comments | intfmt }} {{ t("metric.comments") }}</span>
       </article>
       <article class="summary-card panel">
         <span class="summary-label">{{ metric_label("reviewed_lines") }}</span>
         <strong>{{ reviewer_summary.reviewed_lines | intfmt }}</strong>
-        <span>{{ reviewer_summary.reviewed_lines_per_month | numfmt }} lines / month</span>
+        <span>{{ reviewer_summary.reviewed_lines_per_month | numfmt }} {{ t("metric.lines_per_month") }}</span>
       </article>
     </section>
 
-    <nav class="section-nav" aria-label="Report sections">
+    <nav class="section-nav" aria-label="{{ t("common.report_sections") }}">
       <a href="#charts">{{ t("common.charts") }}</a>
       <a href="#cadences">{{ t("common.weekly") }} / {{ t("common.monthly") }}</a>
       <a href="#repositories">{{ t("common.repositories") }}</a>
@@ -123,7 +123,7 @@
           <div>
             <p class="section-kicker">{{ t("common.trends") }}</p>
             <h2>{{ t("common.weekly") }} / {{ t("common.monthly") }}</h2>
-            <p class="section-copy">Metric and grain tabs use the same local source data as the extract table.</p>
+            <p class="section-copy">{{ t("person.chart_copy") }}</p>
           </div>
         </div>
         {% if result.include_org_trends %}
@@ -133,7 +133,7 @@
             <h3>{{ t("common.organization") }} {{ t("common.trends") }}</h3>
           </div>
           <div class="two-col">
-            <div class="tab-strip primary-tabs" id="org-trend-metric-tabs" role="tablist" aria-label="Org trend metric">
+            <div class="tab-strip primary-tabs" id="org-trend-metric-tabs" role="tablist" aria-label="{{ t("common.organization") }} {{ t("analysis.metric") }}">
               <button type="button" class="tab-button active" data-org-trend-metric="pull_requests" aria-selected="true" title="{{ metric_description("pull_requests") }}">{{ metric_text("pull_requests") }}</button>
               <button type="button" class="tab-button" data-org-trend-metric="pull_requests_per_active_author" aria-selected="false" title="{{ metric_description("pull_requests_per_active_author") }}">{{ metric_text("pull_requests_per_active_author") }}</button>
               <button type="button" class="tab-button" data-org-trend-metric="changed_lines" aria-selected="false" title="{{ metric_description("changed_lines") }}">{{ metric_text("changed_lines") }}</button>
@@ -142,7 +142,7 @@
               <button type="button" class="tab-button" data-org-trend-metric="median_first_review_hours" aria-selected="false" title="{{ metric_description("median_first_review_hours") }}">{{ metric_text("median_first_review_hours") }}</button>
               <button type="button" class="tab-button" data-org-trend-metric="median_merge_hours" aria-selected="false" title="{{ metric_description("median_merge_hours") }}">{{ metric_text("median_merge_hours") }}</button>
             </div>
-            <div class="tab-strip secondary-tabs" id="org-trend-grain-tabs" role="tablist" aria-label="Org trend grain">
+            <div class="tab-strip secondary-tabs" id="org-trend-grain-tabs" role="tablist" aria-label="{{ t("common.organization") }} {{ t("common.source_grain") }}">
               <button type="button" class="tab-button active" data-org-trend-grain="weekly" aria-selected="true">{{ t("common.weekly") }}</button>
               <button type="button" class="tab-button" data-org-trend-grain="monthly" aria-selected="false">{{ t("common.monthly") }}</button>
             </div>
@@ -164,7 +164,7 @@
             <h3>{{ result.login }} {{ t("common.trends") }}</h3>
           </div>
           <div class="two-col">
-            <div class="tab-strip primary-tabs" id="person-trend-metric-tabs" role="tablist" aria-label="Trend metric">
+            <div class="tab-strip primary-tabs" id="person-trend-metric-tabs" role="tablist" aria-label="{{ t("analysis.metric") }}">
               <button type="button" class="tab-button active" data-person-trend-metric="authored_pull_request_count" aria-selected="true" title="{{ metric_description("authored_pull_request_count") }}">{{ metric_text("authored_pull_request_count") }}</button>
               <button type="button" class="tab-button" data-person-trend-metric="review_submissions_given" aria-selected="false" title="{{ metric_description("review_submissions_given") }}">{{ metric_text("review_submissions_given") }}</button>
               <button type="button" class="tab-button" data-person-trend-metric="pull_requests_reviewed" aria-selected="false" title="{{ metric_description("pull_requests_reviewed") }}">{{ metric_text("pull_requests_reviewed") }}</button>
@@ -175,7 +175,7 @@
               <button type="button" class="tab-button" data-person-trend-metric="changed_lines_total" aria-selected="false" title="{{ metric_description("changed_lines_total") }}">{{ metric_text("changed_lines_total") }}</button>
               <button type="button" class="tab-button" data-person-trend-metric="commits_total" aria-selected="false" title="{{ metric_description("commits_total") }}">{{ metric_text("commits_total") }}</button>
             </div>
-            <div class="tab-strip secondary-tabs" id="person-trend-grain-tabs" role="tablist" aria-label="Trend grain">
+            <div class="tab-strip secondary-tabs" id="person-trend-grain-tabs" role="tablist" aria-label="{{ t("common.source_grain") }}">
               <button type="button" class="tab-button active" data-person-trend-grain="weekly" aria-selected="true">{{ t("common.weekly") }}</button>
               <button type="button" class="tab-button" data-person-trend-grain="monthly" aria-selected="false">{{ t("common.monthly") }}</button>
             </div>
@@ -197,9 +197,9 @@
           <div>
             <p class="section-kicker">{{ t("common.weekly") }} / {{ t("common.monthly") }}</p>
             <h2>{{ t("common.weekly") }} / {{ t("common.monthly") }}</h2>
-            <p class="section-copy">Both cadences are available in HTML so review and author movement can be compared without rerunning the extract.</p>
+            <p class="section-copy">{{ t("person.cadence_copy") }}</p>
           </div>
-          <div class="tab-strip secondary-tabs" id="person-cadence-tabs" role="tablist" aria-label="Report cadence">
+          <div class="tab-strip secondary-tabs" id="person-cadence-tabs" role="tablist" aria-label="{{ t("common.report_cadence") }}">
             <button type="button" class="tab-button active" id="person-cadence-weekly-tab" role="tab" data-person-cadence="weekly" aria-controls="person-cadence-weekly" aria-selected="true">{{ t("common.weekly") }}</button>
             <button type="button" class="tab-button" id="person-cadence-monthly-tab" role="tab" data-person-cadence="monthly" aria-controls="person-cadence-monthly" aria-selected="false">{{ t("common.monthly") }}</button>
           </div>
@@ -225,7 +225,7 @@
                   <tr>
                     <td data-label="{{ t("common.week") }}">{{ row.period_key }}</td>
                     <td data-label="{{ t("common.state") }}">
-                      <span class="period-state-pill{% if row.is_open or row.is_partial %} open{% endif %}">{{ row.label }}</span>
+                      <span class="period-state-pill{% if row.is_open or row.is_partial %} open{% endif %}">{{ period_state(row) }}</span>
                     </td>
                     <td class="num" data-label="{{ metric_text("authored_pull_request_count") }}">{{ row.authored_pull_request_count | intfmt }}</td>
                     <td class="num" data-label="{{ metric_text("review_submissions_given") }}">{{ row.review_submissions_given | intfmt }}</td>
@@ -241,7 +241,7 @@
                   <tr>
                     <td data-label="{{ t("common.week") }}">{{ row.period_key }}</td>
                     <td data-label="{{ t("common.state") }}">
-                      <span class="period-state-pill{% if row.is_open or row.is_partial %} open{% endif %}">{{ row.label }}</span>
+                      <span class="period-state-pill{% if row.is_open or row.is_partial %} open{% endif %}">{{ period_state(row) }}</span>
                     </td>
                     <td class="num" data-label="{{ metric_text("authored_pull_request_count") }}">{{ row.authored_pull_request_count | intfmt }}</td>
                     <td class="num" data-label="{{ metric_text("review_submissions_given") }}">{{ row.review_submissions_given | intfmt }}</td>
@@ -257,7 +257,7 @@
             {% if weekly_period_rows_older %}
             <div class="table-footer">
               <button type="button" id="weekly-period-toggle" class="ghost-button" aria-expanded="false">
-                Show {{ [progressive_chunk_size, weekly_period_rows_older|length]|min }} more weekly rows
+                {% if locale == "ko" %}{{ t("common.show_more_rows") }}{% else %}Show {{ [progressive_chunk_size, weekly_period_rows_older|length]|min }} more weekly rows{% endif %}
               </button>
             </div>
             {% endif %}
@@ -282,7 +282,7 @@
                   <tr>
                     <td data-label="{{ t("common.month") }}">{{ row.period_key }}</td>
                     <td data-label="{{ t("common.state") }}">
-                      <span class="period-state-pill{% if row.is_open or row.is_partial %} open{% endif %}">{{ row.label }}</span>
+                      <span class="period-state-pill{% if row.is_open or row.is_partial %} open{% endif %}">{{ period_state(row) }}</span>
                     </td>
                     <td class="num" data-label="{{ metric_text("authored_pull_request_count") }}">{{ row.authored_pull_request_count | intfmt }}</td>
                     <td class="num" data-label="{{ metric_text("review_submissions_given") }}">{{ row.review_submissions_given | intfmt }}</td>
@@ -298,7 +298,7 @@
                   <tr>
                     <td data-label="{{ t("common.month") }}">{{ row.period_key }}</td>
                     <td data-label="{{ t("common.state") }}">
-                      <span class="period-state-pill{% if row.is_open or row.is_partial %} open{% endif %}">{{ row.label }}</span>
+                      <span class="period-state-pill{% if row.is_open or row.is_partial %} open{% endif %}">{{ period_state(row) }}</span>
                     </td>
                     <td class="num" data-label="{{ metric_text("authored_pull_request_count") }}">{{ row.authored_pull_request_count | intfmt }}</td>
                     <td class="num" data-label="{{ metric_text("review_submissions_given") }}">{{ row.review_submissions_given | intfmt }}</td>
@@ -314,7 +314,7 @@
             {% if monthly_period_rows_older %}
             <div class="table-footer">
               <button type="button" id="monthly-period-toggle" class="ghost-button" aria-expanded="false">
-                Show {{ [progressive_chunk_size, monthly_period_rows_older|length]|min }} more monthly rows
+                {% if locale == "ko" %}{{ t("common.show_more_rows") }}{% else %}Show {{ [progressive_chunk_size, monthly_period_rows_older|length]|min }} more monthly rows{% endif %}
               </button>
             </div>
             {% endif %}
@@ -327,15 +327,15 @@
           <div>
             <p class="section-kicker">{{ t("common.repositories") }}</p>
             <h2>{{ repository_total_count | intfmt }} {{ t("common.repositories") }}</h2>
-            <p class="section-copy">Top repositories are ranked by authored PR count, then review activity and code volume.</p>
+            <p class="section-copy">{{ t("person.repository_copy") }}</p>
           </div>
         </div>
         <div class="repository-focus-grid">
           {% for row in top_repository_rows %}
           <article class="repository-focus-card">
             <strong>{{ row.repository_full_name }}</strong>
-            <span>{{ row.authored_pull_request_count | intfmt }} authored PRs / {{ row.review_submissions_given | intfmt }} reviews given</span>
-            <span>{{ row.changed_lines_total | intfmt }} changed / {{ row.reviewed_lines | intfmt }} reviewed lines</span>
+            <span>{{ row.authored_pull_request_count | intfmt }} {{ t("metric.authored_prs") }} / {{ row.review_submissions_given | intfmt }} {{ t("metric.reviews_given") }}</span>
+            <span>{{ row.changed_lines_total | intfmt }} {{ t("metric.changed_lines") }} / {{ row.reviewed_lines | intfmt }} {{ t("metric.reviewed_lines") }}</span>
           </article>
           {% endfor %}
         </div>
@@ -397,7 +397,7 @@
         {% if repository_rest_rows %}
         <div class="table-footer">
           <button type="button" id="repository-toggle" class="ghost-button" aria-expanded="false">
-            Show {{ [progressive_chunk_size, repository_rest_rows|length]|min }} more repositories
+            {% if locale == "ko" %}{{ t("common.show_more_repositories") }}{% else %}Show {{ [progressive_chunk_size, repository_rest_rows|length]|min }} more repositories{% endif %}
           </button>
         </div>
         {% endif %}

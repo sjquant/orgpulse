@@ -110,6 +110,7 @@ class TestAnalyzeCommand:
         assert payload["grouping"] == "period"
         assert payload["grain"] == "month"
         assert payload["time_anchor"] == "created_at"
+        assert "locale" not in payload
         assert payload["matched_pull_request_count"] == 2
         assert len(payload["rows"]) == 1
         row = payload["rows"][0]
@@ -825,12 +826,16 @@ class TestAnalyzeCommand:
         )
         assert ko_payload_match is not None
         ko_payload = json.loads(ko_payload_match.group(1))
+        assert "작성자" in ko_result.stdout
+        assert "같은 기간에 생성됨" in ko_result.stdout
+        assert "이전 PR 비율" in ko_result.stdout
         assert ko_payload["views"]["period"]["metrics"][0]["label"] == (
             "풀 리퀘스트 (pull_request.updated_at)"
         )
         assert ko_payload["views"]["period"]["metrics"][0]["description"] == (
             "선택한 보고 기간에 집계된 풀 리퀘스트 수입니다."
         )
+        assert ko_payload["periods"][0]["state_label"] == "열린 월"
         assert payload["matched_pull_request_count"] == 3
         assert payload["periods"][0]["open_month"] is True
         assert payload["periods"][0]["open_week"] is False

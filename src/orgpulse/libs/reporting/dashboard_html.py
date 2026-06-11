@@ -42,6 +42,7 @@ from orgpulse.libs.reporting.i18n import (
     metric_description,
     metric_label_html,
     metric_text,
+    period_state_text,
     report_i18n_json,
     report_text,
     resolve_report_locale,
@@ -138,6 +139,7 @@ def render_dashboard_html(
             key,
             fallback=fallback,
         ),
+        period_state=lambda row: period_state_text(resolved_locale, row),
         report_i18n_json=report_i18n_json(resolved_locale),
         overview=prepared_payload.overview,
         authors=prepared_payload.authors,
@@ -220,7 +222,9 @@ def prepare_dashboard_payload(
         normalized_payload["size_buckets"]
     ).model_dump(mode="json")
     normalized_payload["default_author"] = (
-        normalized_payload["authors"][0]["author_login"] if normalized_payload["authors"] else None
+        normalized_payload["authors"][0]["author_login"]
+        if normalized_payload["authors"]
+        else None
     )
     normalized_payload["author_details_json"] = _build_author_details_json(
         authors=normalized_payload["authors"],
@@ -382,13 +386,17 @@ def _attach_dashboard_slices(payload: dict[str, Any]) -> None:
     payload["reviewers_rest"] = payload["reviewers"][LEADERBOARD_LIMIT:]
     payload["repositories_top"] = payload["repositories"][:LEADERBOARD_LIMIT]
     payload["repositories_rest"] = payload["repositories"][LEADERBOARD_LIMIT:]
-    payload["weekly_trends_recent"], payload["weekly_trends_older"] = _split_recent_rows(
-        payload["weekly_trends"],
-        recent_count=WEEKLY_RECENT_TREND_COUNT,
+    payload["weekly_trends_recent"], payload["weekly_trends_older"] = (
+        _split_recent_rows(
+            payload["weekly_trends"],
+            recent_count=WEEKLY_RECENT_TREND_COUNT,
+        )
     )
-    payload["monthly_trends_recent"], payload["monthly_trends_older"] = _split_recent_rows(
-        payload["monthly_trends"],
-        recent_count=MONTHLY_RECENT_TREND_COUNT,
+    payload["monthly_trends_recent"], payload["monthly_trends_older"] = (
+        _split_recent_rows(
+            payload["monthly_trends"],
+            recent_count=MONTHLY_RECENT_TREND_COUNT,
+        )
     )
 
 
@@ -498,7 +506,11 @@ def _build_overview(
         "average_changed_lines_per_pr": _round(changed_lines["average"]),
         "review_coverage_pct": _round(
             (
-                sum(1 for pull_request in pull_requests if pull_request["review_count"] > 0)
+                sum(
+                    1
+                    for pull_request in pull_requests
+                    if pull_request["review_count"] > 0
+                )
                 / len(pull_requests)
                 * 100
             )
@@ -536,7 +548,9 @@ def _build_overview(
         "open_week": source_as_of < _week_end(until),
         "open_week_key": _week_key(until) if source_as_of < _week_end(until) else None,
         "open_month": source_as_of < _month_end(until),
-        "open_month_key": until.strftime("%Y-%m") if source_as_of < _month_end(until) else None,
+        "open_month_key": until.strftime("%Y-%m")
+        if source_as_of < _month_end(until)
+        else None,
         "distribution_percentile": distribution_percentile,
     }
 
@@ -565,7 +579,11 @@ def _build_author_rows(
     ]
     return sorted(
         rows,
-        key=lambda row: (-row["pull_requests"], -row["changed_lines"], row["author_login"]),
+        key=lambda row: (
+            -row["pull_requests"],
+            -row["changed_lines"],
+            row["author_login"],
+        ),
     )
 
 
@@ -932,7 +950,8 @@ def _build_author_details(
         author_pull_requests = grouped.get(author_login, [])
         reviewer = reviewer_by_login.get(author_login, {})
         repository_counter = Counter(
-            str(pull_request["repository_full_name"]) for pull_request in author_pull_requests
+            str(pull_request["repository_full_name"])
+            for pull_request in author_pull_requests
         )
         size_counter = Counter(
             str(pull_request["size_bucket"]) for pull_request in author_pull_requests
@@ -984,14 +1003,14 @@ def _build_author_details(
                     else None
                 ),
                 "review_submissions_given": int(reviewer.get("review_submissions", 0)),
-                "pull_requests_reviewed": int(reviewer.get("pull_requests_reviewed", 0)),
+                "pull_requests_reviewed": int(
+                    reviewer.get("pull_requests_reviewed", 0)
+                ),
                 "reviewed_lines": int(reviewer.get("reviewed_lines", 0)),
                 "pull_requests_reviewed_per_month": reviewer.get(
                     "pull_requests_reviewed_per_month"
                 ),
-                "reviewed_lines_per_month": reviewer.get(
-                    "reviewed_lines_per_month"
-                ),
+                "reviewed_lines_per_month": reviewer.get("reviewed_lines_per_month"),
                 "approvals_given": int(reviewer.get("approvals", 0)),
                 "changes_requested_given": int(reviewer.get("changes_requested", 0)),
                 "review_comments_given": int(reviewer.get("comments", 0)),
@@ -1192,7 +1211,9 @@ def _build_author_size_mix_rows(
                 "bucket": bucket,
                 "pull_requests": pull_request_count,
                 "changed_lines": _as_int(changed_lines["total"]),
-                "median_first_review_hours": _round(_median_or_none(first_review_values)),
+                "median_first_review_hours": _round(
+                    _median_or_none(first_review_values)
+                ),
                 "median_approval_hours": _round(_median_or_none(approval_values)),
                 "median_merge_hours": _round(_median_or_none(merge_values)),
                 "average_reviews_per_pr": _round(
@@ -1369,8 +1390,12 @@ def _build_size_diagnostic(
                 "to compare latency by bucket."
             ),
         )
-    slowest_row = max(rows_with_latency, key=lambda row: row["median_first_review_hours"])
-    fastest_row = min(rows_with_latency, key=lambda row: row["median_first_review_hours"])
+    slowest_row = max(
+        rows_with_latency, key=lambda row: row["median_first_review_hours"]
+    )
+    fastest_row = min(
+        rows_with_latency, key=lambda row: row["median_first_review_hours"]
+    )
     gap = None
     if (
         slowest_row["median_first_review_hours"] is not None
@@ -1513,7 +1538,9 @@ def _group_pull_requests_by_period(
 def _merged_pull_request_count(
     pull_requests: list[dict[str, Any]],
 ) -> int:
-    return sum(1 for pull_request in pull_requests if pull_request["merged_at"] is not None)
+    return sum(
+        1 for pull_request in pull_requests if pull_request["merged_at"] is not None
+    )
 
 
 def _open_pull_request_count(
@@ -1542,7 +1569,11 @@ def _unique_value_count(
     *,
     include_empty: bool = True,
 ) -> int:
-    values = {str(pull_request[key]) for pull_request in pull_requests if include_empty or pull_request[key]}
+    values = {
+        str(pull_request[key])
+        for pull_request in pull_requests
+        if include_empty or pull_request[key]
+    }
     return len(values)
 
 
@@ -1567,9 +1598,7 @@ def _build_distribution_thresholds(
             if pull_request[metric_key] is not None
         ]
         if distribution_percentile == 100:
-            thresholds[metric_key] = (
-                max(values) if values else None
-            )
+            thresholds[metric_key] = max(values) if values else None
             continue
         thresholds[metric_key] = upper_percentile_threshold(
             values,
@@ -1677,9 +1706,7 @@ def _as_int(value: int | float | None) -> int:
 
 def _template_environment(locale: ReportLocale) -> Environment:
     environment = Environment(
-        loader=FileSystemLoader(
-            str(Path(__file__).resolve().parents[2] / "templates")
-        ),
+        loader=FileSystemLoader(str(Path(__file__).resolve().parents[2] / "templates")),
         autoescape=select_autoescape(["html", "html.j2", "xml"]),
     )
     environment.filters["intfmt"] = lambda value: format_integer(value, locale)

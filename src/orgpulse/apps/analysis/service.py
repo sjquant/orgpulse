@@ -143,7 +143,7 @@ class AnalysisResult(BaseModel):
     matched_pull_request_count: int
     rows: tuple[AnalysisRow, ...]
     export_format: AnalysisExportFormat
-    locale: ReportLocale = ReportLocale.EN
+    locale: ReportLocale = Field(default=ReportLocale.EN, exclude=True)
     report_payload: AnalysisReportPayload | None = Field(default=None, exclude=True)
 
 

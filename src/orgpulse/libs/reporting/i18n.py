@@ -13,7 +13,7 @@ def resolve_report_locale(locale: ReportLocale | str | None = None) -> ReportLoc
     """Resolve an explicit or environment-backed report locale."""
 
     if locale is None:
-        return get_settings().locale
+        return ReportLocale(get_settings().locale)
     return ReportLocale(locale)
 
 
@@ -235,6 +235,8 @@ _STATIC: dict[ReportLocale, dict[str, str]] = {
         "common.source_grain": "Source grain",
         "common.distribution_cutoff": "Distribution cutoff",
         "common.percentile": "percentile",
+        "common.anchor": "Anchor",
+        "common.generated": "Generated",
         "common.open_period_label": "Open period",
         "common.closed_window": "closed window",
         "common.weekly": "Weekly",
@@ -385,6 +387,8 @@ _STATIC: dict[ReportLocale, dict[str, str]] = {
         "common.source_grain": "소스 단위",
         "common.distribution_cutoff": "분포 절단값",
         "common.percentile": "퍼센타일",
+        "common.anchor": "기준",
+        "common.generated": "생성 시각",
         "common.open_period_label": "열린 기간",
         "common.closed_window": "닫힌 기간",
         "common.weekly": "주간",

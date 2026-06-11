@@ -1316,16 +1316,21 @@ def build_person_config(
     """Build person metric settings from CLI inputs and application defaults."""
 
     settings = get_settings()
+    resolved_export_format = (
+        PersonExportFormat.JSON if export_format is None else export_format
+    )
     payload: dict[str, object] = {
         "org": settings.org if org is None else org,
         "login": login,
         "output_dir": settings.output_dir if output_dir is None else output_dir,
         "grain": PeriodGrain.MONTH if grain is None else grain,
         "time_anchor": settings.time_anchor if time_anchor is None else time_anchor,
-        "export_format": (
-            PersonExportFormat.JSON if export_format is None else export_format
+        "export_format": resolved_export_format,
+        "locale": (
+            (settings.locale if locale is None else locale)
+            if resolved_export_format is PersonExportFormat.HTML
+            else ReportLocale.EN
         ),
-        "locale": settings.locale if locale is None else locale,
         "include_org_trends": include_org_trends,
     }
     if since is not None:

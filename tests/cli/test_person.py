@@ -126,6 +126,7 @@ class TestPersonCommand:
         # Then
         assert result.exit_code == 0
         payload = json.loads(result.stdout)
+        assert "locale" not in payload
         assert payload["target_org"] == "acme"
         assert payload["login"] == "ALICE"
         assert payload["summary"] == {
@@ -183,6 +184,29 @@ class TestPersonCommand:
                 "status": "closed",
             }
         ]
+        get_settings.cache_clear()
+        invalid_locale_result = runner.invoke(
+            app,
+            [
+                "person",
+                "--org",
+                "acme",
+                "--login",
+                "ALICE",
+                "--since",
+                "2026-04-01",
+                "--until",
+                "2026-04-30",
+                "--output-dir",
+                str(tmp_path),
+                "--format",
+                "json",
+            ],
+            env={"ORGPULSE_LOCALE": "bad-locale"},
+        )
+        assert invalid_locale_result.exit_code == 0
+        assert "locale" not in json.loads(invalid_locale_result.stdout)
+        get_settings.cache_clear()
 
     def test_counts_approval_time_only_when_final_external_decision_is_approved(
         self,
@@ -1044,6 +1068,7 @@ class TestPersonCommand:
         assert 'data-person-trend-metric="changed_lines_total"' in html_result.stdout
         assert 'data-person-trend-metric="commits_total"' in html_result.stdout
         assert "Yellow band = open period" in html_result.stdout
+        assert "100th percentile" in html_result.stdout
         get_settings.cache_clear()
         env_locale_result = runner.invoke(
             app,
@@ -1085,6 +1110,8 @@ class TestPersonCommand:
         assert "머지됨 /" in env_locale_result.stdout
         assert "받은 리뷰 제출" in env_locale_result.stdout
         assert "중앙값 머지 시간" in env_locale_result.stdout
+        assert "100퍼센타일" in env_locale_result.stdout
+        assert "100percentile" not in override_locale_result.stdout
         assert "review submissions received" not in env_locale_result.stdout
         assert "PRs per month" not in env_locale_result.stdout
         assert override_locale_result.exit_code == 0

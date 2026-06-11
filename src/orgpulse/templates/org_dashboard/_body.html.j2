@@ -594,18 +594,18 @@
           </details>
 
           <details class="disclosure">
-            <summary>Methodology</summary>
+            <summary>{{ t("common.methodology") }}</summary>
             <div class="methodology-grid">
               <div class="meta-box">
-                <span class="meta-label">Anchor</span>
+                <span class="meta-label">{{ t("common.anchor") }}</span>
                 <span class="meta-value">{{ methodology.anchor }}</span>
               </div>
               <div class="meta-box">
-                <span class="meta-label">Distribution cutoff</span>
-                <span class="meta-value">{{ methodology.distribution_percentile }}th percentile</span>
+                <span class="meta-label">{{ t("common.distribution_cutoff") }}</span>
+                <span class="meta-value">{% if locale == "ko" %}{{ methodology.distribution_percentile }}{{ t("common.percentile") }}{% else %}{{ methodology.distribution_percentile }}th {{ t("common.percentile") }}{% endif %}</span>
               </div>
               <div class="meta-box">
-                <span class="meta-label">Generated</span>
+                <span class="meta-label">{{ t("common.generated") }}</span>
                 <span class="meta-value">{{ methodology.generated_at }}</span>
               </div>
             </div>

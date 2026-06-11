@@ -38,7 +38,7 @@ class AppSettings(BaseSettings):
     time_anchor: TimeAnchor = TimeAnchor.CREATED_AT
     mode: RunMode = RunMode.INCREMENTAL
     output_dir: Path = Field(default_factory=lambda: Path("output"))
-    locale: ReportLocale = ReportLocale.EN
+    locale: str = ReportLocale.EN.value
 
 
 @cache

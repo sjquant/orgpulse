@@ -530,16 +530,21 @@ def build_analysis_config(
     """
 
     settings = get_settings()
+    resolved_export_format = (
+        AnalysisExportFormat.JSON if export_format is None else export_format
+    )
     payload: dict[str, object] = {
         "org": settings.org if org is None else org,
         "output_dir": settings.output_dir if output_dir is None else output_dir,
         "grain": settings.period if grain is None else grain,
         "time_anchor": settings.time_anchor if time_anchor is None else time_anchor,
         "grouping": (AnalysisGrouping.PERIOD if grouping is None else grouping),
-        "export_format": (
-            AnalysisExportFormat.JSON if export_format is None else export_format
+        "export_format": resolved_export_format,
+        "locale": (
+            (settings.locale if locale is None else locale)
+            if resolved_export_format is AnalysisExportFormat.HTML
+            else ReportLocale.EN
         ),
-        "locale": settings.locale if locale is None else locale,
     }
     if top_n is not None:
         payload["top_n"] = top_n

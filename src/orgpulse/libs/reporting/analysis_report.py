@@ -810,6 +810,11 @@ def _localized_analysis_payload(
         diagnostics = period.get("diagnostics")
         if isinstance(diagnostics, dict):
             diagnostics["period_state_label"] = period["state_label"]
+    period_view = payload.get("views", {}).get("period")
+    if isinstance(period_view, dict):
+        for period in period_view.get("periods", []):
+            if isinstance(period, dict):
+                period["state_label"] = period_state_text(locale, period)
     for view in payload.get("views", {}).values():
         if not isinstance(view, dict):
             continue

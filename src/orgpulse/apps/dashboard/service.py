@@ -212,7 +212,7 @@ def generate_dashboard_report(
             distribution_percentile=distribution_percentile,
             locale=locale,
         )
-    except ValidationError as exc:
+    except (ValidationError, ValueError) as exc:
         raise RuntimeError(f"dashboard payload validation failed: {exc}") from exc
 
 

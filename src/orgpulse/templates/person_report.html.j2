@@ -58,7 +58,7 @@
           </div>
           <div class="meta-box">
             <span class="meta-label">{{ t("common.distribution_cutoff") }}</span>
-            <span class="meta-value">{{ result.distribution_percentile }}{{ t("common.percentile") }}</span>
+            <span class="meta-value">{% if locale == "ko" %}{{ result.distribution_percentile }}{{ t("common.percentile") }}{% else %}{{ result.distribution_percentile }}th {{ t("common.percentile") }}{% endif %}</span>
           </div>
         </div>
       </div>

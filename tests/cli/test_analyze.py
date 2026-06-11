@@ -128,6 +128,31 @@ class TestAnalyzeCommand:
         assert row["time_to_first_review_count"] == 0
         assert row["time_to_merge_count"] == 1
         assert row["time_to_merge_average_seconds"] == 183600.0
+        get_settings.cache_clear()
+        invalid_locale_result = runner.invoke(
+            app,
+            [
+                "analyze",
+                "--org",
+                "acme",
+                "--grain",
+                "month",
+                "--group-by",
+                "period",
+                "--since",
+                "2026-04-01",
+                "--until",
+                "2026-04-30",
+                "--output-dir",
+                str(tmp_path),
+                "--format",
+                "json",
+            ],
+            env={"ORGPULSE_LOCALE": "bad-locale"},
+        )
+        assert invalid_locale_result.exit_code == 0
+        assert "locale" not in json.loads(invalid_locale_result.stdout)
+        get_settings.cache_clear()
 
     def test_writes_repository_analysis_as_csv(
         self,
@@ -836,6 +861,7 @@ class TestAnalyzeCommand:
             "선택한 보고 기간에 집계된 풀 리퀘스트 수입니다."
         )
         assert ko_payload["periods"][0]["state_label"] == "열린 월"
+        assert ko_payload["views"]["period"]["periods"][0]["state_label"] == "열린 월"
         assert payload["matched_pull_request_count"] == 3
         assert payload["periods"][0]["open_month"] is True
         assert payload["periods"][0]["open_week"] is False

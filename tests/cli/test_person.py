@@ -1244,6 +1244,8 @@ class TestPersonCommand:
             markdown_result.stdout
         )
         assert html_result.exit_code == 0
+        assert 'class="chart-card org-chart-card"' in html_result.stdout
+        assert 'class="chart-card person-trend-card"' in html_result.stdout
         assert 'id="org-trend-chart-root"' in html_result.stdout
         assert 'id="org-trend-chart-readout"' in html_result.stdout
         assert 'data-org-trend-metric="pull_requests"' in html_result.stdout

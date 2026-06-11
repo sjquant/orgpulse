@@ -127,7 +127,7 @@
           </div>
         </div>
         {% if result.include_org_trends %}
-        <div class="person-chart-grid">
+        <article class="chart-card org-chart-card">
           <div>
             <p class="section-kicker">Org Context</p>
             <h3>Organization trend</h3>
@@ -156,26 +156,30 @@
           </div>
           <div id="org-trend-chart-readout" class="chart-readout"></div>
           <div id="org-trend-chart-root" class="chart-root"></div>
-        </div>
+        </article>
         {% endif %}
-        <div class="two-col">
-          <div class="tab-strip primary-tabs" id="person-trend-metric-tabs" role="tablist" aria-label="Trend metric">
-            <button type="button" class="tab-button active" data-person-trend-metric="authored_pull_request_count" aria-selected="true">Authored PRs</button>
-            <button type="button" class="tab-button" data-person-trend-metric="review_submissions_given" aria-selected="false">Reviews given</button>
-            <button type="button" class="tab-button" data-person-trend-metric="pull_requests_reviewed" aria-selected="false">PRs reviewed</button>
-            <button type="button" class="tab-button" data-person-trend-metric="reviewed_lines" aria-selected="false">Reviewed lines</button>
-            <button type="button" class="tab-button" data-person-trend-metric="median_merge_hours" aria-selected="false">Merge time</button>
-            <button type="button" class="tab-button" data-person-trend-metric="median_first_review_hours" aria-selected="false">First review</button>
-            <button type="button" class="tab-button" data-person-trend-metric="median_approval_hours" aria-selected="false">Approval</button>
-            <button type="button" class="tab-button" data-person-trend-metric="changed_lines_total" aria-selected="false">Changed lines</button>
-            <button type="button" class="tab-button" data-person-trend-metric="commits_total" aria-selected="false">Commits</button>
+        <article class="chart-card person-trend-card">
+          <div>
+            <p class="section-kicker">Person Focus</p>
+            <h3>{{ result.login }} trend</h3>
           </div>
-          <div class="tab-strip secondary-tabs" id="person-trend-grain-tabs" role="tablist" aria-label="Trend grain">
-            <button type="button" class="tab-button active" data-person-trend-grain="weekly" aria-selected="true">Weekly</button>
-            <button type="button" class="tab-button" data-person-trend-grain="monthly" aria-selected="false">Monthly</button>
+          <div class="two-col">
+            <div class="tab-strip primary-tabs" id="person-trend-metric-tabs" role="tablist" aria-label="Trend metric">
+              <button type="button" class="tab-button active" data-person-trend-metric="authored_pull_request_count" aria-selected="true">Authored PRs</button>
+              <button type="button" class="tab-button" data-person-trend-metric="review_submissions_given" aria-selected="false">Reviews given</button>
+              <button type="button" class="tab-button" data-person-trend-metric="pull_requests_reviewed" aria-selected="false">PRs reviewed</button>
+              <button type="button" class="tab-button" data-person-trend-metric="reviewed_lines" aria-selected="false">Reviewed lines</button>
+              <button type="button" class="tab-button" data-person-trend-metric="median_merge_hours" aria-selected="false">Merge time</button>
+              <button type="button" class="tab-button" data-person-trend-metric="median_first_review_hours" aria-selected="false">First review</button>
+              <button type="button" class="tab-button" data-person-trend-metric="median_approval_hours" aria-selected="false">Approval</button>
+              <button type="button" class="tab-button" data-person-trend-metric="changed_lines_total" aria-selected="false">Changed lines</button>
+              <button type="button" class="tab-button" data-person-trend-metric="commits_total" aria-selected="false">Commits</button>
+            </div>
+            <div class="tab-strip secondary-tabs" id="person-trend-grain-tabs" role="tablist" aria-label="Trend grain">
+              <button type="button" class="tab-button active" data-person-trend-grain="weekly" aria-selected="true">Weekly</button>
+              <button type="button" class="tab-button" data-person-trend-grain="monthly" aria-selected="false">Monthly</button>
+            </div>
           </div>
-        </div>
-        <div class="person-chart-grid">
           <div class="chart-title">
             <span id="person-trend-chart-title">Person trend</span>
             <div class="chart-legend">
@@ -185,7 +189,7 @@
           </div>
           <div id="person-trend-chart-readout" class="chart-readout"></div>
           <div id="person-trend-chart-root" class="chart-root"></div>
-        </div>
+        </article>
       </section>
 
       <section id="cadences" class="panel section-panel">

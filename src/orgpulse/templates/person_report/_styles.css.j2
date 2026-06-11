@@ -74,6 +74,28 @@
       gap: 14px;
     }
 
+    .person-report .chart-panel {
+      display: grid;
+      gap: 16px;
+    }
+
+    .person-report .chart-card {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr);
+      gap: 14px;
+      min-width: 0;
+      border: 1px solid var(--line);
+      border-radius: var(--radius-control);
+      padding: 16px;
+      background: var(--panel-subtle);
+    }
+
+    .person-report .chart-card h3 {
+      margin: 0;
+      font-family: var(--font-display);
+      font-size: 1.05rem;
+    }
+
     .person-report .person-chart-toolbar {
       display: flex;
       justify-content: space-between;

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+
 # ruff: noqa: F403,F405
 from ..helpers.cli import *
 
@@ -121,9 +123,11 @@ class TestDashboardCommand:
         assert "24시간 이내" in ko_html
         assert "머지됨 /" in ko_html
         assert "저장소 리더보드" in ko_html
-        assert "방법론" in ko_html
-        assert "분포 절단값" in ko_html
-        assert "100퍼센타일" in ko_html
+        assert "<summary>작성자 원장</summary>" not in ko_html
+        assert "<summary>방법론</summary>" not in ko_html
+        assert '<span class="meta-label">분포 절단값</span>' not in ko_html
+        assert "100퍼센타일" not in ko_html
+        assert not re.search(r'class="tab-button[^"]*"[^>]*\sdata-tooltip=', ko_html)
         assert "열린 월" in ko_html or "닫힌 기간" in ko_html
         assert "stale open PRs" not in ko_html
         assert "total review submissions" not in ko_html

@@ -124,13 +124,13 @@
         <p class="section-copy">{{ t("dashboard.trend_surface_copy") }}</p>
         <div class="two-col">
           <div class="tab-strip primary-tabs" id="trend-metric-tabs">
-            <button type="button" class="tab-button active" data-metric="pull_requests" aria-selected="true" data-tooltip="{{ metric_description("pull_requests") }}">{{ metric_text("pull_requests") }}</button>
-            <button type="button" class="tab-button" data-metric="pull_requests_per_active_author" aria-selected="false" data-tooltip="{{ metric_description("pull_requests_per_active_author") }}">{{ metric_text("pull_requests_per_active_author") }}</button>
-            <button type="button" class="tab-button" data-metric="changed_lines" aria-selected="false" data-tooltip="{{ metric_description("changed_lines") }}">{{ metric_text("changed_lines") }}</button>
-            <button type="button" class="tab-button" data-metric="changed_lines_per_active_author" aria-selected="false" data-tooltip="{{ metric_description("changed_lines_per_active_author") }}">{{ metric_text("changed_lines_per_active_author") }}</button>
-            <button type="button" class="tab-button" data-metric="median_approval_hours" aria-selected="false" data-tooltip="{{ metric_description("median_approval_hours") }}">{{ metric_text("median_approval_hours") }}</button>
-            <button type="button" class="tab-button" data-metric="median_first_review_hours" aria-selected="false" data-tooltip="{{ metric_description("median_first_review_hours") }}">{{ metric_text("median_first_review_hours") }}</button>
-            <button type="button" class="tab-button" data-metric="median_merge_hours" aria-selected="false" data-tooltip="{{ metric_description("median_merge_hours") }}">{{ metric_text("median_merge_hours") }}</button>
+            <button type="button" class="tab-button active" data-metric="pull_requests" aria-selected="true">{{ metric_text("pull_requests") }}</button>
+            <button type="button" class="tab-button" data-metric="pull_requests_per_active_author" aria-selected="false">{{ metric_text("pull_requests_per_active_author") }}</button>
+            <button type="button" class="tab-button" data-metric="changed_lines" aria-selected="false">{{ metric_text("changed_lines") }}</button>
+            <button type="button" class="tab-button" data-metric="changed_lines_per_active_author" aria-selected="false">{{ metric_text("changed_lines_per_active_author") }}</button>
+            <button type="button" class="tab-button" data-metric="median_approval_hours" aria-selected="false">{{ metric_text("median_approval_hours") }}</button>
+            <button type="button" class="tab-button" data-metric="median_first_review_hours" aria-selected="false">{{ metric_text("median_first_review_hours") }}</button>
+            <button type="button" class="tab-button" data-metric="median_merge_hours" aria-selected="false">{{ metric_text("median_merge_hours") }}</button>
           </div>
           <div class="tab-strip secondary-tabs" id="trend-grain-tabs">
             <button type="button" class="tab-button active" data-grain="weekly" aria-selected="true">{{ t("common.weekly") }}</button>
@@ -169,13 +169,13 @@
         <div class="people-grid">
           <div class="people-ranking-controls">
             <div class="tab-strip primary-tabs" id="people-metric-tabs" role="tablist" aria-label="{{ t("dashboard.people_ranking_metric") }}">
-              <button type="button" class="tab-button active" data-people-metric="pull_requests" aria-selected="true" data-tooltip="{{ metric_description("pull_requests") }}">{{ metric_text("pull_requests") }}</button>
-              <button type="button" class="tab-button" data-people-metric="changed_lines" aria-selected="false" data-tooltip="{{ metric_description("changed_lines") }}">{{ metric_text("changed_lines") }}</button>
-              <button type="button" class="tab-button" data-people-metric="pull_requests_reviewed" aria-selected="false" data-tooltip="{{ metric_description("pull_requests_reviewed") }}">{{ metric_text("pull_requests_reviewed") }}</button>
-              <button type="button" class="tab-button" data-people-metric="reviewed_lines" aria-selected="false" data-tooltip="{{ metric_description("reviewed_lines") }}">{{ metric_text("reviewed_lines") }}</button>
-              <button type="button" class="tab-button" data-people-metric="median_approval_hours" aria-selected="false" data-tooltip="{{ metric_description("median_approval_hours") }}">{{ metric_text("median_approval_hours") }}</button>
-              <button type="button" class="tab-button" data-people-metric="median_first_review_hours" aria-selected="false" data-tooltip="{{ metric_description("median_first_review_hours") }}">{{ metric_text("median_first_review_hours") }}</button>
-              <button type="button" class="tab-button" data-people-metric="median_merge_hours" aria-selected="false" data-tooltip="{{ metric_description("median_merge_hours") }}">{{ metric_text("median_merge_hours") }}</button>
+              <button type="button" class="tab-button active" data-people-metric="pull_requests" aria-selected="true">{{ metric_text("pull_requests") }}</button>
+              <button type="button" class="tab-button" data-people-metric="changed_lines" aria-selected="false">{{ metric_text("changed_lines") }}</button>
+              <button type="button" class="tab-button" data-people-metric="pull_requests_reviewed" aria-selected="false">{{ metric_text("pull_requests_reviewed") }}</button>
+              <button type="button" class="tab-button" data-people-metric="reviewed_lines" aria-selected="false">{{ metric_text("reviewed_lines") }}</button>
+              <button type="button" class="tab-button" data-people-metric="median_approval_hours" aria-selected="false">{{ metric_text("median_approval_hours") }}</button>
+              <button type="button" class="tab-button" data-people-metric="median_first_review_hours" aria-selected="false">{{ metric_text("median_first_review_hours") }}</button>
+              <button type="button" class="tab-button" data-people-metric="median_merge_hours" aria-selected="false">{{ metric_text("median_merge_hours") }}</button>
             </div>
             <div class="detail-tabs secondary-tabs" id="author-detail-grain-tabs">
               <button type="button" class="tab-button active" data-author-grain="weekly" aria-selected="true">{{ t("common.weekly") }}</button>
@@ -527,89 +527,6 @@
             </div>
           </details>
 
-          <details class="disclosure">
-            <summary>{{ t("dashboard.author_ledger") }}</summary>
-            <div class="control-row">
-              <span class="control-note">{{ t("dashboard.author_ledger_copy") }} {{ reference_summary.author_roster_coverage_pct | numfmt }}%{{ t("dashboard.authored_pr_flow_suffix") }}</span>
-            </div>
-            <div class="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th class="rank">#</th>
-                  <th>{{ t("common.author") }}</th>
-                  <th>{{ metric_text("repository_share") }}</th>
-                  <th class="num">{{ metric_text("pull_requests") }}</th>
-                  <th class="num">{{ metric_text("merged_pull_requests") }}</th>
-                  <th class="num tablet-hide">{{ metric_text("open_pull_requests") }}</th>
-                  <th class="num">{{ metric_text("changed_lines") }}</th>
-                  <th class="num tablet-hide">{{ metric_text("commits_total") }}</th>
-                  <th class="num tablet-hide">{{ metric_text("average_reviews_per_pr") }}</th>
-                  <th class="num">{{ metric_text("median_approval_hours") }}</th>
-                  <th class="num tablet-hide">{{ metric_text("median_merge_hours") }}</th>
-                  <th class="num tablet-hide">{{ metric_text("median_first_review_hours") }}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {% for row in authors %}
-                <tr>
-                  <td class="rank" data-label="#"> {{ loop.index }}</td>
-                  <td class="leader" data-label="{{ t("common.author") }}">
-                    <strong>
-                      <button
-                        type="button"
-                        class="author-button{% if default_author == row.author_login %} active{% endif %}"
-                        data-author="{{ row.author_login }}"
-                        data-author-surface="ledger"
-                        aria-pressed="{% if default_author == row.author_login %}true{% else %}false{% endif %}"
-                      >
-                        {{ row.author_login }}
-                      </button>
-                    </strong>
-                    <span>{{ row.share_of_prs_pct }}% {{ t("dashboard.org_pr_flow") }}</span>
-                  </td>
-                  <td class="bar-cell" data-label="{{ metric_text("repository_share") }}">
-                    <div class="bar-track">
-                      <div class="bar-fill" style="width: {{ row.share_of_prs_pct or 0 }}%"></div>
-                    </div>
-                    <div class="bar-meta">
-                      <span>{{ row.share_of_prs_pct }}%</span>
-                      <span>{{ row.median_changed_lines | numfmt }} {{ t("dashboard.median_lines") }}</span>
-                    </div>
-                  </td>
-                  <td class="num" data-label="{{ metric_text("pull_requests") }}">{{ row.pull_requests | intfmt }}</td>
-                  <td class="num" data-label="{{ metric_text("merged_pull_requests") }}">{{ row.merged_pull_requests | intfmt }}</td>
-                  <td class="num tablet-hide" data-label="{{ metric_text("open_pull_requests") }}">{{ row.open_pull_requests | intfmt }}</td>
-                  <td class="num" data-label="{{ metric_text("changed_lines") }}">{{ row.changed_lines | intfmt }}</td>
-                  <td class="num tablet-hide" data-label="{{ metric_text("commits_total") }}">{{ row.commits | intfmt }}</td>
-                  <td class="num tablet-hide" data-label="{{ metric_text("average_reviews_per_pr") }}">{{ row.average_reviews_per_pr | numfmt }}</td>
-                  <td class="num" data-label="{% if locale == "en" %}Median approval{% else %}{{ metric_text("median_approval_hours") }}{% endif %}">{{ row.median_approval_hours | duration }}</td>
-                  <td class="num tablet-hide" data-label="{{ metric_text("median_merge_hours") }}">{{ row.median_merge_hours | duration }}</td>
-                  <td class="num tablet-hide" data-label="{{ metric_text("median_first_review_hours") }}">{{ row.median_first_review_hours | duration }}</td>
-                </tr>
-                {% endfor %}
-              </tbody>
-            </table>
-            </div>
-          </details>
-
-          <details class="disclosure">
-            <summary>{{ t("common.methodology") }}</summary>
-            <div class="methodology-grid">
-              <div class="meta-box">
-                <span class="meta-label">{{ t("common.anchor") }}</span>
-                <span class="meta-value">{{ methodology.anchor }}</span>
-              </div>
-              <div class="meta-box">
-                <span class="meta-label">{{ t("common.distribution_cutoff") }}</span>
-                <span class="meta-value">{% if locale == "ko" %}{{ methodology.distribution_percentile }}{{ t("common.percentile") }}{% else %}{{ methodology.distribution_percentile }}th {{ t("common.percentile") }}{% endif %}</span>
-              </div>
-              <div class="meta-box">
-                <span class="meta-label">{{ t("common.generated") }}</span>
-                <span class="meta-value">{{ methodology.generated_at }}</span>
-              </div>
-            </div>
-          </details>
         </div>
       </section>
     </div>

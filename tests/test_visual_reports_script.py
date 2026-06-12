@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -47,11 +48,15 @@ def test_generates_korean_visual_testing_reports(
     assert "열린 월" in person_html or "닫힌 월" in person_html
     assert "metric-tooltip" in person_html
     assert "data-tooltip=" in person_html
+    assert not re.search(r'class="tab-button[^"]*"[^>]*\sdata-tooltip=', person_html)
     assert ".metric-tooltip::before" not in person_html
     assert '<html lang="ko">' in dashboard_html
     assert "엔지니어링 생산성 리더보드" in dashboard_html
     assert "24시간 이내" in dashboard_html
     assert "저장소 리더보드" in dashboard_html
+    assert "<summary>작성자 원장</summary>" not in dashboard_html
+    assert "<summary>방법론</summary>" not in dashboard_html
     assert "metric-tooltip" in dashboard_html
     assert "data-tooltip=" in dashboard_html
+    assert not re.search(r'class="tab-button[^"]*"[^>]*\sdata-tooltip=', dashboard_html)
     assert ".metric-tooltip::before" not in dashboard_html

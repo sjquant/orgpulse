@@ -303,16 +303,14 @@
       cursor: help;
     }
 
-    .tab-button[data-tooltip],
-    .legend-chip[data-tooltip] {
+    .legend-chip[data-tooltip]:not([data-tooltip=""]) {
       position: relative;
       z-index: 20;
       cursor: help;
     }
 
     .metric-tooltip::after,
-    .tab-button[data-tooltip]::after,
-    .legend-chip[data-tooltip]::after {
+    .legend-chip[data-tooltip]:not([data-tooltip=""])::after {
       position: absolute;
       left: 50%;
       z-index: 10000;
@@ -340,20 +338,16 @@
 
     .metric-tooltip:hover::after,
     .metric-tooltip:focus::after,
-    .tab-button[data-tooltip]:hover::after,
-    .tab-button[data-tooltip]:focus::after,
-    .legend-chip[data-tooltip]:hover::after,
-    .legend-chip[data-tooltip]:focus::after {
+    .legend-chip[data-tooltip]:not([data-tooltip=""]):hover::after,
+    .legend-chip[data-tooltip]:not([data-tooltip=""]):focus::after {
       opacity: 1;
       transform: translate(-50%, 0);
     }
 
     .metric-tooltip:hover,
     .metric-tooltip:focus,
-    .tab-button[data-tooltip]:hover,
-    .tab-button[data-tooltip]:focus,
-    .legend-chip[data-tooltip]:hover,
-    .legend-chip[data-tooltip]:focus {
+    .legend-chip[data-tooltip]:not([data-tooltip=""]):hover,
+    .legend-chip[data-tooltip]:not([data-tooltip=""]):focus {
       z-index: 10001;
     }
 

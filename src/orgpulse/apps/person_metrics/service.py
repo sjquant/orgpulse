@@ -277,9 +277,15 @@ class OrgTrendRow(BaseModel):
     open_pull_requests: int
     active_authors: int
     changed_lines: int
+    authored_pull_request_count: int
+    changed_lines_total: int
+    commits_total: int
     pull_requests_per_active_author: float | None
     changed_lines_per_active_author: float | None
     review_submissions: int
+    review_submissions_given: int
+    pull_requests_reviewed: int
+    reviewed_lines: int
     median_first_review_hours: float | None
     median_approval_hours: float | None
     median_merge_hours: float | None
@@ -429,6 +435,7 @@ class PersonMetricsService:
             return None, None
 
         org_pull_requests = self._org_pull_requests(config, pull_requests)
+        org_review_submissions = self._org_review_submissions(config, pull_requests)
         return (
             self._org_trend_rows(
                 config=config,
@@ -436,6 +443,7 @@ class PersonMetricsService:
                 periods=periods,
                 source_as_of=source_as_of,
                 pull_requests=org_pull_requests,
+                review_submissions=org_review_submissions,
             ),
             self._org_trend_rows(
                 config=config,
@@ -443,6 +451,7 @@ class PersonMetricsService:
                 periods=periods,
                 source_as_of=source_as_of,
                 pull_requests=org_pull_requests,
+                review_submissions=org_review_submissions,
             ),
         )
 
@@ -461,6 +470,39 @@ class PersonMetricsService:
             )
         )
 
+    def _org_review_submissions(
+        self,
+        config: PersonConfig,
+        pull_requests: tuple[PullRequestFact, ...],
+    ) -> tuple[ReviewFact, ...]:
+        reviews: list[ReviewFact] = []
+        for pull_request in pull_requests:
+            for review in pull_request.reviews:
+                if review.submitted_at is None:
+                    continue
+                if self._same_login(
+                    review.pull_request_author_login, review.author_login
+                ):
+                    continue
+                if not self._in_window(
+                    review.submitted_at.date(),
+                    since=config.since,
+                    until=config.until,
+                ):
+                    continue
+                reviews.append(review)
+        return tuple(
+            sorted(
+                reviews,
+                key=lambda review: (
+                    review.submitted_at or datetime.min,
+                    review.repository_full_name,
+                    review.pull_request_number,
+                    review.review_id,
+                ),
+            )
+        )
+
     def _org_trend_rows(
         self,
         *,
@@ -469,6 +511,7 @@ class PersonMetricsService:
         periods: tuple[RawSnapshotPeriod, ...],
         source_as_of: date,
         pull_requests: tuple[PullRequestFact, ...],
+        review_submissions: tuple[ReviewFact, ...],
     ) -> tuple[OrgTrendRow, ...]:
         pull_requests_by_period: dict[str, list[PullRequestFact]] = defaultdict(list)
         for pull_request in pull_requests:
@@ -477,12 +520,21 @@ class PersonMetricsService:
                     self._anchor_datetime(config.time_anchor, pull_request).date()
                 )
             ].append(pull_request)
+        reviews_by_period: dict[str, list[ReviewFact]] = defaultdict(list)
+        for review in review_submissions:
+            if review.submitted_at is not None:
+                reviews_by_period[grain.key_for(review.submitted_at.date())].append(
+                    review
+                )
         period_catalog = self._period_catalog(
             config,
             grain,
             periods,
             source_as_of=source_as_of,
-            activity_period_keys=tuple(pull_requests_by_period.keys()),
+            activity_period_keys=(
+                *pull_requests_by_period.keys(),
+                *reviews_by_period.keys(),
+            ),
         )
         changed_lines_threshold = self._changed_lines_threshold(
             pull_requests,
@@ -495,6 +547,7 @@ class PersonMetricsService:
                 period=period,
                 source_as_of=source_as_of,
                 pull_requests=tuple(pull_requests_by_period.get(period.key, ())),
+                review_submissions=tuple(reviews_by_period.get(period.key, ())),
                 changed_lines_threshold=changed_lines_threshold,
             )
             for period in period_catalog
@@ -519,6 +572,7 @@ class PersonMetricsService:
         period: RawSnapshotPeriod,
         source_as_of: date,
         pull_requests: tuple[PullRequestFact, ...],
+        review_submissions: tuple[ReviewFact, ...],
         changed_lines_threshold: float | None,
     ) -> OrgTrendRow:
         period_state = build_period_state_payload(
@@ -531,6 +585,7 @@ class PersonMetricsService:
             until=config.until,
         )
         pull_request_count = len(pull_requests)
+        review_submission_count = len(review_submissions)
         active_authors = len(
             {
                 pull_request.author_login.lower()
@@ -563,6 +618,9 @@ class PersonMetricsService:
             ),
             active_authors=active_authors,
             changed_lines=changed_lines,
+            authored_pull_request_count=pull_request_count,
+            changed_lines_total=changed_lines,
+            commits_total=sum(pull_request.commits for pull_request in pull_requests),
             pull_requests_per_active_author=_round_metric(
                 pull_request_count / active_authors if active_authors else None
             ),
@@ -572,6 +630,11 @@ class PersonMetricsService:
             review_submissions=sum(
                 self._review_count(pull_request) for pull_request in pull_requests
             ),
+            review_submissions_given=review_submission_count,
+            pull_requests_reviewed=len(
+                {self._review_pull_request_key(review) for review in review_submissions}
+            ),
+            reviewed_lines=self._reviewed_lines(review_submissions),
             median_first_review_hours=self._median_metric(
                 tuple(
                     first_review_hours

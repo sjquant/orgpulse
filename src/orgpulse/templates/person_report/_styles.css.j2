@@ -107,6 +107,35 @@
       aspect-ratio: 16 / 6;
     }
 
+    .person-report .org-comparison-dot {
+      background: color-mix(in srgb, var(--accent-2) 72%, var(--muted) 28%);
+      opacity: 0.72;
+    }
+
+    .person-report .comparison-toggle {
+      padding: 6px 9px;
+      font-size: 0.82rem;
+    }
+
+    .person-report .comparison-toggle[aria-pressed="false"] {
+      color: var(--muted);
+      border-color: var(--line);
+      background: transparent;
+    }
+
+    .person-report .org-comparison-line,
+    .person-report .org-comparison-point {
+      color: color-mix(in srgb, var(--accent-2) 72%, var(--muted) 28%);
+    }
+
+    .person-report .org-comparison-line {
+      opacity: 0.64;
+    }
+
+    .person-report .org-comparison-point {
+      opacity: 0.7;
+    }
+
     .person-report #person-trend-grain-tabs,
     .person-report #person-cadence-tabs {
       justify-content: flex-end;

@@ -347,6 +347,8 @@ _STATIC: dict[ReportLocale, dict[str, str]] = {
         "person.chart_copy": "Metric and grain tabs use the same local source data as the extract table.",
         "person.cadence_copy": "Both cadences are available in HTML so review and author movement can be compared without rerunning the extract.",
         "person.repository_copy": "Top repositories are ranked by authored PR count, then review activity and code volume.",
+        "person.show_org_comparison": "Show org comparison",
+        "person.hide_org_comparison": "Hide org comparison",
     },
     ReportLocale.KO: {
         "analysis.title": "orgpulse 분석 보고서",
@@ -494,6 +496,8 @@ _STATIC: dict[ReportLocale, dict[str, str]] = {
         "person.chart_copy": "지표 및 단위 탭은 추출 표와 같은 로컬 소스 데이터를 사용합니다.",
         "person.cadence_copy": "HTML에서 두 주기를 모두 제공하므로 추출을 다시 실행하지 않고 리뷰와 작성자 움직임을 비교할 수 있습니다.",
         "person.repository_copy": "상위 저장소는 작성한 PR 수, 리뷰 활동, 코드 규모 순으로 정렬됩니다.",
+        "person.show_org_comparison": "조직 비교 표시",
+        "person.hide_org_comparison": "조직 비교 숨기기",
     },
 }
 

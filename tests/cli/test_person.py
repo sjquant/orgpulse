@@ -1308,11 +1308,16 @@ class TestPersonCommand:
         assert payload["org_monthly_trend_rows"][0]["pull_requests"] == 3
         assert payload["org_monthly_trend_rows"][0]["active_authors"] == 3
         assert payload["org_monthly_trend_rows"][0]["changed_lines"] == 65
+        assert payload["org_monthly_trend_rows"][0]["authored_pull_request_count"] == 3
+        assert payload["org_monthly_trend_rows"][0]["changed_lines_total"] == 65
+        assert payload["org_monthly_trend_rows"][0]["commits_total"] == 3
         assert (
             payload["org_monthly_trend_rows"][0]["changed_lines_per_active_author"]
             == 21.67
         )
         assert payload["org_monthly_trend_rows"][0]["review_submissions"] == 1
+        assert payload["org_monthly_trend_rows"][0]["review_submissions_given"] == 1
+        assert payload["org_monthly_trend_rows"][0]["pull_requests_reviewed"] == 1
         assert payload["org_weekly_trend_rows"][0]["period_key"] == "2026-W14"
         assert markdown_result.exit_code == 0
         assert "## Org Trends" in markdown_result.stdout
@@ -1322,20 +1327,13 @@ class TestPersonCommand:
             markdown_result.stdout
         )
         assert html_result.exit_code == 0
-        assert 'class="chart-card org-chart-card"' in html_result.stdout
+        assert 'class="chart-card org-chart-card"' not in html_result.stdout
         assert 'class="chart-card person-trend-card"' in html_result.stdout
-        assert 'class="tab-strip primary-tabs" id="org-trend-metric-tabs"' in (
-            html_result.stdout
-        )
-        assert 'class="tab-strip secondary-tabs" id="org-trend-grain-tabs"' in (
-            html_result.stdout
-        )
-        assert 'id="org-trend-chart-root"' in html_result.stdout
-        assert 'id="org-trend-chart-readout"' in html_result.stdout
-        assert 'data-org-trend-metric="pull_requests"' in html_result.stdout
-        assert 'data-org-trend-metric="pull_requests_per_active_author"' in (
-            html_result.stdout
-        )
+        assert 'id="org-trend-chart-root"' not in html_result.stdout
+        assert 'id="org-comparison-toggle"' in html_result.stdout
+        assert 'id="org-comparison-legend"' in html_result.stdout
+        assert "org-comparison-line" in html_result.stdout
+        assert "org-comparison-point" in html_result.stdout
         report_payload_match = re.search(
             r'<script id="person-report-data" type="application/json">(.*?)</script>',
             html_result.stdout,
@@ -1344,6 +1342,13 @@ class TestPersonCommand:
         report_payload = json.loads(report_payload_match.group(1))
         assert report_payload["org_monthly_trend_rows"][0]["pull_requests"] == 3
         assert report_payload["org_monthly_trend_rows"][0]["changed_lines"] == 65
+        assert (
+            report_payload["org_monthly_trend_rows"][0]["authored_pull_request_count"]
+            == 3
+        )
+        assert (
+            report_payload["org_monthly_trend_rows"][0]["review_submissions_given"] == 1
+        )
         assert report_payload["org_weekly_trend_rows"][0]["period_key"] == "2026-W14"
 
     def test_applies_repo_filters_to_person_org_trends(

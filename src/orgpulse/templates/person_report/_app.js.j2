@@ -16,11 +16,8 @@
         weekly: Array.isArray(report.org_weekly_trend_rows) ? report.org_weekly_trend_rows : [],
         monthly: Array.isArray(report.org_monthly_trend_rows) ? report.org_monthly_trend_rows : [],
       };
-      const orgTrendMetricTabs = Array.from(document.querySelectorAll("#org-trend-metric-tabs .tab-button"));
-      const orgTrendGrainTabs = Array.from(document.querySelectorAll("#org-trend-grain-tabs .tab-button"));
-      const orgTrendChartTitle = document.getElementById("org-trend-chart-title");
-      const orgTrendChartReadout = document.getElementById("org-trend-chart-readout");
-      const orgTrendChartRoot = document.getElementById("org-trend-chart-root");
+      const orgComparisonToggle = document.getElementById("org-comparison-toggle");
+      const orgComparisonLegend = document.getElementById("org-comparison-legend");
       const trendMetricTabs = Array.from(document.querySelectorAll("#person-trend-metric-tabs .tab-button"));
       const trendGrainTabs = Array.from(document.querySelectorAll("#person-trend-grain-tabs .tab-button"));
       const cadenceTabs = Array.from(document.querySelectorAll("#person-cadence-tabs .tab-button"));
@@ -50,9 +47,7 @@
       let activeTrendGrain = report.grain === "week" ? "weekly" : "monthly";
       let activeCadence = report.grain === "week" ? "weekly" : "monthly";
       let activeTrendPointIndex = null;
-      let activeOrgTrendMetric = "pull_requests";
-      let activeOrgTrendGrain = report.grain === "week" ? "weekly" : "monthly";
-      let activeOrgTrendPointIndex = null;
+      let activeShowOrgComparison = Boolean(report.include_org_trends);
       let resizeFrameId = null;
 
       function activeTheme() {
@@ -82,37 +77,25 @@
             // Ignore localStorage failures; the current page state still updates.
           }
           syncThemeButtons();
-          renderOrgTrendChart();
           renderPersonTrendChart();
         });
       });
 
       syncThemeButtons();
-      syncOrgTrendMetricTabs();
-      syncOrgTrendGrainTabs();
       syncTrendMetricTabs();
       syncTrendGrainTabs();
       syncCadenceTabs();
+      syncOrgComparisonToggle();
       syncActiveSectionNav();
       setupSectionSpy();
-      renderOrgTrendChart();
       renderPersonTrendChart();
-      orgTrendMetricTabs.forEach(button => {
-        button.addEventListener("click", () => {
-          activeOrgTrendMetric = button.dataset.orgTrendMetric;
-          activeOrgTrendPointIndex = null;
-          syncOrgTrendMetricTabs();
-          renderOrgTrendChart();
+      if (orgComparisonToggle) {
+        orgComparisonToggle.addEventListener("click", () => {
+          activeShowOrgComparison = !activeShowOrgComparison;
+          syncOrgComparisonToggle();
+          renderPersonTrendChart();
         });
-      });
-      orgTrendGrainTabs.forEach(button => {
-        button.addEventListener("click", () => {
-          activeOrgTrendGrain = button.dataset.orgTrendGrain;
-          activeOrgTrendPointIndex = null;
-          syncOrgTrendGrainTabs();
-          renderOrgTrendChart();
-        });
-      });
+      }
       trendMetricTabs.forEach(button => {
         button.addEventListener("click", () => {
           activeTrendMetric = button.dataset.personTrendMetric;
@@ -167,7 +150,6 @@
           : (callback => window.setTimeout(callback, 16));
         resizeFrameId = scheduleFrame(() => {
           resizeFrameId = null;
-          renderOrgTrendChart();
           renderPersonTrendChart();
         });
       }
@@ -279,25 +261,9 @@
         });
       }
 
-      function syncOrgTrendMetricTabs() {
-        orgTrendMetricTabs.forEach(button => {
-          const isActive = button.dataset.orgTrendMetric === activeOrgTrendMetric;
-          button.classList.toggle("active", isActive);
-          button.setAttribute("aria-selected", String(isActive));
-        });
-      }
-
       function syncTrendGrainTabs() {
         trendGrainTabs.forEach(button => {
           const isActive = button.dataset.personTrendGrain === activeTrendGrain;
-          button.classList.toggle("active", isActive);
-          button.setAttribute("aria-selected", String(isActive));
-        });
-      }
-
-      function syncOrgTrendGrainTabs() {
-        orgTrendGrainTabs.forEach(button => {
-          const isActive = button.dataset.orgTrendGrain === activeOrgTrendGrain;
           button.classList.toggle("active", isActive);
           button.setAttribute("aria-selected", String(isActive));
         });
@@ -316,44 +282,17 @@
         });
       }
 
-      function renderOrgTrendChart() {
-        if (!orgTrendChartRoot || !orgTrendChartReadout || !orgTrendChartTitle) {
+      function syncOrgComparisonToggle() {
+        if (!orgComparisonToggle) {
           return;
         }
-        const trendRows = orgTrendSeries[activeOrgTrendGrain] || [];
-        const grainLabel = activeOrgTrendGrain === "weekly" ? "week" : "month";
-        activeOrgTrendPointIndex = clampSelectedIndex(trendRows, activeOrgTrendPointIndex, activeOrgTrendMetric);
-        orgTrendChartTitle.textContent = `${metricLabel(activeOrgTrendMetric)} by ${grainLabel}`;
-        orgTrendChartReadout.innerHTML = renderOrgTrendReadout(trendRows, activeOrgTrendMetric, activeOrgTrendPointIndex);
-        renderSeriesChart({
-          element: orgTrendChartRoot,
-          rows: trendRows,
-          metric: activeOrgTrendMetric,
-          selectedIndex: activeOrgTrendPointIndex,
-          onSelect: index => {
-            activeOrgTrendPointIndex = index;
-            renderOrgTrendChart();
-          },
-        });
-      }
-
-      function renderOrgTrendReadout(rows, metric, selectedIndex) {
-        if (!rows.length) {
-          return readoutCard(t("common.selected_period"), "-")
-            + readoutCard(metricLabel(metric), "-")
-            + readoutCard(metricLabel("pull_requests"), "-")
-            + readoutCard(metricLabel("active_authors"), "-");
+        orgComparisonToggle.setAttribute("aria-pressed", String(activeShowOrgComparison));
+        orgComparisonToggle.textContent = activeShowOrgComparison
+          ? t("person.hide_org_comparison")
+          : t("person.show_org_comparison");
+        if (orgComparisonLegend) {
+          orgComparisonLegend.classList.toggle("hidden", !activeShowOrgComparison);
         }
-        const selectedRow = rows[selectedIndex] || rows[rows.length - 1];
-        return [
-          readoutCard(t("common.selected_period"), selectedRow.period_key || "-"),
-          readoutCard(metricLabel(metric), formatMetricValue(selectedRow[metric], metric)),
-          readoutCard(metricLabel("pull_requests"), formatMetricValue(selectedRow.pull_requests, "pull_requests")),
-          readoutCard(metricLabel("active_authors"), formatMetricValue(selectedRow.active_authors, "active_authors")),
-          readoutCard(metricLabel("changed_lines"), formatMetricValue(selectedRow.changed_lines, "changed_lines")),
-          readoutCard(metricLabel("review_submissions"), formatMetricValue(selectedRow.review_submissions, "review_submissions")),
-          readoutCard(t("common.state"), periodStatusText(selectedRow)),
-        ].join("");
       }
 
       function renderPersonTrendChart() {
@@ -361,13 +300,25 @@
           return;
         }
         const trendRows = trendSeries[activeTrendGrain] || [];
+        const comparisonRows = activeShowOrgComparison ? (orgTrendSeries[activeTrendGrain] || []) : [];
         const grainLabel = activeTrendGrain === "weekly" ? "week" : "month";
-        activeTrendPointIndex = clampSelectedIndex(trendRows, activeTrendPointIndex, activeTrendMetric);
+        activeTrendPointIndex = clampSelectedIndex(
+          trendRows,
+          activeTrendPointIndex,
+          activeTrendMetric,
+          comparisonRows,
+        );
         trendChartTitle.textContent = `${metricLabel(activeTrendMetric)} by ${grainLabel}`;
-        trendChartReadout.innerHTML = renderTrendReadout(trendRows, activeTrendMetric, activeTrendPointIndex);
+        trendChartReadout.innerHTML = renderTrendReadout(
+          trendRows,
+          comparisonRows,
+          activeTrendMetric,
+          activeTrendPointIndex,
+        );
         renderSeriesChart({
           element: trendChartRoot,
           rows: trendRows,
+          comparisonRows,
           metric: activeTrendMetric,
           selectedIndex: activeTrendPointIndex,
           onSelect: index => {
@@ -377,17 +328,20 @@
         });
       }
 
-      function renderTrendReadout(rows, metric, selectedIndex) {
+      function renderTrendReadout(rows, comparisonRows, metric, selectedIndex) {
         if (!rows.length) {
           return readoutCard(t("common.selected_period"), "-")
             + readoutCard(metricLabel(metric), "-")
+            + comparisonReadoutCard(null, metric)
             + readoutCard(metricLabel("authored_pull_request_count"), "-")
             + readoutCard(metricLabel("review_submissions_given"), "-");
         }
         const selectedRow = rows[selectedIndex] || rows[rows.length - 1];
+        const comparisonRow = comparisonRows.find(row => row.period_key === selectedRow.period_key);
         return [
           readoutCard(t("common.selected_period"), selectedRow.period_key || "-"),
           readoutCard(metricLabel(metric), formatMetricValue(selectedRow[metric], metric)),
+          comparisonReadoutCard(comparisonRow, metric),
           readoutCard(metricLabel("authored_pull_request_count"), formatMetricValue(selectedRow.authored_pull_request_count, "authored_pull_request_count")),
           readoutCard(metricLabel("review_submissions_given"), formatMetricValue(selectedRow.review_submissions_given, "review_submissions_given")),
           readoutCard(metricLabel("pull_requests_reviewed"), formatMetricValue(selectedRow.pull_requests_reviewed, "pull_requests_reviewed")),
@@ -396,11 +350,19 @@
         ].join("");
       }
 
+      function comparisonReadoutCard(row, metric) {
+        if (!activeShowOrgComparison || !report.include_org_trends) {
+          return "";
+        }
+        const value = row ? formatMetricValue(row[metric], metric) : "-";
+        return readoutCard(`${t("common.organization")} ${metricLabel(metric)}`, value);
+      }
+
       function readoutCard(label, value) {
         return `<article class="readout-card"><strong>${escapeHtml(label)}</strong><span>${escapeHtml(value)}</span></article>`;
       }
 
-      function renderSeriesChart({ element, rows, metric, selectedIndex, onSelect }) {
+      function renderSeriesChart({ element, rows, comparisonRows = [], metric, selectedIndex, onSelect }) {
         if (!rows.length) {
           element.innerHTML = `<div class="small-note">${escapeHtml(t("common.no_period_data"))}</div>`;
           return;
@@ -413,11 +375,25 @@
         const points = rows
           .map((row, index) => ({ row, index, value: toNumber(row[metric]) }))
           .filter(point => point.value !== null);
-        if (!points.length) {
+        const comparisonByPeriod = new Map(
+          comparisonRows.map(row => [row.period_key, row]),
+        );
+        const comparisonPoints = rows
+          .map((row, index) => ({
+            row: comparisonByPeriod.get(row.period_key),
+            index,
+            value: toNumber(comparisonByPeriod.get(row.period_key)?.[metric]),
+          }))
+          .filter(point => point.row && point.value !== null);
+        if (!points.length && !comparisonPoints.length) {
           element.innerHTML = `<div class="small-note">${escapeHtml(t("common.no_metric_data"))}</div>`;
           return;
         }
-        const maxValue = Math.max(1, ...points.map(point => point.value));
+        const maxValue = Math.max(
+          1,
+          ...points.map(point => point.value),
+          ...comparisonPoints.map(point => point.value),
+        );
         const stepX = rows.length > 1 ? plotWidth / (rows.length - 1) : plotWidth / 2;
         const xFor = index => rows.length > 1 ? padding.left + index * stepX : padding.left + plotWidth / 2;
         const yFor = value => padding.top + plotHeight - (value / maxValue) * plotHeight;
@@ -434,11 +410,16 @@
         const linePath = points
           .map((point, pathIndex) => `${pathIndex === 0 ? "M" : "L"} ${xFor(point.index)} ${yFor(point.value)}`)
           .join(" ");
+        const comparisonLinePath = comparisonPoints
+          .map((point, pathIndex) => `${pathIndex === 0 ? "M" : "L"} ${xFor(point.index)} ${yFor(point.value)}`)
+          .join(" ");
         const areaPath = points.length
           ? `${linePath} L ${xFor(points.at(-1).index)} ${padding.top + plotHeight} L ${xFor(points[0].index)} ${padding.top + plotHeight} Z`
           : "";
-        const averageValue = points.reduce((sum, point) => sum + point.value, 0) / points.length;
-        const averageLineY = yFor(averageValue);
+        const averageValue = points.length
+          ? points.reduce((sum, point) => sum + point.value, 0) / points.length
+          : null;
+        const averageLineY = averageValue === null ? null : yFor(averageValue);
         const labelInterval = chartLabelInterval(rows.length);
         const fillId = `${element.id || "series"}-fill-${metric}`;
         const partialBands = rows.map((row, index) => {
@@ -472,6 +453,11 @@
             ${showLabel ? `<text x="${xFor(index)}" y="${height - 12}" text-anchor="middle" class="chart-axis">${escapeHtml(shortLabel(row.period_key || ""))}</text>` : ""}
           `;
         }).join("");
+        const comparisonNodes = comparisonPoints.map(point => `
+          <circle class="org-comparison-point" cx="${xFor(point.index)}" cy="${yFor(point.value)}" r="3" fill="currentColor">
+            <title>${escapeHtml(t("common.organization"))} ${escapeHtml(point.row.period_key || "-")}: ${escapeHtml(formatMetricValue(point.value, metric))}</title>
+          </circle>
+        `).join("");
         element.innerHTML = `
           <svg viewBox="0 0 ${width} ${height}" preserveAspectRatio="xMidYMid meet" role="img" aria-label="${escapeAttribute(metricLabel(metric))} chart">
             <defs>
@@ -482,9 +468,11 @@
             </defs>
             ${ticks}
             ${partialBands}
-            <line x1="${padding.left}" x2="${width - padding.right}" y1="${averageLineY}" y2="${averageLineY}" stroke="${cssVar("--avg-stroke")}" stroke-dasharray="5 5"></line>
+            ${averageLineY === null ? "" : `<line x1="${padding.left}" x2="${width - padding.right}" y1="${averageLineY}" y2="${averageLineY}" stroke="${cssVar("--avg-stroke")}" stroke-dasharray="5 5"></line>`}
             ${areaPath ? `<path d="${areaPath}" fill="url(#${escapeAttribute(fillId)})"></path>` : ""}
-            <path d="${linePath}" fill="none" stroke="${cssVar("--accent")}" stroke-width="3" stroke-linecap="round"></path>
+            ${comparisonLinePath ? `<path class="org-comparison-line" d="${comparisonLinePath}" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-dasharray="7 5"></path>` : ""}
+            ${linePath ? `<path d="${linePath}" fill="none" stroke="${cssVar("--accent")}" stroke-width="3" stroke-linecap="round"></path>` : ""}
+            ${comparisonNodes}
             ${chartNodes}
           </svg>
         `;
@@ -547,15 +535,25 @@
         tooltip.setAttribute("aria-hidden", "true");
       }
 
-      function clampSelectedIndex(rows, selectedIndex, metric) {
+      function clampSelectedIndex(rows, selectedIndex, metric, comparisonRows = []) {
         if (!rows.length) {
           return null;
         }
-        if (selectedIndex !== null && rows[selectedIndex] && toNumber(rows[selectedIndex][metric]) !== null) {
+        const comparisonByPeriod = new Map(
+          comparisonRows.map(row => [row.period_key, row]),
+        );
+        const hasMetricValue = row => (
+          row
+          && (
+            toNumber(row[metric]) !== null
+            || toNumber(comparisonByPeriod.get(row.period_key)?.[metric]) !== null
+          )
+        );
+        if (selectedIndex !== null && hasMetricValue(rows[selectedIndex])) {
           return selectedIndex;
         }
         for (let index = rows.length - 1; index >= 0; index -= 1) {
-          if (toNumber(rows[index][metric]) !== null) {
+          if (hasMetricValue(rows[index])) {
             return index;
           }
         }

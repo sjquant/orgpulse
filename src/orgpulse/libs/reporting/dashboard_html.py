@@ -39,7 +39,6 @@ from orgpulse.libs.reporting.i18n import (
     format_duration,
     format_integer,
     format_number,
-    metric_description,
     metric_label_html,
     metric_text,
     period_state_text,
@@ -48,7 +47,6 @@ from orgpulse.libs.reporting.i18n import (
     resolve_report_locale,
 )
 
-AUTHOR_ROSTER_LIMIT = 5
 LEADERBOARD_LIMIT = 5
 WEEKLY_RECENT_TREND_COUNT = 5
 MONTHLY_RECENT_TREND_COUNT = 5
@@ -134,17 +132,10 @@ def render_dashboard_html(
             key,
             fallback=fallback,
         ),
-        metric_description=lambda key, fallback=None: metric_description(
-            resolved_locale,
-            key,
-            fallback=fallback,
-        ),
         period_state=lambda row: period_state_text(resolved_locale, row),
         report_i18n_json=report_i18n_json(resolved_locale),
         overview=prepared_payload.overview,
         authors=prepared_payload.authors,
-        authors_roster_top=prepared_payload.authors_roster_top,
-        authors_roster_rest=prepared_payload.authors_roster_rest,
         reviewers=prepared_payload.reviewers,
         reviewers_top=prepared_payload.reviewers_top,
         reviewers_rest=prepared_payload.reviewers_rest,
@@ -380,8 +371,6 @@ def _build_dashboard_sections(
 
 
 def _attach_dashboard_slices(payload: dict[str, Any]) -> None:
-    payload["authors_roster_top"] = payload["authors"][:AUTHOR_ROSTER_LIMIT]
-    payload["authors_roster_rest"] = payload["authors"][AUTHOR_ROSTER_LIMIT:]
     payload["reviewers_top"] = payload["reviewers"][:LEADERBOARD_LIMIT]
     payload["reviewers_rest"] = payload["reviewers"][LEADERBOARD_LIMIT:]
     payload["repositories_top"] = payload["repositories"][:LEADERBOARD_LIMIT]
@@ -1334,33 +1323,13 @@ def _build_reference_summary(
     payload: dict[str, Any],
 ) -> DashboardReferenceSummaryPayload:
     overview = payload["overview"]
-    authors = payload["authors"]
-    reviewers = payload["reviewers"]
     repositories = payload["repositories"]
     return DashboardReferenceSummaryPayload(
-        author_roster_coverage_pct=_coverage_share(
-            authors,
-            value_key="pull_requests",
-            total=float(overview["pull_requests"]),
-            top_n=AUTHOR_ROSTER_LIMIT,
-        ),
-        reviewers_top_coverage_pct=_coverage_share(
-            reviewers,
-            value_key="pull_requests_reviewed",
-            total=float(sum(int(row["pull_requests_reviewed"]) for row in reviewers)),
-            top_n=LEADERBOARD_LIMIT,
-        ),
         repositories_top_coverage_pct=_coverage_share(
             repositories,
             value_key="pull_requests",
             total=float(overview["pull_requests"]),
             top_n=LEADERBOARD_LIMIT,
-        ),
-        top3_author_share_pct=_coverage_share(
-            authors,
-            value_key="pull_requests",
-            total=float(overview["pull_requests"]),
-            top_n=3,
         ),
         top3_repository_share_pct=_coverage_share(
             repositories,
@@ -1370,7 +1339,6 @@ def _build_reference_summary(
         ),
         weekly_hidden_count=len(payload["weekly_trends_older"]),
         monthly_hidden_count=len(payload["monthly_trends_older"]),
-        author_reference_count=len(payload["authors"]),
     )
 
 

@@ -18,7 +18,6 @@ from orgpulse.libs.reporting.i18n import (
     format_integer,
     format_number,
     format_percent,
-    metric_description,
     metric_label_html,
     metric_text,
     period_state_text,
@@ -64,11 +63,6 @@ def render_person_report_html(
             fallback=fallback,
         ),
         metric_text=lambda key, fallback=None: metric_text(
-            resolved_locale,
-            key,
-            fallback=fallback,
-        ),
-        metric_description=lambda key, fallback=None: metric_description(
             resolved_locale,
             key,
             fallback=fallback,

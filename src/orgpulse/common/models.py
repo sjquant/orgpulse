@@ -739,14 +739,10 @@ class DashboardReferenceSummaryPayload(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    author_roster_coverage_pct: float | None = None
-    reviewers_top_coverage_pct: float | None = None
     repositories_top_coverage_pct: float | None = None
-    top3_author_share_pct: float | None = None
     top3_repository_share_pct: float | None = None
     weekly_hidden_count: int
     monthly_hidden_count: int
-    author_reference_count: int
 
 
 class DashboardSizeDiagnosticPayload(BaseModel):
@@ -787,8 +783,6 @@ class DashboardPreparedPayload(BaseModel):
 
     overview: dict[str, Any]
     authors: list[dict[str, Any]]
-    authors_roster_top: list[dict[str, Any]]
-    authors_roster_rest: list[dict[str, Any]]
     reviewers: list[dict[str, Any]]
     reviewers_top: list[dict[str, Any]]
     reviewers_rest: list[dict[str, Any]]

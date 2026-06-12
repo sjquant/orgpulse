@@ -111,7 +111,7 @@
     function syncMetricOptions() {
       const viewData = viewCatalog[state.view].data;
       metricSelect.innerHTML = viewData.metrics
-        .map(metric => `<option value="${escapeAttribute(metric.key)}" title="${escapeAttribute(metric.description || metric.label)}">${escapeHtml(metric.label)}</option>`)
+        .map(metric => `<option value="${escapeAttribute(metric.key)}">${escapeHtml(metric.label)}</option>`)
         .join("");
       if (!viewData.metrics.some(metric => metric.key === state.metric)) {
         state.metric = viewData.default_metric;
@@ -256,7 +256,7 @@
           }))
         }
       ], metric.format);
-      chartLegend.innerHTML = `<span class="legend-chip" title="${escapeAttribute(metric.description || metric.label)}"><span class="legend-swatch" style="background:${palette[0]}"></span>${escapeHtml(metric.label)}</span>`;
+      chartLegend.innerHTML = `<span class="legend-chip" data-tooltip="${escapeAttribute(metric.description || metric.label)}"><span class="legend-swatch" style="background:${palette[0]}"></span>${escapeHtml(metric.label)}</span>`;
       focusSeriesSelect.innerHTML = `<option value="">${i18n.locale === "ko" ? "해당 없음" : "Not applicable"}</option>`;
       focusSeriesSelect.disabled = true;
     }
@@ -499,7 +499,7 @@
     function metricLabelHtml(metricKey, fallback = null, description = null) {
       const label = fallback || metricLabel(metricKey);
       const tooltip = description || metricDescription(metricKey, label);
-      return `<span class="metric-label-with-tooltip"><span>${escapeHtml(label)}</span><span class="metric-tooltip" tabindex="0" role="note" title="${escapeAttribute(tooltip)}" aria-label="${escapeAttribute(tooltip)}" data-tooltip="${escapeAttribute(tooltip)}">?</span></span>`;
+      return `<span class="metric-label-with-tooltip"><span>${escapeHtml(label)}</span><span class="metric-tooltip" tabindex="0" role="note" aria-label="${escapeAttribute(tooltip)}" data-tooltip="${escapeAttribute(tooltip)}">?</span></span>`;
     }
 
     function formatDuration(hours) {

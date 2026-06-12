@@ -134,13 +134,13 @@
           </div>
           <div class="two-col">
             <div class="tab-strip primary-tabs" id="org-trend-metric-tabs" role="tablist" aria-label="{{ t("common.organization") }} {{ t("analysis.metric") }}">
-              <button type="button" class="tab-button active" data-org-trend-metric="pull_requests" aria-selected="true" title="{{ metric_description("pull_requests") }}">{{ metric_text("pull_requests") }}</button>
-              <button type="button" class="tab-button" data-org-trend-metric="pull_requests_per_active_author" aria-selected="false" title="{{ metric_description("pull_requests_per_active_author") }}">{{ metric_text("pull_requests_per_active_author") }}</button>
-              <button type="button" class="tab-button" data-org-trend-metric="changed_lines" aria-selected="false" title="{{ metric_description("changed_lines") }}">{{ metric_text("changed_lines") }}</button>
-              <button type="button" class="tab-button" data-org-trend-metric="changed_lines_per_active_author" aria-selected="false" title="{{ metric_description("changed_lines_per_active_author") }}">{{ metric_text("changed_lines_per_active_author") }}</button>
-              <button type="button" class="tab-button" data-org-trend-metric="median_approval_hours" aria-selected="false" title="{{ metric_description("median_approval_hours") }}">{{ metric_text("median_approval_hours") }}</button>
-              <button type="button" class="tab-button" data-org-trend-metric="median_first_review_hours" aria-selected="false" title="{{ metric_description("median_first_review_hours") }}">{{ metric_text("median_first_review_hours") }}</button>
-              <button type="button" class="tab-button" data-org-trend-metric="median_merge_hours" aria-selected="false" title="{{ metric_description("median_merge_hours") }}">{{ metric_text("median_merge_hours") }}</button>
+              <button type="button" class="tab-button active" data-org-trend-metric="pull_requests" aria-selected="true" data-tooltip="{{ metric_description("pull_requests") }}">{{ metric_text("pull_requests") }}</button>
+              <button type="button" class="tab-button" data-org-trend-metric="pull_requests_per_active_author" aria-selected="false" data-tooltip="{{ metric_description("pull_requests_per_active_author") }}">{{ metric_text("pull_requests_per_active_author") }}</button>
+              <button type="button" class="tab-button" data-org-trend-metric="changed_lines" aria-selected="false" data-tooltip="{{ metric_description("changed_lines") }}">{{ metric_text("changed_lines") }}</button>
+              <button type="button" class="tab-button" data-org-trend-metric="changed_lines_per_active_author" aria-selected="false" data-tooltip="{{ metric_description("changed_lines_per_active_author") }}">{{ metric_text("changed_lines_per_active_author") }}</button>
+              <button type="button" class="tab-button" data-org-trend-metric="median_approval_hours" aria-selected="false" data-tooltip="{{ metric_description("median_approval_hours") }}">{{ metric_text("median_approval_hours") }}</button>
+              <button type="button" class="tab-button" data-org-trend-metric="median_first_review_hours" aria-selected="false" data-tooltip="{{ metric_description("median_first_review_hours") }}">{{ metric_text("median_first_review_hours") }}</button>
+              <button type="button" class="tab-button" data-org-trend-metric="median_merge_hours" aria-selected="false" data-tooltip="{{ metric_description("median_merge_hours") }}">{{ metric_text("median_merge_hours") }}</button>
             </div>
             <div class="tab-strip secondary-tabs" id="org-trend-grain-tabs" role="tablist" aria-label="{{ t("common.organization") }} {{ t("common.source_grain") }}">
               <button type="button" class="tab-button active" data-org-trend-grain="weekly" aria-selected="true">{{ t("common.weekly") }}</button>
@@ -165,15 +165,15 @@
           </div>
           <div class="two-col">
             <div class="tab-strip primary-tabs" id="person-trend-metric-tabs" role="tablist" aria-label="{{ t("analysis.metric") }}">
-              <button type="button" class="tab-button active" data-person-trend-metric="authored_pull_request_count" aria-selected="true" title="{{ metric_description("authored_pull_request_count") }}">{{ metric_text("authored_pull_request_count") }}</button>
-              <button type="button" class="tab-button" data-person-trend-metric="review_submissions_given" aria-selected="false" title="{{ metric_description("review_submissions_given") }}">{{ metric_text("review_submissions_given") }}</button>
-              <button type="button" class="tab-button" data-person-trend-metric="pull_requests_reviewed" aria-selected="false" title="{{ metric_description("pull_requests_reviewed") }}">{{ metric_text("pull_requests_reviewed") }}</button>
-              <button type="button" class="tab-button" data-person-trend-metric="reviewed_lines" aria-selected="false" title="{{ metric_description("reviewed_lines") }}">{{ metric_text("reviewed_lines") }}</button>
-              <button type="button" class="tab-button" data-person-trend-metric="median_merge_hours" aria-selected="false" title="{{ metric_description("median_merge_hours") }}">{{ metric_text("median_merge_hours") }}</button>
-              <button type="button" class="tab-button" data-person-trend-metric="median_first_review_hours" aria-selected="false" title="{{ metric_description("median_first_review_hours") }}">{{ metric_text("median_first_review_hours") }}</button>
-              <button type="button" class="tab-button" data-person-trend-metric="median_approval_hours" aria-selected="false" title="{{ metric_description("median_approval_hours") }}">{{ metric_text("median_approval_hours") }}</button>
-              <button type="button" class="tab-button" data-person-trend-metric="changed_lines_total" aria-selected="false" title="{{ metric_description("changed_lines_total") }}">{{ metric_text("changed_lines_total") }}</button>
-              <button type="button" class="tab-button" data-person-trend-metric="commits_total" aria-selected="false" title="{{ metric_description("commits_total") }}">{{ metric_text("commits_total") }}</button>
+              <button type="button" class="tab-button active" data-person-trend-metric="authored_pull_request_count" aria-selected="true" data-tooltip="{{ metric_description("authored_pull_request_count") }}">{{ metric_text("authored_pull_request_count") }}</button>
+              <button type="button" class="tab-button" data-person-trend-metric="review_submissions_given" aria-selected="false" data-tooltip="{{ metric_description("review_submissions_given") }}">{{ metric_text("review_submissions_given") }}</button>
+              <button type="button" class="tab-button" data-person-trend-metric="pull_requests_reviewed" aria-selected="false" data-tooltip="{{ metric_description("pull_requests_reviewed") }}">{{ metric_text("pull_requests_reviewed") }}</button>
+              <button type="button" class="tab-button" data-person-trend-metric="reviewed_lines" aria-selected="false" data-tooltip="{{ metric_description("reviewed_lines") }}">{{ metric_text("reviewed_lines") }}</button>
+              <button type="button" class="tab-button" data-person-trend-metric="median_merge_hours" aria-selected="false" data-tooltip="{{ metric_description("median_merge_hours") }}">{{ metric_text("median_merge_hours") }}</button>
+              <button type="button" class="tab-button" data-person-trend-metric="median_first_review_hours" aria-selected="false" data-tooltip="{{ metric_description("median_first_review_hours") }}">{{ metric_text("median_first_review_hours") }}</button>
+              <button type="button" class="tab-button" data-person-trend-metric="median_approval_hours" aria-selected="false" data-tooltip="{{ metric_description("median_approval_hours") }}">{{ metric_text("median_approval_hours") }}</button>
+              <button type="button" class="tab-button" data-person-trend-metric="changed_lines_total" aria-selected="false" data-tooltip="{{ metric_description("changed_lines_total") }}">{{ metric_text("changed_lines_total") }}</button>
+              <button type="button" class="tab-button" data-person-trend-metric="commits_total" aria-selected="false" data-tooltip="{{ metric_description("commits_total") }}">{{ metric_text("commits_total") }}</button>
             </div>
             <div class="tab-strip secondary-tabs" id="person-trend-grain-tabs" role="tablist" aria-label="{{ t("common.source_grain") }}">
               <button type="button" class="tab-button active" data-person-trend-grain="weekly" aria-selected="true">{{ t("common.weekly") }}</button>

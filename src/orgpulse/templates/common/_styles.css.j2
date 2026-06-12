@@ -288,6 +288,7 @@
 
     .metric-tooltip {
       position: relative;
+      z-index: 20;
       display: inline-flex;
       align-items: center;
       justify-content: center;
@@ -302,28 +303,24 @@
       cursor: help;
     }
 
-    .metric-tooltip::before,
-    .metric-tooltip::after {
+    .tab-button[data-tooltip],
+    .legend-chip[data-tooltip] {
+      position: relative;
+      z-index: 20;
+      cursor: help;
+    }
+
+    .metric-tooltip::after,
+    .tab-button[data-tooltip]::after,
+    .legend-chip[data-tooltip]::after {
       position: absolute;
       left: 50%;
-      z-index: 100;
+      z-index: 10000;
       opacity: 0;
       pointer-events: none;
       transition: opacity 120ms ease, transform 120ms ease;
-    }
-
-    .metric-tooltip::before {
-      content: "";
-      bottom: calc(100% + 3px);
-      width: 8px;
-      height: 8px;
-      background: var(--text);
-      transform: translate(-50%, 4px) rotate(45deg);
-    }
-
-    .metric-tooltip::after {
       content: attr(data-tooltip);
-      bottom: calc(100% + 7px);
+      bottom: calc(100% + 8px);
       width: max-content;
       max-width: min(280px, 70vw);
       padding: 8px 10px;
@@ -341,17 +338,23 @@
       transform: translate(-50%, 4px);
     }
 
-    .metric-tooltip:hover::before,
     .metric-tooltip:hover::after,
-    .metric-tooltip:focus::before,
-    .metric-tooltip:focus::after {
+    .metric-tooltip:focus::after,
+    .tab-button[data-tooltip]:hover::after,
+    .tab-button[data-tooltip]:focus::after,
+    .legend-chip[data-tooltip]:hover::after,
+    .legend-chip[data-tooltip]:focus::after {
       opacity: 1;
-      transform: translate(-50%, 0) rotate(45deg);
+      transform: translate(-50%, 0);
     }
 
-    .metric-tooltip:hover::after,
-    .metric-tooltip:focus::after {
-      transform: translate(-50%, 0);
+    .metric-tooltip:hover,
+    .metric-tooltip:focus,
+    .tab-button[data-tooltip]:hover,
+    .tab-button[data-tooltip]:focus,
+    .legend-chip[data-tooltip]:hover,
+    .legend-chip[data-tooltip]:focus {
+      z-index: 10001;
     }
 
     .metric-tooltip:focus-visible {

@@ -94,7 +94,7 @@ def metric_label_html(
     *,
     fallback: str | None = None,
 ) -> Markup:
-    """Render an accessible metric label with a native tooltip fallback."""
+    """Render an accessible metric label with a custom tooltip."""
 
     label = metric_text(locale, key, fallback=fallback)
     description = metric_description(locale, key, fallback=label)
@@ -102,7 +102,7 @@ def metric_label_html(
         '<span class="metric-label-with-tooltip">'
         f"<span>{escape(label)}</span>"
         '<span class="metric-tooltip" tabindex="0" role="note" '
-        f'title="{escape(description)}" aria-label="{escape(description)}" '
+        f'aria-label="{escape(description)}" '
         f'data-tooltip="{escape(description)}">?</span>'
         "</span>"
     )

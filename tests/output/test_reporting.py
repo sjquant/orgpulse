@@ -16,15 +16,15 @@ class TestReportingModules:
         assert ORG_SUMMARY_DIRNAME == "org_summary"
         assert "pull_requests.csv" in REQUIRED_RAW_SNAPSHOT_HEADERS
 
-    def test_exposes_analysis_report_renderers(self) -> None:
-        """Expose organization report helpers from the analysis report module."""
+    def test_exposes_dashboard_report_renderers(self) -> None:
+        """Expose dashboard report helpers from the dashboard reporting module."""
         # Given
 
         # When
 
         # Then
-        assert callable(build_organization_report_payload)
-        assert callable(render_organization_report_html)
+        assert callable(prepare_dashboard_payload)
+        assert callable(render_dashboard_html)
 
     def test_renders_dashboard_html_through_public_artifact_function(
         self,

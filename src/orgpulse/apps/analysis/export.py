@@ -9,8 +9,6 @@ from orgpulse.apps.analysis.service import (
     AnalysisResult,
     AnalysisRow,
 )
-from orgpulse.common.errors import AnalysisInputError
-from orgpulse.libs.reporting.analysis_report import render_analysis_report_html
 
 
 def render_analysis_result(
@@ -29,8 +27,6 @@ def render_analysis_result(
         return _render_csv(result)
     if result.export_format is AnalysisExportFormat.MARKDOWN:
         return _render_markdown(result)
-    if result.export_format is AnalysisExportFormat.HTML:
-        return _render_html(result)
     return _render_json(result)
 
 
@@ -91,14 +87,6 @@ def _render_json(
         indent=2,
         sort_keys=True,
     )
-
-
-def _render_html(
-    result: AnalysisResult,
-) -> str:
-    if result.report_payload is None:
-        raise AnalysisInputError("analysis report payload is unavailable")
-    return render_analysis_report_html(result.report_payload, locale=result.locale)
 
 
 def _markdown_number(

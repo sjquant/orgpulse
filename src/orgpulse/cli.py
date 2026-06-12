@@ -330,13 +330,6 @@ def analyze_command(
             help="Analysis export format written to stdout.",
         ),
     ] = None,
-    locale: Annotated[
-        ReportLocale | None,
-        typer.Option(
-            "--locale",
-            help="HTML report locale. Falls back to ORGPULSE_LOCALE.",
-        ),
-    ] = None,
 ) -> None:
     """Analyze stored raw data with explicit grouping and export controls."""
 
@@ -352,7 +345,6 @@ def analyze_command(
             until=until,
             distribution_percentile=distribution_percentile,
             export_format=export_format,
-            locale=locale,
         )
     except ValidationError as exc:
         typer.echo(f"orgpulse: invalid analysis configuration\n{exc}", err=True)

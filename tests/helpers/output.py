@@ -49,10 +49,6 @@ from orgpulse.libs.output_store.run_outputs import (
     RepositorySummaryCsvWriter,
     RunManifestWriter,
 )
-from orgpulse.libs.reporting.analysis_report import (
-    build_organization_report_payload,
-    render_organization_report_html,
-)
 from orgpulse.libs.reporting.dashboard_html import (
     prepare_dashboard_payload,
     render_dashboard_artifact,
@@ -117,8 +113,6 @@ __all__ = [
     "RunManifest",
     "RunMode",
     "RunScope",
-    "build_organization_report_payload",
-    "render_organization_report_html",
     "prepare_dashboard_payload",
     "render_dashboard_artifact",
     "render_dashboard_html",

@@ -287,6 +287,7 @@
     }
 
     .metric-tooltip {
+      position: relative;
       display: inline-flex;
       align-items: center;
       justify-content: center;
@@ -299,6 +300,58 @@
       font-weight: 800;
       line-height: 1;
       cursor: help;
+    }
+
+    .metric-tooltip::before,
+    .metric-tooltip::after {
+      position: absolute;
+      left: 50%;
+      z-index: 100;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 120ms ease, transform 120ms ease;
+    }
+
+    .metric-tooltip::before {
+      content: "";
+      bottom: calc(100% + 3px);
+      width: 8px;
+      height: 8px;
+      background: var(--text);
+      transform: translate(-50%, 4px) rotate(45deg);
+    }
+
+    .metric-tooltip::after {
+      content: attr(data-tooltip);
+      bottom: calc(100% + 7px);
+      width: max-content;
+      max-width: min(280px, 70vw);
+      padding: 8px 10px;
+      border: 1px solid var(--line-strong);
+      border-radius: 6px;
+      background: var(--text);
+      color: var(--bg);
+      box-shadow: var(--shadow);
+      font-size: 0.76rem;
+      font-weight: 650;
+      line-height: 1.35;
+      text-align: left;
+      text-transform: none;
+      white-space: normal;
+      transform: translate(-50%, 4px);
+    }
+
+    .metric-tooltip:hover::before,
+    .metric-tooltip:hover::after,
+    .metric-tooltip:focus::before,
+    .metric-tooltip:focus::after {
+      opacity: 1;
+      transform: translate(-50%, 0) rotate(45deg);
+    }
+
+    .metric-tooltip:hover::after,
+    .metric-tooltip:focus::after {
+      transform: translate(-50%, 0);
     }
 
     .metric-tooltip:focus-visible {

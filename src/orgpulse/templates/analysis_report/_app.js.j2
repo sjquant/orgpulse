@@ -499,7 +499,7 @@
     function metricLabelHtml(metricKey, fallback = null, description = null) {
       const label = fallback || metricLabel(metricKey);
       const tooltip = description || metricDescription(metricKey, label);
-      return `<span class="metric-label-with-tooltip"><span>${escapeHtml(label)}</span><span class="metric-tooltip" tabindex="0" role="note" title="${escapeAttribute(tooltip)}" aria-label="${escapeAttribute(tooltip)}">?</span></span>`;
+      return `<span class="metric-label-with-tooltip"><span>${escapeHtml(label)}</span><span class="metric-tooltip" tabindex="0" role="note" title="${escapeAttribute(tooltip)}" aria-label="${escapeAttribute(tooltip)}" data-tooltip="${escapeAttribute(tooltip)}">?</span></span>`;
     }
 
     function formatDuration(hours) {

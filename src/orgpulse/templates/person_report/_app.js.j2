@@ -286,10 +286,13 @@
         if (!orgComparisonToggle) {
           return;
         }
-        orgComparisonToggle.setAttribute("aria-pressed", String(activeShowOrgComparison));
-        orgComparisonToggle.textContent = activeShowOrgComparison
-          ? t("person.hide_org_comparison")
-          : t("person.show_org_comparison");
+        orgComparisonToggle.setAttribute("aria-checked", String(activeShowOrgComparison));
+        orgComparisonToggle.setAttribute(
+          "aria-label",
+          activeShowOrgComparison
+            ? t("person.hide_org_comparison")
+            : t("person.show_org_comparison"),
+        );
         if (orgComparisonLegend) {
           orgComparisonLegend.classList.toggle("hidden", !activeShowOrgComparison);
         }

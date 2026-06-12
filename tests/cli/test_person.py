@@ -1331,6 +1331,11 @@ class TestPersonCommand:
         assert 'class="chart-card person-trend-card"' in html_result.stdout
         assert 'id="org-trend-chart-root"' not in html_result.stdout
         assert 'id="org-comparison-toggle"' in html_result.stdout
+        assert 'class="comparison-switch"' in html_result.stdout
+        assert 'role="switch"' in html_result.stdout
+        assert 'aria-checked="true"' in html_result.stdout
+        assert "comparison-switch-track" in html_result.stdout
+        assert "comparison-switch-thumb" in html_result.stdout
         assert 'id="org-comparison-legend"' in html_result.stdout
         assert "org-comparison-line" in html_result.stdout
         assert "org-comparison-point" in html_result.stdout

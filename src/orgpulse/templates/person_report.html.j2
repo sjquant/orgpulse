@@ -154,7 +154,12 @@
               <span class="legend-chip"><span class="legend-dot" style="background: var(--accent)"></span>{{ result.login }}</span>
               {% if result.include_org_trends %}
               <span class="legend-chip" id="org-comparison-legend"><span class="legend-dot org-comparison-dot"></span>{{ t("common.organization") }}</span>
-              <button type="button" class="ghost-button comparison-toggle" id="org-comparison-toggle" aria-pressed="true">{{ t("person.hide_org_comparison") }}</button>
+              <button type="button" class="comparison-switch" id="org-comparison-toggle" role="switch" aria-checked="true" aria-label="{{ t("person.hide_org_comparison") }}">
+                <span class="comparison-switch-track" aria-hidden="true">
+                  <span class="comparison-switch-thumb"></span>
+                </span>
+                <span class="comparison-switch-label">{{ t("person.org_comparison") }}</span>
+              </button>
               {% endif %}
               <span class="legend-chip"><span class="legend-band" aria-hidden="true"></span>{{ t("common.open_period_legend") }}</span>
             </div>

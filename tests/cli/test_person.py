@@ -1315,6 +1315,7 @@ class TestPersonCommand:
         assert payload["org_monthly_trend_rows"][0]["period_key"] == "2026-04"
         assert payload["org_monthly_trend_rows"][0]["pull_requests"] == 3
         assert payload["org_monthly_trend_rows"][0]["active_authors"] == 3
+        assert payload["org_monthly_trend_rows"][0]["active_reviewers"] == 1
         assert payload["org_monthly_trend_rows"][0]["changed_lines"] == 65
         assert payload["org_monthly_trend_rows"][0]["authored_pull_request_count"] == 3
         assert payload["org_monthly_trend_rows"][0]["changed_lines_total"] == 65
@@ -1326,6 +1327,7 @@ class TestPersonCommand:
         assert payload["org_monthly_trend_rows"][0]["review_submissions"] == 1
         assert payload["org_monthly_trend_rows"][0]["review_submissions_given"] == 1
         assert payload["org_monthly_trend_rows"][0]["pull_requests_reviewed"] == 1
+        assert "org_monthly_comparison_rows" not in payload
         assert payload["org_weekly_trend_rows"][0]["period_key"] == "2026-W14"
         assert markdown_result.exit_code == 0
         assert "## Org Trends" in markdown_result.stdout
@@ -1370,7 +1372,35 @@ class TestPersonCommand:
         assert (
             report_payload["org_monthly_trend_rows"][0]["review_submissions_given"] == 1
         )
+        assert (
+            report_payload["org_monthly_comparison_rows"][0][
+                "authored_pull_request_count"
+            ]
+            == 1.0
+        )
+        assert (
+            report_payload["org_monthly_comparison_rows"][0]["changed_lines_total"]
+            == 21.67
+        )
+        assert report_payload["org_monthly_comparison_rows"][0]["commits_total"] == 1.0
+        assert (
+            report_payload["org_monthly_comparison_rows"][0][
+                "review_submissions_given"
+            ]
+            == 1.0
+        )
+        assert (
+            report_payload["org_monthly_comparison_rows"][0]["pull_requests_reviewed"]
+            == 1.0
+        )
+        assert report_payload["org_monthly_comparison_rows"][0]["reviewed_lines"] == 25.0
         assert report_payload["org_weekly_trend_rows"][0]["period_key"] == "2026-W14"
+        assert (
+            report_payload["org_weekly_comparison_rows"][0][
+                "authored_pull_request_count"
+            ]
+            == 1.0
+        )
 
     def test_applies_repo_filters_to_person_org_trends(
         self,

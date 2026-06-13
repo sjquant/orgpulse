@@ -276,6 +276,7 @@ class OrgTrendRow(BaseModel):
     merged_pull_requests: int
     open_pull_requests: int
     active_authors: int
+    active_reviewers: int
     changed_lines: int
     authored_pull_request_count: int
     changed_lines_total: int
@@ -593,6 +594,13 @@ class PersonMetricsService:
                 if pull_request.author_login is not None
             }
         )
+        active_reviewers = len(
+            {
+                review.author_login.lower()
+                for review in review_submissions
+                if review.author_login is not None
+            }
+        )
         changed_lines = self._trimmed_changed_lines(
             pull_requests,
             threshold=changed_lines_threshold,
@@ -617,6 +625,7 @@ class PersonMetricsService:
                 1 for pull_request in pull_requests if pull_request.state == "open"
             ),
             active_authors=active_authors,
+            active_reviewers=active_reviewers,
             changed_lines=changed_lines,
             authored_pull_request_count=pull_request_count,
             changed_lines_total=changed_lines,

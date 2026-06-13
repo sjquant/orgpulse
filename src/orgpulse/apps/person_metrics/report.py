@@ -8,6 +8,7 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 from markupsafe import Markup
 
 from orgpulse.apps.person_metrics.service import (
+    OrgTrendRow,
     PersonMetricsResult,
     PersonPeriodRow,
     PersonRepositoryRow,
@@ -145,7 +146,64 @@ def _html_report_payload(
         payload.pop("include_org_trends", None)
         payload.pop("org_weekly_trend_rows", None)
         payload.pop("org_monthly_trend_rows", None)
+        payload.pop("org_weekly_comparison_rows", None)
+        payload.pop("org_monthly_comparison_rows", None)
+    else:
+        payload["org_weekly_comparison_rows"] = _org_comparison_rows(
+            result.org_weekly_trend_rows or (),
+        )
+        payload["org_monthly_comparison_rows"] = _org_comparison_rows(
+            result.org_monthly_trend_rows or (),
+        )
     return payload
+
+
+def _org_comparison_rows(
+    rows: tuple[OrgTrendRow, ...],
+) -> list[dict[str, Any]]:
+    return [_org_comparison_row(row) for row in rows]
+
+
+def _org_comparison_row(
+    row: OrgTrendRow,
+) -> dict[str, Any]:
+    payload = row.model_dump(mode="json")
+    payload["pull_requests"] = row.pull_requests_per_active_author
+    payload["merged_pull_requests"] = _per_person(
+        row.merged_pull_requests,
+        row.active_authors,
+    )
+    payload["open_pull_requests"] = _per_person(
+        row.open_pull_requests,
+        row.active_authors,
+    )
+    payload["changed_lines"] = row.changed_lines_per_active_author
+    payload["authored_pull_request_count"] = row.pull_requests_per_active_author
+    payload["changed_lines_total"] = row.changed_lines_per_active_author
+    payload["commits_total"] = _per_person(row.commits_total, row.active_authors)
+    payload["review_submissions"] = _per_person(
+        row.review_submissions,
+        row.active_reviewers,
+    )
+    payload["review_submissions_given"] = _per_person(
+        row.review_submissions_given,
+        row.active_reviewers,
+    )
+    payload["pull_requests_reviewed"] = _per_person(
+        row.pull_requests_reviewed,
+        row.active_reviewers,
+    )
+    payload["reviewed_lines"] = _per_person(row.reviewed_lines, row.active_reviewers)
+    return payload
+
+
+def _per_person(
+    value: int,
+    people_count: int,
+) -> float | None:
+    if people_count == 0:
+        return None
+    return round(value / people_count, 2)
 
 
 def _template_environment(locale: ReportLocale) -> Environment:

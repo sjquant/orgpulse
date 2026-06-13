@@ -71,6 +71,8 @@ def test_generates_korean_visual_testing_reports(
         "table-wrap",
         "person-card",
         "author-button",
+        "is-active",
+        "is-hidden",
     )
     for legacy_class in legacy_classes:
         assert not re.search(

@@ -257,7 +257,7 @@
       if (!peopleRankingToggle) {
         return;
       }
-      peopleRankingToggle.classList.toggle("is-hidden", totalCount <= peopleRankingChunkSize);
+      peopleRankingToggle.classList.toggle("report--hidden", totalCount <= peopleRankingChunkSize);
       const remaining = Math.max(0, totalCount - visiblePeopleCount);
       if (remaining === 0) {
         peopleRankingToggle.textContent = t("common.collapse");
@@ -273,7 +273,7 @@
       return `
         <button
           type="button"
-          class="org-dashboard__author-button org-dashboard__person-card${row.authorLogin === activeAuthor ? " is-active" : ""}"
+          class="org-dashboard__author-button org-dashboard__person-card${row.authorLogin === activeAuthor ? " org-dashboard__author-button--active org-dashboard__person-card--active" : ""}"
           data-author="${formatAttribute(row.authorLogin)}"
           aria-pressed="${row.authorLogin === activeAuthor ? "true" : "false"}"
         >
@@ -305,7 +305,7 @@
       );
       for (const panel of referenceTrendPanels) {
         const isActive = panel.dataset.referenceTrendPanel === activeReferenceTrend;
-        panel.classList.toggle("is-hidden", !isActive);
+        panel.classList.toggle("report--hidden", !isActive);
         panel.toggleAttribute("hidden", !isActive);
       }
     }
@@ -313,7 +313,8 @@
     function syncActiveAuthorButtons() {
       for (const other of document.querySelectorAll(".org-dashboard__author-button")) {
         const isActive = other.dataset.author === activeAuthor;
-        other.classList.toggle("is-active", isActive);
+        other.classList.toggle("org-dashboard__author-button--active", isActive);
+        other.classList.toggle("org-dashboard__person-card--active", isActive);
         other.setAttribute("aria-pressed", String(isActive));
       }
     }
@@ -334,9 +335,9 @@
       });
 
       function sync() {
-        container.classList.toggle("is-hidden", visibleCount === 0);
+        container.classList.toggle("report--hidden", visibleCount === 0);
         items.forEach((item, index) => {
-          item.classList.toggle("is-hidden", index >= visibleCount);
+          item.classList.toggle("report--hidden", index >= visibleCount);
         });
         const remaining = Math.max(0, items.length - visibleCount);
         if (remaining === 0) {
@@ -697,7 +698,7 @@
         return tooltip;
       }
       tooltip = document.createElement("div");
-      tooltip.className = "report__chart-tooltip is-hidden";
+      tooltip.className = "report__chart-tooltip report--hidden";
       tooltip.setAttribute("aria-hidden", "true");
       element.appendChild(tooltip);
       return tooltip;
@@ -714,7 +715,7 @@
         tooltipText("span", `${tooltipMeta.metricLabel}: ${value}`),
         tooltipText("span", tooltipMeta.subtitle)
       );
-      tooltip.classList.remove("is-hidden");
+      tooltip.classList.remove("report--hidden");
       tooltip.setAttribute("aria-hidden", "false");
       positionChartTooltip(tooltip, chartElement, node, event);
     }
@@ -729,7 +730,7 @@
       if (!tooltip) {
         return;
       }
-      tooltip.classList.add("is-hidden");
+      tooltip.classList.add("report--hidden");
       tooltip.setAttribute("aria-hidden", "true");
     }
 
@@ -842,7 +843,7 @@
 
     function syncTabs(buttons, activeButton) {
       for (const button of buttons) {
-        button.classList.toggle("is-active", button === activeButton);
+        button.classList.toggle("report__tab-button--active", button === activeButton);
         button.setAttribute("aria-selected", String(button === activeButton));
       }
     }

@@ -132,7 +132,7 @@
           </div>
           <div class="report__two-column">
             <div class="report__tab-strip report__tab-strip--primary" id="person-trend-metric-tabs" role="tablist" aria-label="{{ t("analysis.metric") }}">
-              <button type="button" class="report__tab-button is-active" data-person-trend-metric="authored_pull_request_count" aria-selected="true">{{ metric_text("authored_pull_request_count") }}</button>
+              <button type="button" class="report__tab-button report__tab-button--active" data-person-trend-metric="authored_pull_request_count" aria-selected="true">{{ metric_text("authored_pull_request_count") }}</button>
               <button type="button" class="report__tab-button" data-person-trend-metric="review_submissions_given" aria-selected="false">{{ metric_text("review_submissions_given") }}</button>
               <button type="button" class="report__tab-button" data-person-trend-metric="pull_requests_reviewed" aria-selected="false">{{ metric_text("pull_requests_reviewed") }}</button>
               <button type="button" class="report__tab-button" data-person-trend-metric="reviewed_lines" aria-selected="false">{{ metric_text("reviewed_lines") }}</button>
@@ -143,7 +143,7 @@
               <button type="button" class="report__tab-button" data-person-trend-metric="commits_total" aria-selected="false">{{ metric_text("commits_total") }}</button>
             </div>
             <div class="report__tab-strip report__tab-strip--secondary" id="person-trend-grain-tabs" role="tablist" aria-label="{{ t("common.source_grain") }}">
-              <button type="button" class="report__tab-button is-active" data-person-trend-grain="weekly" aria-selected="true">{{ t("common.weekly") }}</button>
+              <button type="button" class="report__tab-button report__tab-button--active" data-person-trend-grain="weekly" aria-selected="true">{{ t("common.weekly") }}</button>
               <button type="button" class="report__tab-button" data-person-trend-grain="monthly" aria-selected="false">{{ t("common.monthly") }}</button>
             </div>
           </div>
@@ -176,7 +176,7 @@
             <p class="report__section-copy">{{ t("person.cadence_copy") }}</p>
           </div>
           <div class="report__tab-strip report__tab-strip--secondary" id="person-cadence-tabs" role="tablist" aria-label="{{ t("common.report_cadence") }}">
-            <button type="button" class="report__tab-button is-active" id="person-cadence-weekly-tab" role="tab" data-person-cadence="weekly" aria-controls="person-cadence-weekly" aria-selected="true">{{ t("common.weekly") }}</button>
+            <button type="button" class="report__tab-button report__tab-button--active" id="person-cadence-weekly-tab" role="tab" data-person-cadence="weekly" aria-controls="person-cadence-weekly" aria-selected="true">{{ t("common.weekly") }}</button>
             <button type="button" class="report__tab-button" id="person-cadence-monthly-tab" role="tab" data-person-cadence="monthly" aria-controls="person-cadence-monthly" aria-selected="false">{{ t("common.monthly") }}</button>
           </div>
         </div>
@@ -212,7 +212,7 @@
                   {% endfor %}
                 </tbody>
                 {% if weekly_period_rows_older %}
-                <tbody id="weekly-period-extra" class="is-hidden">
+                <tbody id="weekly-period-extra" class="report--hidden">
                   {% for row in weekly_period_rows_older %}
                   <tr>
                     <td data-label="{{ t("common.week") }}">{{ row.period_key }}</td>
@@ -238,7 +238,7 @@
             </div>
             {% endif %}
           </article>
-          <article class="person-report__cadence-panel is-hidden" id="person-cadence-monthly" role="tabpanel" aria-labelledby="person-cadence-monthly-tab" data-person-cadence-panel="monthly" hidden>
+          <article class="person-report__cadence-panel report--hidden" id="person-cadence-monthly" role="tabpanel" aria-labelledby="person-cadence-monthly-tab" data-person-cadence-panel="monthly" hidden>
             <h3>{{ t("common.monthly_report") }}</h3>
             <div class="report__table-wrap">
               <table>
@@ -269,7 +269,7 @@
                   {% endfor %}
                 </tbody>
                 {% if monthly_period_rows_older %}
-                <tbody id="monthly-period-extra" class="is-hidden">
+                <tbody id="monthly-period-extra" class="report--hidden">
                   {% for row in monthly_period_rows_older %}
                   <tr>
                     <td data-label="{{ t("common.month") }}">{{ row.period_key }}</td>
@@ -350,7 +350,7 @@
               {% endfor %}
             </tbody>
             {% if repository_rest_rows %}
-            <tbody id="repository-extra" class="is-hidden">
+            <tbody id="repository-extra" class="report--hidden">
               {% for row in repository_rest_rows %}
               <tr>
                 <td data-label="{{ t("common.repository") }}">{{ row.repository_full_name }}</td>

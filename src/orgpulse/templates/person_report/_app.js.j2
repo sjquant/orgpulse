@@ -170,9 +170,9 @@
         });
 
         function sync() {
-          container.classList.toggle("is-hidden", visibleCount === 0);
+          container.classList.toggle("report--hidden", visibleCount === 0);
           items.forEach((item, index) => {
-            item.classList.toggle("is-hidden", index >= visibleCount);
+            item.classList.toggle("report--hidden", index >= visibleCount);
           });
           const remaining = Math.max(0, items.length - visibleCount);
           if (remaining === 0) {
@@ -256,7 +256,7 @@
       function syncTrendMetricTabs() {
         trendMetricTabs.forEach(button => {
           const isActive = button.dataset.personTrendMetric === activeTrendMetric;
-          button.classList.toggle("is-active", isActive);
+          button.classList.toggle("report__tab-button--active", isActive);
           button.setAttribute("aria-selected", String(isActive));
         });
       }
@@ -264,7 +264,7 @@
       function syncTrendGrainTabs() {
         trendGrainTabs.forEach(button => {
           const isActive = button.dataset.personTrendGrain === activeTrendGrain;
-          button.classList.toggle("is-active", isActive);
+          button.classList.toggle("report__tab-button--active", isActive);
           button.setAttribute("aria-selected", String(isActive));
         });
       }
@@ -272,12 +272,12 @@
       function syncCadenceTabs() {
         cadenceTabs.forEach(button => {
           const isActive = button.dataset.personCadence === activeCadence;
-          button.classList.toggle("is-active", isActive);
+          button.classList.toggle("report__tab-button--active", isActive);
           button.setAttribute("aria-selected", String(isActive));
         });
         cadencePanels.forEach(panel => {
           const isActive = panel.dataset.personCadencePanel === activeCadence;
-          panel.classList.toggle("is-hidden", !isActive);
+          panel.classList.toggle("report--hidden", !isActive);
           panel.toggleAttribute("hidden", !isActive);
         });
       }
@@ -294,7 +294,7 @@
             : t("person.show_org_comparison"),
         );
         if (orgComparisonLegend) {
-          orgComparisonLegend.classList.toggle("is-hidden", !activeShowOrgComparison);
+          orgComparisonLegend.classList.toggle("report--hidden", !activeShowOrgComparison);
         }
       }
 
@@ -508,7 +508,7 @@
           return tooltip;
         }
         tooltip = document.createElement("div");
-        tooltip.className = "report__chart-tooltip is-hidden";
+        tooltip.className = "report__chart-tooltip report--hidden";
         tooltip.setAttribute("aria-hidden", "true");
         element.appendChild(tooltip);
         return tooltip;
@@ -521,7 +521,7 @@
           <span>${escapeHtml(metricLabel(metric))}: ${escapeHtml(node.dataset.pointValue || "-")}</span>
           ${node.classList.contains("report__chart-node--partial") ? `<span>${escapeHtml(node.dataset.pointState || "partial period")}</span>` : ""}
         `;
-        tooltip.classList.remove("is-hidden");
+        tooltip.classList.remove("report--hidden");
         tooltip.setAttribute("aria-hidden", "false");
         const chartRect = chartElement.getBoundingClientRect();
         const nodeRect = node.getBoundingClientRect();
@@ -537,7 +537,7 @@
       }
 
       function hideChartTooltip(tooltip) {
-        tooltip.classList.add("is-hidden");
+        tooltip.classList.add("report--hidden");
         tooltip.setAttribute("aria-hidden", "true");
       }
 

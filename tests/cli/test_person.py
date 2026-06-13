@@ -1816,19 +1816,19 @@ class TestPersonCommand:
 
         # Then
         assert result.exit_code == 0
-        assert 'id="weekly-period-extra" class="is-hidden"' in result.stdout
+        assert 'id="weekly-period-extra" class="report--hidden"' in result.stdout
         assert (
             'id="weekly-period-toggle" class="report__ghost-button" aria-expanded="false"'
             in result.stdout
         )
         assert "Show 5 more weekly rows" in result.stdout
-        assert 'id="monthly-period-extra" class="is-hidden"' in result.stdout
+        assert 'id="monthly-period-extra" class="report--hidden"' in result.stdout
         assert (
             'id="monthly-period-toggle" class="report__ghost-button" aria-expanded="false"'
             in result.stdout
         )
         assert "Show 3 more monthly rows" in result.stdout
-        assert 'id="repository-extra" class="is-hidden"' in result.stdout
+        assert 'id="repository-extra" class="report--hidden"' in result.stdout
         assert "Show 5 more repositories" in result.stdout
         assert (
             'id="repository-toggle" class="report__ghost-button" aria-expanded="false"'

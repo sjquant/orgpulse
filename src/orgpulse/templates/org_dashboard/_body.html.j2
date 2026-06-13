@@ -124,7 +124,7 @@
         <p class="report__section-copy">{{ t("dashboard.trend_surface_copy") }}</p>
         <div class="report__two-column">
           <div class="report__tab-strip report__tab-strip--primary" id="trend-metric-tabs">
-            <button type="button" class="report__tab-button is-active" data-metric="pull_requests" aria-selected="true">{{ metric_text("pull_requests") }}</button>
+            <button type="button" class="report__tab-button report__tab-button--active" data-metric="pull_requests" aria-selected="true">{{ metric_text("pull_requests") }}</button>
             <button type="button" class="report__tab-button" data-metric="pull_requests_per_active_author" aria-selected="false">{{ metric_text("pull_requests_per_active_author") }}</button>
             <button type="button" class="report__tab-button" data-metric="changed_lines" aria-selected="false">{{ metric_text("changed_lines") }}</button>
             <button type="button" class="report__tab-button" data-metric="changed_lines_per_active_author" aria-selected="false">{{ metric_text("changed_lines_per_active_author") }}</button>
@@ -133,7 +133,7 @@
             <button type="button" class="report__tab-button" data-metric="median_merge_hours" aria-selected="false">{{ metric_text("median_merge_hours") }}</button>
           </div>
           <div class="report__tab-strip report__tab-strip--secondary" id="trend-grain-tabs">
-            <button type="button" class="report__tab-button is-active" data-grain="weekly" aria-selected="true">{{ t("common.weekly") }}</button>
+            <button type="button" class="report__tab-button report__tab-button--active" data-grain="weekly" aria-selected="true">{{ t("common.weekly") }}</button>
             <button type="button" class="report__tab-button" data-grain="monthly" aria-selected="false">{{ t("common.monthly") }}</button>
           </div>
         </div>
@@ -169,7 +169,7 @@
         <div class="org-dashboard__people-grid">
           <div class="org-dashboard__people-ranking-controls">
             <div class="report__tab-strip report__tab-strip--primary" id="people-metric-tabs" role="tablist" aria-label="{{ t("dashboard.people_ranking_metric") }}">
-              <button type="button" class="report__tab-button is-active" data-people-metric="pull_requests" aria-selected="true">{{ metric_text("pull_requests") }}</button>
+              <button type="button" class="report__tab-button report__tab-button--active" data-people-metric="pull_requests" aria-selected="true">{{ metric_text("pull_requests") }}</button>
               <button type="button" class="report__tab-button" data-people-metric="changed_lines" aria-selected="false">{{ metric_text("changed_lines") }}</button>
               <button type="button" class="report__tab-button" data-people-metric="pull_requests_reviewed" aria-selected="false">{{ metric_text("pull_requests_reviewed") }}</button>
               <button type="button" class="report__tab-button" data-people-metric="reviewed_lines" aria-selected="false">{{ metric_text("reviewed_lines") }}</button>
@@ -178,7 +178,7 @@
               <button type="button" class="report__tab-button" data-people-metric="median_merge_hours" aria-selected="false">{{ metric_text("median_merge_hours") }}</button>
             </div>
             <div class="org-dashboard__detail-tabs report__tab-strip--secondary" id="author-detail-grain-tabs">
-              <button type="button" class="report__tab-button is-active" data-author-grain="weekly" aria-selected="true">{{ t("common.weekly") }}</button>
+              <button type="button" class="report__tab-button report__tab-button--active" data-author-grain="weekly" aria-selected="true">{{ t("common.weekly") }}</button>
               <button type="button" class="report__tab-button" data-author-grain="monthly" aria-selected="false">{{ t("common.monthly") }}</button>
             </div>
           </div>
@@ -264,7 +264,7 @@
               {% endfor %}
             </tbody>
             {% if repositories_rest %}
-            <tbody id="repository-extra" class="is-hidden">
+            <tbody id="repository-extra" class="report--hidden">
               {% for row in repositories_rest %}
               <tr>
                 <td class="report__table-cell--rank" data-label="#"> {{ loop.index + repositories_top|length }}</td>
@@ -379,7 +379,7 @@
           <details class="org-dashboard__disclosure" open>
             <summary>{{ t("dashboard.trend_tables") }}</summary>
             <div class="report__tab-strip report__tab-strip--secondary" id="reference-trend-tabs" role="tablist" aria-label="{{ t("common.reference") }} {{ t("common.report_cadence") }}">
-              <button type="button" class="report__tab-button is-active" id="reference-weekly-tab" role="tab" data-reference-trend="weekly" aria-controls="reference-weekly-panel" aria-selected="true">{{ t("common.weekly") }}</button>
+              <button type="button" class="report__tab-button report__tab-button--active" id="reference-weekly-tab" role="tab" data-reference-trend="weekly" aria-controls="reference-weekly-panel" aria-selected="true">{{ t("common.weekly") }}</button>
               <button type="button" class="report__tab-button" id="reference-monthly-tab" role="tab" data-reference-trend="monthly" aria-controls="reference-monthly-panel" aria-selected="false">{{ t("common.monthly") }}</button>
             </div>
             <div class="org-dashboard__reference-stack">
@@ -423,7 +423,7 @@
                     {% endfor %}
                   </tbody>
                   {% if weekly_trends_older %}
-                  <tbody id="weekly-trend-extra" class="is-hidden">
+                  <tbody id="weekly-trend-extra" class="report--hidden">
                     {% for row in weekly_trends_older %}
                     <tr class="{% if row.is_partial %}report__table-row--partial{% endif %}">
                       <td class="report__table-cell--leader" data-label="{{ t("common.week") }}">
@@ -454,7 +454,7 @@
                 {% endif %}
               </article>
 
-              <article id="reference-monthly-panel" class="is-hidden" role="tabpanel" aria-labelledby="reference-monthly-tab" data-reference-trend-panel="monthly" hidden>
+              <article id="reference-monthly-panel" class="report--hidden" role="tabpanel" aria-labelledby="reference-monthly-tab" data-reference-trend-panel="monthly" hidden>
                 <div class="org-dashboard__control-row">
                   <span class="org-dashboard__control-note">{{ t("common.monthly") }} 5. {{ reference_summary.monthly_hidden_count | intfmt }} {{ t("common.rows_hidden_until_expanded") }}</span>
                 </div>
@@ -494,7 +494,7 @@
                     {% endfor %}
                   </tbody>
                   {% if monthly_trends_older %}
-                  <tbody id="monthly-trend-extra" class="is-hidden">
+                  <tbody id="monthly-trend-extra" class="report--hidden">
                     {% for row in monthly_trends_older %}
                     <tr class="{% if row.is_partial %}report__table-row--partial{% endif %}">
                       <td class="report__table-cell--leader" data-label="{{ t("common.month") }}">

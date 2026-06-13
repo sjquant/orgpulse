@@ -1339,7 +1339,10 @@ class TestPersonCommand:
         assert "comparison-switch-thumb" in html_result.stdout
         assert 'id="org-comparison-legend"' in html_result.stdout
         assert "org-comparison-line" in html_result.stdout
+        assert "org-comparison-node" in html_result.stdout
         assert "org-comparison-point" in html_result.stdout
+        assert "data-point-series" in html_result.stdout
+        assert "data-point-value" in html_result.stdout
         report_payload_match = re.search(
             r'<script id="person-report-data" type="application/json">(.*?)</script>',
             html_result.stdout,

@@ -457,9 +457,11 @@
           `;
         }).join("");
         const comparisonNodes = comparisonPoints.map(point => `
-          <circle class="org-comparison-point" cx="${xFor(point.index)}" cy="${yFor(point.value)}" r="3" fill="currentColor">
-            <title>${escapeHtml(t("common.organization"))} ${escapeHtml(point.row.period_key || "-")}: ${escapeHtml(formatMetricValue(point.value, metric))}</title>
-          </circle>
+          <g class="chart-node org-comparison-node ${point.row.is_partial ? "partial-period" : ""}" data-point-index="${point.index}" data-point-label="${escapeAttribute(point.row.period_key || "-")}" data-point-series="${escapeAttribute(t("common.organization"))}" data-point-value="${escapeAttribute(formatMetricValue(point.value, metric))}" data-point-state="${escapeAttribute(periodStatusText(point.row))}" tabindex="0" role="button" aria-label="${escapeAttribute(`${t("common.organization")} ${point.row.period_key || "Period"} ${formatMetricValue(point.value, metric)}`)}">
+            <circle class="org-comparison-point" cx="${xFor(point.index)}" cy="${yFor(point.value)}" r="4" fill="currentColor">
+              <title>${escapeHtml(t("common.organization"))} ${escapeHtml(point.row.period_key || "-")}: ${escapeHtml(formatMetricValue(point.value, metric))}</title>
+            </circle>
+          </g>
         `).join("");
         element.innerHTML = `
           <svg viewBox="0 0 ${width} ${height}" preserveAspectRatio="xMidYMid meet" role="img" aria-label="${escapeAttribute(metricLabel(metric))} chart">
@@ -515,6 +517,7 @@
       function showChartTooltip(tooltip, chartElement, node, metric, event) {
         tooltip.innerHTML = `
           <strong>${escapeHtml(node.dataset.pointLabel || "-")}</strong>
+          ${node.dataset.pointSeries ? `<span>${escapeHtml(node.dataset.pointSeries)}</span>` : ""}
           <span>${escapeHtml(metricLabel(metric))}: ${escapeHtml(node.dataset.pointValue || "-")}</span>
           ${node.classList.contains("partial-period") ? `<span>${escapeHtml(node.dataset.pointState || "partial period")}</span>` : ""}
         `;

@@ -306,6 +306,306 @@ class TestGitHubIngestionService:
         assert progress_events[-1].phase == "finish"
         assert progress_events[-1].progress_percent == 100.0
 
+    def test_fetches_only_candidate_repositories_for_incremental_window(self) -> None:
+        """Fetch incremental pull requests only from repositories with matching search candidates."""
+        # Given
+        progress_events: list[PullRequestFetchProgress] = []
+        api_repository = self._build_repository(
+            "acme/api",
+            pull_outcomes=[
+                [
+                    self._build_pull_request(
+                        number=10,
+                        updated_at="2026-04-10T09:00:00",
+                    ),
+                ]
+            ],
+        )
+        api = FakeGithubClient(
+            organizations={},
+            repositories={"acme/api": [api_repository]},
+            search_issue_outcomes=[
+                FakeIssueSearchResults(
+                    [
+                        FakeSearchIssue(
+                            repository_url="https://api.github.com/repos/acme/api"
+                        )
+                    ],
+                )
+            ],
+        )
+        service = GitHubIngestionService(cast(GitHubIngestionClientLike, api))
+        config = self._build_run_config(as_of="2026-04-18")
+
+        # When
+        result = service.fetch_pull_requests(
+            config,
+            RepositoryInventory(
+                organization_login="acme",
+                repositories=(
+                    self._build_inventory_item("acme/api"),
+                    self._build_inventory_item("acme/docs"),
+                    self._build_inventory_item("acme/web"),
+                ),
+            ),
+            progress_callback=progress_events.append,
+        )
+
+        # Then
+        assert api.search_issue_calls == [
+            {
+                "query": "is:pr org:acme updated:2026-04-01..2026-04-18",
+                "sort": "updated",
+                "order": "desc",
+            }
+        ]
+        assert api.get_repo_calls == ["acme/api"]
+        assert [pull_request.number for pull_request in result.pull_requests] == [10]
+        assert result.failures == ()
+        assert [
+            (event.phase, event.total_repositories, event.repository_full_name)
+            for event in progress_events
+        ] == [
+            ("start", 1, None),
+            ("repository_started", 1, "acme/api"),
+            ("repository_completed", 1, "acme/api"),
+            ("finish", 1, None),
+        ]
+
+    def test_preserves_skipped_incremental_repositories_from_canonical_inventory(
+        self,
+        tmp_path,
+    ) -> None:
+        """Preserve active-period rows for repositories omitted by candidate search."""
+        # Given
+        config = self._build_run_config(
+            as_of="2026-04-18",
+            output_dir=tmp_path,
+        )
+        NormalizedRawSnapshotWriter().write(
+            config,
+            PullRequestCollection(
+                window=config.collection_window,
+                pull_requests=(
+                    self._build_pull_request_record(
+                        repository_full_name="acme/api",
+                        number=10,
+                        updated_at="2026-04-10T09:00:00",
+                    ),
+                    self._build_pull_request_record(
+                        repository_full_name="acme/web",
+                        number=20,
+                        updated_at="2026-04-11T09:00:00",
+                    ),
+                    self._build_pull_request_record(
+                        repository_full_name="acme/web",
+                        number=21,
+                        updated_at="2026-03-11T09:00:00",
+                        created_at="2026-03-11T09:00:00",
+                    ),
+                    self._build_pull_request_record(
+                        repository_full_name="acme/web",
+                        number=22,
+                        updated_at="2026-04-20T09:00:00",
+                        created_at="2026-04-10T09:00:00",
+                    ),
+                    self._build_pull_request_record(
+                        repository_full_name="acme/removed",
+                        number=30,
+                        updated_at="2026-04-09T09:00:00",
+                    ),
+                ),
+                failures=(),
+            ),
+        )
+        api_repository = self._build_repository(
+            "acme/api",
+            pull_outcomes=[
+                [
+                    self._build_pull_request(
+                        number=10,
+                        updated_at="2026-04-12T09:00:00",
+                    ),
+                ]
+            ],
+        )
+        api = FakeGithubClient(
+            organizations={},
+            repositories={"acme/api": [api_repository]},
+            search_issue_outcomes=[
+                FakeIssueSearchResults(
+                    [
+                        FakeSearchIssue(
+                            repository_url="https://api.github.com/repos/acme/api"
+                        )
+                    ],
+                )
+            ],
+        )
+        service = GitHubIngestionService(cast(GitHubIngestionClientLike, api))
+
+        # When
+        result = service.fetch_pull_requests(
+            config,
+            RepositoryInventory(
+                organization_login="acme",
+                repositories=(
+                    self._build_inventory_item("acme/api"),
+                    self._build_inventory_item("acme/web"),
+                ),
+            ),
+        )
+
+        # Then
+        assert api.get_repo_calls == ["acme/api"]
+        assert [
+            (pull_request.repository_full_name, pull_request.number)
+            for pull_request in result.pull_requests
+        ] == [
+            ("acme/api", 10),
+            ("acme/web", 20),
+        ]
+        assert result.pull_requests[0].updated_at == datetime.fromisoformat(
+            "2026-04-12T09:00:00"
+        )
+        assert result.pull_requests[1].updated_at == datetime.fromisoformat(
+            "2026-04-11T09:00:00"
+        )
+        assert result.failures == ()
+
+    def test_fetches_all_repositories_when_candidate_search_reaches_github_limit(
+        self,
+    ) -> None:
+        """Fall back to full repository iteration when candidate search is capped."""
+        # Given
+        api_repository = self._build_repository(
+            "acme/api",
+            pull_outcomes=[
+                [
+                    self._build_pull_request(
+                        number=10,
+                        updated_at="2026-04-10T09:00:00",
+                    ),
+                ]
+            ],
+        )
+        web_repository = self._build_repository(
+            "acme/web",
+            pull_outcomes=[
+                [
+                    self._build_pull_request(
+                        number=20,
+                        updated_at="2026-04-11T09:00:00",
+                    ),
+                ]
+            ],
+        )
+        api = FakeGithubClient(
+            organizations={},
+            repositories={
+                "acme/api": [api_repository],
+                "acme/web": [web_repository],
+            },
+            search_issue_outcomes=[
+                FakeIssueSearchResults(
+                    [
+                        FakeSearchIssue(
+                            repository_url="https://api.github.com/repos/acme/api"
+                        )
+                    ],
+                    total_count=1000,
+                )
+            ],
+        )
+        service = GitHubIngestionService(cast(GitHubIngestionClientLike, api))
+        config = self._build_run_config(as_of="2026-04-18")
+
+        # When
+        result = service.fetch_pull_requests(
+            config,
+            RepositoryInventory(
+                organization_login="acme",
+                repositories=(
+                    self._build_inventory_item("acme/api"),
+                    self._build_inventory_item("acme/web"),
+                ),
+            ),
+        )
+
+        # Then
+        assert api.get_repo_calls == ["acme/api", "acme/web"]
+        assert [pull_request.number for pull_request in result.pull_requests] == [
+            10,
+            20,
+        ]
+        assert result.failures == ()
+
+    def test_fetches_all_repositories_when_candidate_search_count_fails(self) -> None:
+        """Fall back to full repository iteration when candidate search count fails."""
+        # Given
+        api_repository = self._build_repository(
+            "acme/api",
+            pull_outcomes=[
+                [
+                    self._build_pull_request(
+                        number=10,
+                        updated_at="2026-04-10T09:00:00",
+                    ),
+                ]
+            ],
+        )
+        web_repository = self._build_repository(
+            "acme/web",
+            pull_outcomes=[
+                [
+                    self._build_pull_request(
+                        number=20,
+                        updated_at="2026-04-11T09:00:00",
+                    ),
+                ]
+            ],
+        )
+        api = FakeGithubClient(
+            organizations={},
+            repositories={
+                "acme/api": [api_repository],
+                "acme/web": [web_repository],
+            },
+            search_issue_outcomes=[
+                FakeFailingIssueSearchResults(
+                    self._build_github_exception(
+                        status=500,
+                        message="Server Error",
+                    )
+                )
+            ],
+        )
+        service = GitHubIngestionService(
+            cast(GitHubIngestionClientLike, api),
+            max_retries=0,
+        )
+        config = self._build_run_config(as_of="2026-04-18")
+
+        # When
+        result = service.fetch_pull_requests(
+            config,
+            RepositoryInventory(
+                organization_login="acme",
+                repositories=(
+                    self._build_inventory_item("acme/api"),
+                    self._build_inventory_item("acme/web"),
+                ),
+            ),
+        )
+
+        # Then
+        assert api.get_repo_calls == ["acme/api", "acme/web"]
+        assert [pull_request.number for pull_request in result.pull_requests] == [
+            10,
+            20,
+        ]
+        assert result.failures == ()
+
     def test_fetches_pull_requests_through_graphql_batches_when_available(self) -> None:
         """Fetch pull requests through the GraphQL batch path when the client supports it."""
         # Given
@@ -2522,6 +2822,7 @@ class TestGitHubIngestionService:
         self,
         *,
         number: int,
+        repository_full_name: str = "acme/api",
         updated_at: str,
         created_at: str | None = None,
         title: str | None = None,
@@ -2536,7 +2837,7 @@ class TestGitHubIngestionService:
             else datetime.fromisoformat(created_at)
         )
         return PullRequestRecord(
-            repository_full_name="acme/api",
+            repository_full_name=repository_full_name,
             number=number,
             title=f"PR {number}" if title is None else title,
             state="closed",
@@ -2857,14 +3158,19 @@ class FakeGithubClient:
         *,
         organizations: dict[str, FakeOrganization],
         repositories: dict[str, list[RepositoryFetchOutcome]],
+        search_issue_outcomes: list[Any] | None = None,
         graphql_requester: "FakeGraphQLRequester | None" = None,
     ) -> None:
         self._organizations = organizations
         self._repositories = {
             name: deque(outcomes) for name, outcomes in repositories.items()
         }
+        self._search_issue_outcomes = (
+            None if search_issue_outcomes is None else deque(search_issue_outcomes)
+        )
         self.requester = graphql_requester
         self.get_repo_calls: list[str] = []
+        self.search_issue_calls: list[dict[str, str]] = []
 
     def get_organization(self, org: str) -> FakeOrganization:
         return self._organizations[org]
@@ -2872,6 +3178,73 @@ class FakeGithubClient:
     def get_repo(self, full_name: str) -> GitHubRepositoryLike:
         self.get_repo_calls.append(full_name)
         return resolve_outcome(self._repositories[full_name])
+
+    def search_issues(self, *, query: str, sort: str, order: str):
+        self.search_issue_calls.append(
+            {
+                "query": query,
+                "sort": sort,
+                "order": order,
+            }
+        )
+        if self._search_issue_outcomes is None:
+            raise NotImplementedError
+        return resolve_outcome(self._search_issue_outcomes)
+
+
+@dataclass(frozen=True)
+class FakeSearchIssue:
+    repository_url: str
+
+
+class FakeIssueSearchResults(Sequence[FakeSearchIssue]):
+    def __init__(
+        self,
+        issues: Sequence[FakeSearchIssue],
+        *,
+        total_count: int | None = None,
+    ) -> None:
+        self._issues = tuple(issues)
+        self.totalCount = len(self._issues) if total_count is None else total_count
+
+    def __len__(self) -> int:
+        return len(self._issues)
+
+    @overload
+    def __getitem__(self, index: int) -> FakeSearchIssue: ...
+
+    @overload
+    def __getitem__(self, index: slice) -> Sequence[FakeSearchIssue]: ...
+
+    def __getitem__(
+        self,
+        index: int | slice,
+    ) -> FakeSearchIssue | Sequence[FakeSearchIssue]:
+        return self._issues[index]
+
+
+class FakeFailingIssueSearchResults(Sequence[FakeSearchIssue]):
+    def __init__(self, exc: GithubException | RequestException) -> None:
+        self._exc = exc
+
+    @property
+    def totalCount(self) -> int:
+        raise self._exc
+
+    def __len__(self) -> int:
+        return 0
+
+    @overload
+    def __getitem__(self, index: int) -> FakeSearchIssue: ...
+
+    @overload
+    def __getitem__(self, index: slice) -> Sequence[FakeSearchIssue]: ...
+
+    def __getitem__(
+        self,
+        index: int | slice,
+    ) -> FakeSearchIssue | Sequence[FakeSearchIssue]:
+        raise IndexError(index)
 
 
 class FakeOrganization:

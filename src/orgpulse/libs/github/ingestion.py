@@ -48,6 +48,7 @@ from orgpulse.libs.github.types import (
 DEFAULT_MAX_RETRIES = 2
 DEFAULT_RETRY_BACKOFF_SECONDS = 1.0
 CHECKPOINT_UPDATED_AT_OVERLAP = timedelta(minutes=5)
+GITHUB_SEARCH_RESULT_LIMIT = 1000
 RAW_SNAPSHOT_DIRNAME = "raw"
 CHECKPOINT_DIRNAME = "checkpoints"
 CHECKPOINT_MANIFEST_FILENAME = "manifest.json"
@@ -641,6 +642,42 @@ class CanonicalRawInventoryStore:
             return None
         return self._load_inventory_pull_requests(inventory)
 
+    def load_raw_snapshot_period(
+        self,
+        config: RunConfig,
+        period: ReportingPeriod,
+    ) -> tuple[PullRequestRecord, ...] | None:
+        inventory = self._inventory(config.output_dir)
+        if self._stored_contract(inventory.contract_path) != self._contract(config):
+            return None
+
+        root_dir = (
+            config.output_dir
+            / RAW_SNAPSHOT_DIRNAME
+            / config.period.value
+            / config.time_anchor.value
+            / period.key
+        )
+        pull_requests_path = root_dir / PULL_REQUEST_SNAPSHOT_FILENAME
+        if not pull_requests_path.exists():
+            return None
+
+        review_index = self._load_review_index(
+            root_dir / PULL_REQUEST_REVIEW_SNAPSHOT_FILENAME
+        )
+        timeline_event_index = self._load_timeline_event_index(
+            root_dir / PULL_REQUEST_TIMELINE_EVENT_SNAPSHOT_FILENAME
+        )
+        pull_requests = [
+            self._build_pull_request_record(
+                row,
+                review_index=review_index,
+                timeline_event_index=timeline_event_index,
+            )
+            for row in self._read_rows(pull_requests_path)
+        ]
+        return self._sorted_pull_requests(tuple(pull_requests))
+
     def _inventory(self, output_dir: Path) -> _CanonicalRawInventory:
         root_dir = output_dir / CANONICAL_RAW_DIRNAME
         return _CanonicalRawInventory(
@@ -1174,13 +1211,24 @@ class GitHubIngestionService:
     ) -> PullRequestCollection:
         """Fetch pull requests for the configured collection window across repositories."""
         checkpoint = self._load_collection_checkpoint(config)
-        pull_requests_by_repository = dict(checkpoint.pull_requests_by_repository)
+        candidate_repository_names = self._candidate_repository_names(config)
+        pull_requests_by_repository = self._initial_pull_requests_by_repository(
+            config,
+            inventory,
+            checkpoint,
+            candidate_repository_names=candidate_repository_names,
+        )
         failures: list[RepositoryCollectionFailure] = []
         window = config.collection_window
-        total_repositories = len(inventory.repositories)
+        repositories = self._repositories_requiring_pull_request_fetch(
+            config,
+            inventory,
+            candidate_repository_names=candidate_repository_names,
+        )
+        total_repositories = len(repositories)
         completed_repositories = {
             repository.full_name
-            for repository in inventory.repositories
+            for repository in repositories
             if repository.full_name in checkpoint.repository_end_dates
         }
         self._emit_pull_request_fetch_progress(
@@ -1199,7 +1247,7 @@ class GitHubIngestionService:
             failure_count=0,
         )
 
-        for repository_index, repository in enumerate(inventory.repositories, start=1):
+        for repository_index, repository in enumerate(repositories, start=1):
             cached_pull_requests = pull_requests_by_repository.get(
                 repository.full_name,
                 (),
@@ -1318,6 +1366,169 @@ class GitHubIngestionService:
             ),
             failures=tuple(failures),
         )
+
+    def _initial_pull_requests_by_repository(
+        self,
+        config: RunConfig,
+        inventory: RepositoryInventory,
+        checkpoint: _CollectionCheckpoint,
+        *,
+        candidate_repository_names: set[str] | None,
+    ) -> dict[str, tuple[PullRequestRecord, ...]]:
+        pull_requests_by_repository = (
+            self._active_period_pull_requests_by_repository(config, inventory)
+            if config.mode is RunMode.INCREMENTAL
+            and candidate_repository_names is not None
+            else {}
+        )
+        pull_requests_by_repository.update(checkpoint.pull_requests_by_repository)
+        return pull_requests_by_repository
+
+    def _active_period_pull_requests_by_repository(
+        self,
+        config: RunConfig,
+        inventory: RepositoryInventory,
+    ) -> dict[str, tuple[PullRequestRecord, ...]]:
+        pull_requests = self._active_period_pull_requests(config)
+        inventory_repository_names = {
+            repository.full_name.lower() for repository in inventory.repositories
+        }
+
+        grouped_pull_requests: dict[str, list[PullRequestRecord]] = {}
+        collection_time_anchor = self._collection_time_anchor(config)
+        for pull_request in pull_requests:
+            if pull_request.repository_full_name.lower() not in inventory_repository_names:
+                continue
+            anchor_at = self._anchor_datetime(collection_time_anchor, pull_request)
+            if anchor_at is None:
+                continue
+            if not self._pull_request_is_within_window(
+                anchor_at.date(),
+                config.collection_window,
+            ):
+                continue
+            grouped_pull_requests.setdefault(
+                pull_request.repository_full_name,
+                [],
+            ).append(pull_request)
+        return {
+            repository_full_name: tuple(repository_pull_requests)
+            for repository_full_name, repository_pull_requests in grouped_pull_requests.items()
+        }
+
+    def _active_period_pull_requests(
+        self,
+        config: RunConfig,
+    ) -> tuple[PullRequestRecord, ...]:
+        store = CanonicalRawInventoryStore()
+        snapshot_pull_requests = store.load_raw_snapshot_period(
+            config,
+            config.active_period,
+        )
+        if snapshot_pull_requests is not None:
+            return snapshot_pull_requests
+        return store.load(config) or ()
+
+    def _repositories_requiring_pull_request_fetch(
+        self,
+        config: RunConfig,
+        inventory: RepositoryInventory,
+        *,
+        candidate_repository_names: set[str] | None,
+    ) -> tuple[RepositoryInventoryItem, ...]:
+        if candidate_repository_names is None:
+            return inventory.repositories
+
+        return tuple(
+            repository
+            for repository in inventory.repositories
+            if repository.full_name.lower() in candidate_repository_names
+        )
+
+    def _candidate_repository_names(self, config: RunConfig) -> set[str] | None:
+        if config.mode is RunMode.FULL:
+            return None
+
+        search_issues = getattr(self._github_client, "search_issues", None)
+        if not callable(search_issues):
+            return None
+
+        query = self._candidate_search_query(config)
+        try:
+            issues = self._run_github_operation(
+                call=lambda: search_issues(query=query, sort="updated", order="desc"),
+            )
+        except (GithubException, RequestException, NotImplementedError, AttributeError):
+            return None
+
+        try:
+            total_count = self._run_github_operation(
+                call=lambda: getattr(issues, "totalCount", None),
+            )
+        except (GithubException, RequestException, AttributeError):
+            return None
+        if isinstance(total_count, int) and total_count >= GITHUB_SEARCH_RESULT_LIMIT:
+            return None
+
+        candidate_repository_names: set[str] = set()
+        try:
+            for issue in issues:
+                repository_full_name = self._search_issue_repository_full_name(issue)
+                if repository_full_name is not None:
+                    candidate_repository_names.add(repository_full_name.lower())
+        except (GithubException, RequestException, AttributeError, KeyError, ValueError):
+            return None
+        return candidate_repository_names
+
+    def _candidate_search_query(self, config: RunConfig) -> str:
+        collection_time_anchor = self._collection_time_anchor(config)
+        window = config.collection_window
+        return " ".join(
+            (
+                "is:pr",
+                f"org:{config.org}",
+                self._candidate_search_date_qualifier(collection_time_anchor, window),
+            )
+        )
+
+    def _candidate_search_date_qualifier(
+        self,
+        time_anchor: TimeAnchor,
+        window: CollectionWindow,
+    ) -> str:
+        start_date = "*" if window.start_date is None else window.start_date.isoformat()
+        end_date = window.end_date.isoformat()
+        if time_anchor is TimeAnchor.CREATED_AT:
+            return f"created:{start_date}..{end_date}"
+        if time_anchor is TimeAnchor.MERGED_AT:
+            return f"merged:{start_date}..{end_date}"
+        return f"updated:{start_date}..{end_date}"
+
+    def _search_issue_repository_full_name(self, issue: Any) -> str | None:
+        repository_url = getattr(issue, "repository_url", None)
+        if isinstance(repository_url, str):
+            return self._repository_full_name_from_url(repository_url)
+
+        raw_data = getattr(issue, "raw_data", None)
+        if isinstance(raw_data, dict):
+            raw_repository_url = raw_data.get("repository_url")
+            if isinstance(raw_repository_url, str):
+                return self._repository_full_name_from_url(raw_repository_url)
+
+        repository = getattr(issue, "repository", None)
+        repository_full_name = getattr(repository, "full_name", None)
+        if isinstance(repository_full_name, str):
+            return repository_full_name
+        return None
+
+    def _repository_full_name_from_url(self, repository_url: str) -> str | None:
+        marker = "/repos/"
+        if marker not in repository_url:
+            return None
+        _, repository_full_name = repository_url.rsplit(marker, 1)
+        if "/" not in repository_full_name:
+            return None
+        return repository_full_name.strip("/") or None
 
     def _emit_pull_request_fetch_progress(
         self,

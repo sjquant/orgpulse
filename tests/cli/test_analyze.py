@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 # ruff: noqa: F403,F405
+from orgpulse.common.config import get_settings
+
 from ..helpers.cli import *
 
 
@@ -108,6 +110,7 @@ class TestAnalyzeCommand:
         assert payload["grouping"] == "period"
         assert payload["grain"] == "month"
         assert payload["time_anchor"] == "created_at"
+        assert "locale" not in payload
         assert payload["matched_pull_request_count"] == 2
         assert len(payload["rows"]) == 1
         row = payload["rows"][0]
@@ -125,6 +128,31 @@ class TestAnalyzeCommand:
         assert row["time_to_first_review_count"] == 0
         assert row["time_to_merge_count"] == 1
         assert row["time_to_merge_average_seconds"] == 183600.0
+        get_settings.cache_clear()
+        invalid_locale_result = runner.invoke(
+            app,
+            [
+                "analyze",
+                "--org",
+                "acme",
+                "--grain",
+                "month",
+                "--group-by",
+                "period",
+                "--since",
+                "2026-04-01",
+                "--until",
+                "2026-04-30",
+                "--output-dir",
+                str(tmp_path),
+                "--format",
+                "json",
+            ],
+            env={"ORGPULSE_LOCALE": "bad-locale"},
+        )
+        assert invalid_locale_result.exit_code == 0
+        assert "locale" not in json.loads(invalid_locale_result.stdout)
+        get_settings.cache_clear()
 
     def test_writes_repository_analysis_as_csv(
         self,
@@ -236,56 +264,13 @@ class TestAnalyzeCommand:
         assert rows[0]["merged_pull_request_count"] == "2"
         assert rows[0]["period_key"] == ""
 
-    def test_marks_filtered_closed_analysis_period_as_partial(
+    def test_rejects_html_analysis_format(
         self,
         runner: CliRunner,
-        github_auth_service: None,
-        monkeypatch: pytest.MonkeyPatch,
         tmp_path,
-        pull_request_factory,
     ) -> None:
-        """Mark a closed period as partial when the analysis window starts inside it."""
+        """Reject the removed analysis HTML output format."""
         # Given
-        collection = PullRequestCollection(
-            window=CollectionWindow(
-                scope=RunScope.FULL_HISTORY,
-                start_date=None,
-                end_date=datetime.fromisoformat("2026-02-28T00:00:00").date(),
-            ),
-            pull_requests=(
-                pull_request_factory(
-                    repository_full_name="acme/api",
-                    number=25,
-                    title="Mid-January API work",
-                    author_login="alice",
-                    created_at=datetime.fromisoformat("2026-01-10T09:00:00"),
-                    updated_at=datetime.fromisoformat("2026-01-11T09:00:00"),
-                    closed_at=datetime.fromisoformat("2026-01-12T09:00:00"),
-                    merged=True,
-                    merged_at=datetime.fromisoformat("2026-01-12T09:00:00"),
-                ),
-            ),
-            failures=(),
-        )
-        _configure_production_cli_runtime(
-            monkeypatch,
-            collection=collection,
-        )
-        run_result = runner.invoke(
-            app,
-            [
-                "run",
-                "--org",
-                "acme",
-                "--mode",
-                "full",
-                "--as-of",
-                "2026-02-28",
-                "--output-dir",
-                str(tmp_path),
-            ],
-        )
-        assert run_result.exit_code == 0
 
         # When
         result = runner.invoke(
@@ -298,10 +283,6 @@ class TestAnalyzeCommand:
                 "month",
                 "--group-by",
                 "period",
-                "--since",
-                "2026-01-10",
-                "--until",
-                "2026-01-31",
                 "--output-dir",
                 str(tmp_path),
                 "--format",
@@ -310,21 +291,9 @@ class TestAnalyzeCommand:
         )
 
         # Then
-        assert result.exit_code == 0
-        payload_match = re.search(
-            r'<script id="report-data" type="application/json">(.*?)</script>',
-            result.stdout,
-            re.S,
-        )
-        assert payload_match is not None
-        payload = json.loads(payload_match.group(1))
-        assert payload["periods"][0]["status"] == "closed"
-        assert payload["periods"][0]["is_partial"] is True
-        assert payload["periods"][0]["open_month"] is False
-        assert payload["periods"][0]["diagnostics"]["period_state_label"] == (
-            "open month"
-        )
-        assert "partial-period-row" in result.stdout
+        assert result.exit_code == 2
+        assert "Invalid value for '--format'" in result.stderr
+        assert "html" in result.stderr
 
     def test_writes_period_analysis_top_n_from_largest_periods(
         self,
@@ -646,364 +615,6 @@ class TestAnalyzeCommand:
         assert "# orgpulse analysis: acme" in result.stdout
         assert "- Grouping: author" in result.stdout
         assert "| alice | - | 2 | 2 | 1 |" in result.stdout
-
-    def test_writes_html_analysis_with_shared_controls_and_spike_diagnostics(
-        self,
-        runner: CliRunner,
-        github_auth_service: None,
-        monkeypatch: pytest.MonkeyPatch,
-        tmp_path,
-        pull_request_factory,
-        timeline_event_factory,
-    ) -> None:
-        """Write interactive HTML analysis with reusable controls and actionable diagnostics."""
-        # Given
-        collection = PullRequestCollection(
-            window=CollectionWindow(
-                scope=RunScope.FULL_HISTORY,
-                start_date=None,
-                end_date=datetime.fromisoformat("2026-04-18T00:00:00").date(),
-            ),
-            pull_requests=(
-                pull_request_factory(
-                    repository_full_name="acme/api",
-                    number=41,
-                    title="Carry-over API work",
-                    author_login="alice",
-                    created_at=datetime.fromisoformat("2026-03-28T09:00:00"),
-                    updated_at=datetime.fromisoformat("2026-04-02T10:00:00"),
-                    closed_at=datetime.fromisoformat("2026-04-03T12:00:00"),
-                    merged=True,
-                    merged_at=datetime.fromisoformat("2026-04-03T12:00:00"),
-                    timeline_events=(
-                        timeline_event_factory(
-                            event_id=401,
-                            created_at=datetime.fromisoformat("2026-04-01T10:00:00"),
-                        ),
-                    ),
-                ),
-                pull_request_factory(
-                    repository_full_name="acme/api",
-                    number=42,
-                    title="Fresh API work",
-                    author_login="bob",
-                    created_at=datetime.fromisoformat("2026-04-05T09:00:00"),
-                    updated_at=datetime.fromisoformat("2026-04-10T11:00:00"),
-                    closed_at=None,
-                    merged=False,
-                    merged_at=None,
-                    timeline_events=(
-                        timeline_event_factory(
-                            event_id=402,
-                            event="ready_for_review",
-                            created_at=datetime.fromisoformat("2026-04-06T08:00:00"),
-                            requested_reviewer_login=None,
-                        ),
-                        timeline_event_factory(
-                            event_id=403,
-                            created_at=datetime.fromisoformat("2026-04-07T08:00:00"),
-                        ),
-                    ),
-                ),
-                pull_request_factory(
-                    repository_full_name="acme/web",
-                    number=43,
-                    title="Web refresh",
-                    author_login="carol",
-                    created_at=datetime.fromisoformat("2026-04-08T09:00:00"),
-                    updated_at=datetime.fromisoformat("2026-04-10T14:00:00"),
-                    closed_at=datetime.fromisoformat("2026-04-12T12:00:00"),
-                    merged=True,
-                    merged_at=datetime.fromisoformat("2026-04-12T12:00:00"),
-                    timeline_events=(
-                        timeline_event_factory(
-                            event_id=404,
-                            created_at=datetime.fromisoformat("2026-04-09T12:00:00"),
-                        ),
-                    ),
-                ),
-            ),
-            failures=(),
-        )
-        _configure_production_cli_runtime(
-            monkeypatch,
-            collection=collection,
-        )
-        run_result = runner.invoke(
-            app,
-            [
-                "run",
-                "--org",
-                "acme",
-                "--mode",
-                "full",
-                "--as-of",
-                "2026-04-18",
-                "--time-anchor",
-                "updated_at",
-                "--output-dir",
-                str(tmp_path),
-            ],
-        )
-        assert run_result.exit_code == 0
-
-        # When
-        result = runner.invoke(
-            app,
-            [
-                "analyze",
-                "--org",
-                "acme",
-                "--grain",
-                "month",
-                "--group-by",
-                "repository",
-                "--time-anchor",
-                "updated_at",
-                "--output-dir",
-                str(tmp_path),
-                "--format",
-                "html",
-            ],
-        )
-
-        # Then
-        assert result.exit_code == 0
-        assert 'data-control="view"' in result.stdout
-        assert 'data-control="focus-series"' in result.stdout
-        assert "Single-series focus" in result.stdout
-        assert "open month" in result.stdout
-        assert "partial-period-band" in result.stdout
-        assert "partial-period-row" in result.stdout
-        payload_match = re.search(
-            r'<script id="report-data" type="application/json">(.*?)</script>',
-            result.stdout,
-            re.S,
-        )
-        assert payload_match is not None
-        payload = json.loads(payload_match.group(1))
-        assert payload["initial_view"] == "repository"
-        assert payload["distribution_percentile"] == 100
-        assert payload["time_anchor_context"] == (
-            _expected_time_anchor_context("updated_at")
-        )
-        assert set(payload["views"].keys()) == {"author", "period", "repository"}
-        assert payload["views"]["period"]["metrics"][0]["label"] == (
-            "Pull requests (pull_request.updated_at)"
-        )
-        assert payload["matched_pull_request_count"] == 3
-        assert payload["periods"][0]["open_month"] is True
-        assert payload["periods"][0]["open_week"] is False
-        assert payload["periods"][0]["diagnostics"] == {
-            "open_month": True,
-            "open_week": False,
-            "older_pull_request_count": 1,
-            "older_pull_request_ratio": 1 / 3,
-            "period_observed_through_date": "2026-04-18",
-            "period_partial": True,
-            "period_state_label": "open month",
-            "period_status": "open",
-            "same_period_created_count": 2,
-            "same_period_created_ratio": 2 / 3,
-            "timeline_event_breakdown": [
-                {
-                    "event_count": 3,
-                    "label": "review_requested",
-                    "pull_request_count": 3,
-                    "share": 0.75,
-                },
-                {
-                    "event_count": 1,
-                    "label": "ready_for_review",
-                    "pull_request_count": 1,
-                    "share": 0.25,
-                },
-            ],
-            "top_contributing_repositories": [
-                {
-                    "label": "acme/api",
-                    "pull_request_count": 2,
-                    "share": 2 / 3,
-                },
-                {
-                    "label": "acme/web",
-                    "pull_request_count": 1,
-                    "share": 1 / 3,
-                },
-            ],
-            "top_updated_dates": [
-                {
-                    "count": 2,
-                    "label": "2026-04-10",
-                    "share": 2 / 3,
-                },
-                {
-                    "count": 1,
-                    "label": "2026-04-02",
-                    "share": 1 / 3,
-                },
-            ],
-        }
-        repository_entities = payload["views"]["repository"]["entities"]
-        assert [entity["key"] for entity in repository_entities] == [
-            "acme/api",
-            "acme/web",
-        ]
-        assert repository_entities[0]["totals"]["pull_request_count"] == 2
-        assert repository_entities[0]["totals"]["merged_pull_request_count"] == 1
-        assert repository_entities[0]["totals"]["median_time_to_merge_hours"] == 147.0
-        assert repository_entities[1]["totals"]["pull_request_count"] == 1
-        assert repository_entities[1]["totals"]["median_time_to_merge_hours"] == 99.0
-
-    def test_writes_html_analysis_totals_using_all_period_metrics(
-        self,
-        runner: CliRunner,
-        github_auth_service: None,
-        monkeypatch: pytest.MonkeyPatch,
-        tmp_path,
-        pull_request_factory,
-    ) -> None:
-        """Write HTML analysis totals with medians derived from all matched pull requests instead of summed period medians."""
-        # Given
-        collection = PullRequestCollection(
-            window=CollectionWindow(
-                scope=RunScope.FULL_HISTORY,
-                start_date=None,
-                end_date=datetime.fromisoformat("2026-02-28T00:00:00").date(),
-            ),
-            pull_requests=(
-                pull_request_factory(
-                    repository_full_name="acme/api",
-                    number=61,
-                    title="January API work",
-                    author_login="alice",
-                    created_at=datetime.fromisoformat("2026-01-01T09:00:00"),
-                    updated_at=datetime.fromisoformat("2026-01-02T09:00:00"),
-                    closed_at=datetime.fromisoformat("2026-01-02T09:00:00"),
-                    merged=True,
-                    merged_at=datetime.fromisoformat("2026-01-02T09:00:00"),
-                ),
-                pull_request_factory(
-                    repository_full_name="acme/api",
-                    number=62,
-                    title="February API work",
-                    author_login="alice",
-                    created_at=datetime.fromisoformat("2026-02-01T09:00:00"),
-                    updated_at=datetime.fromisoformat("2026-02-05T09:00:00"),
-                    closed_at=datetime.fromisoformat("2026-02-05T09:00:00"),
-                    merged=True,
-                    merged_at=datetime.fromisoformat("2026-02-05T09:00:00"),
-                ),
-            ),
-            failures=(),
-        )
-        _configure_production_cli_runtime(
-            monkeypatch,
-            collection=collection,
-        )
-        run_result = runner.invoke(
-            app,
-            [
-                "run",
-                "--org",
-                "acme",
-                "--mode",
-                "full",
-                "--as-of",
-                "2026-02-28",
-                "--output-dir",
-                str(tmp_path),
-            ],
-        )
-        assert run_result.exit_code == 0
-
-        # When
-        result = runner.invoke(
-            app,
-            [
-                "analyze",
-                "--org",
-                "acme",
-                "--grain",
-                "month",
-                "--group-by",
-                "repository",
-                "--output-dir",
-                str(tmp_path),
-                "--format",
-                "html",
-            ],
-        )
-
-        # Then
-        assert result.exit_code == 0
-        payload_match = re.search(
-            r'<script id="report-data" type="application/json">(.*?)</script>',
-            result.stdout,
-            re.S,
-        )
-        assert payload_match is not None
-        payload = json.loads(payload_match.group(1))
-        assert payload["views"]["repository"]["entities"] == [
-            {
-                "key": "acme/api",
-                "label": "acme/api",
-                "period_values": [
-                    {
-                        "closed": True,
-                        "end_date": "2026-01-31",
-                        "is_closed": True,
-                        "is_open": False,
-                        "is_partial": False,
-                        "key": "2026-01",
-                        "label": "2026-01",
-                        "observed_through_date": "2026-01-31",
-                        "open_month": False,
-                        "open_week": False,
-                        "start_date": "2026-01-01",
-                        "state_label": "closed month",
-                        "status": "closed",
-                        "values": {
-                            "median_time_to_first_review_hours": None,
-                            "median_time_to_merge_hours": 24.0,
-                            "merged_pull_request_count": 1,
-                            "pull_request_count": 1,
-                            "total_changed_lines": 10,
-                        },
-                    },
-                    {
-                        "closed": False,
-                        "end_date": "2026-02-28",
-                        "is_closed": False,
-                        "is_open": True,
-                        "is_partial": True,
-                        "key": "2026-02",
-                        "label": "2026-02",
-                        "observed_through_date": "2026-02-28",
-                        "open_month": True,
-                        "open_week": False,
-                        "start_date": "2026-02-01",
-                        "state_label": "open month",
-                        "status": "open",
-                        "values": {
-                            "median_time_to_first_review_hours": None,
-                            "median_time_to_merge_hours": 96.0,
-                            "merged_pull_request_count": 1,
-                            "pull_request_count": 1,
-                            "total_changed_lines": 10,
-                        },
-                    },
-                ],
-                "totals": {
-                    "median_time_to_first_review_hours": None,
-                    "median_time_to_merge_hours": 60.0,
-                    "merged_pull_request_count": 2,
-                    "pull_request_count": 2,
-                    "total_changed_lines": 20,
-                },
-            }
-        ]
-        assert [period["closed"] for period in payload["periods"]] == [True, False]
 
     def test_rejects_unsupported_distribution_percentile(
         self,

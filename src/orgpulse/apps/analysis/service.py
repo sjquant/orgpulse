@@ -13,7 +13,6 @@ from orgpulse.common.distribution import (
     validate_distribution_percentile,
 )
 from orgpulse.common.models import (
-    AnalysisReportPayload,
     MetricValueSummary,
     OrgSlug,
     PeriodGrain,
@@ -25,9 +24,6 @@ from orgpulse.common.models import (
     TimeAnchor,
 )
 from orgpulse.libs.metrics.service import PullRequestMetricCollectionBuilder
-from orgpulse.libs.reporting.analysis_report import (
-    build_analysis_report_payload,
-)
 from orgpulse.libs.snapshots.source import LocalSnapshotSource
 
 
@@ -45,7 +41,6 @@ class AnalysisExportFormat(StrEnum):
     JSON = "json"
     CSV = "csv"
     MARKDOWN = "markdown"
-    HTML = "html"
 
 
 class AnalysisConfig(BaseModel):
@@ -141,7 +136,6 @@ class AnalysisResult(BaseModel):
     matched_pull_request_count: int
     rows: tuple[AnalysisRow, ...]
     export_format: AnalysisExportFormat
-    report_payload: AnalysisReportPayload | None = Field(default=None, exclude=True)
 
 
 class AnalysisService:
@@ -178,12 +172,6 @@ class AnalysisService:
             matched_pull_request_count=len(filtered_metrics),
             rows=rows,
             export_format=config.export_format,
-            report_payload=self._build_report_payload(
-                config,
-                manifest=source.manifest,
-                raw_snapshot=source.raw_snapshot,
-                filtered_metrics=filtered_metrics,
-            ),
         )
 
     def _load_pull_request_metrics(
@@ -202,29 +190,6 @@ class AnalysisService:
             }
         )
         return PullRequestMetricCollectionBuilder().build(metric_config, raw_snapshot)
-
-    def _build_report_payload(
-        self,
-        config: AnalysisConfig,
-        *,
-        manifest: RunManifest,
-        raw_snapshot: RawSnapshotWriteResult,
-        filtered_metrics: tuple[PullRequestMetricRecord, ...],
-    ) -> AnalysisReportPayload:
-        return build_analysis_report_payload(
-            target_org=manifest.target_org,
-            grain=config.grain.value,
-            time_anchor=config.time_anchor.value,
-            initial_view=config.grouping.value,
-            default_top_n=8 if config.top_n is None else config.top_n,
-            as_of=manifest.last_successful_run.as_of,
-            since=config.since,
-            until=config.until,
-            distribution_percentile=config.distribution_percentile,
-            matched_pull_request_count=len(filtered_metrics),
-            filtered_metrics=filtered_metrics,
-            raw_snapshot=raw_snapshot,
-        )
 
     def _filter_metrics(
         self,
@@ -525,15 +490,16 @@ def build_analysis_config(
     """
 
     settings = get_settings()
+    resolved_export_format = (
+        AnalysisExportFormat.JSON if export_format is None else export_format
+    )
     payload: dict[str, object] = {
         "org": settings.org if org is None else org,
         "output_dir": settings.output_dir if output_dir is None else output_dir,
         "grain": settings.period if grain is None else grain,
         "time_anchor": settings.time_anchor if time_anchor is None else time_anchor,
         "grouping": (AnalysisGrouping.PERIOD if grouping is None else grouping),
-        "export_format": (
-            AnalysisExportFormat.JSON if export_format is None else export_format
-        ),
+        "export_format": resolved_export_format,
     }
     if top_n is not None:
         payload["top_n"] = top_n
@@ -544,4 +510,3 @@ def build_analysis_config(
     if distribution_percentile is not None:
         payload["distribution_percentile"] = distribution_percentile
     return AnalysisConfig.model_validate(payload)
-

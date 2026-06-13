@@ -29,13 +29,24 @@ from orgpulse.common.models import (
     DashboardSizeDiagnosticPayload,
     DashboardSourcePayload,
     DashboardTrendRowPayload,
+    ReportLocale,
 )
 from orgpulse.libs.reporting.contracts import (
     build_period_state_payload,
     build_time_anchor_context,
 )
+from orgpulse.libs.reporting.i18n import (
+    format_duration,
+    format_integer,
+    format_number,
+    metric_label_html,
+    metric_text,
+    period_state_text,
+    report_i18n_json,
+    report_text,
+    resolve_report_locale,
+)
 
-AUTHOR_ROSTER_LIMIT = 5
 LEADERBOARD_LIMIT = 5
 WEEKLY_RECENT_TREND_COUNT = 5
 MONTHLY_RECENT_TREND_COUNT = 5
@@ -48,6 +59,7 @@ def render_dashboard_artifact(
     input_json: Path,
     output_html: Path,
     distribution_percentile: int,
+    locale: ReportLocale | str | None = None,
 ) -> dict[str, str | int]:
     """Render a dashboard HTML artifact from a stored JSON payload.
 
@@ -64,12 +76,14 @@ def render_dashboard_artifact(
         input_json,
         distribution_percentile=distribution_percentile,
     )
-    html = _render_html(payload)
+    resolved_locale = resolve_report_locale(locale)
+    html = _render_html(payload, locale=resolved_locale)
     output_html.write_text(html, encoding="utf-8")
     return {
         "input_json": str(input_json),
         "output_html": str(output_html),
         "distribution_percentile": distribution_percentile,
+        "locale": resolved_locale.value,
     }
 
 
@@ -88,6 +102,8 @@ def _load_payload(
 
 def render_dashboard_html(
     payload: DashboardPreparedPayload | dict[str, Any],
+    *,
+    locale: ReportLocale | str | None = None,
 ) -> str:
     """Render dashboard HTML from a prepared payload.
 
@@ -98,13 +114,28 @@ def render_dashboard_html(
         Rendered dashboard HTML.
     """
 
+    resolved_locale = resolve_report_locale(locale)
     prepared_payload = _validate_prepared_payload(payload)
-    template = _template_environment().get_template("org_dashboard.html.j2")
+    template = _template_environment(resolved_locale).get_template(
+        "org_dashboard.html.j2"
+    )
     return template.render(
+        locale=resolved_locale.value,
+        t=lambda key: report_text(resolved_locale, key),
+        metric_label=lambda key, fallback=None: metric_label_html(
+            resolved_locale,
+            key,
+            fallback=fallback,
+        ),
+        metric_text=lambda key, fallback=None: metric_text(
+            resolved_locale,
+            key,
+            fallback=fallback,
+        ),
+        period_state=lambda row: period_state_text(resolved_locale, row),
+        report_i18n_json=report_i18n_json(resolved_locale),
         overview=prepared_payload.overview,
         authors=prepared_payload.authors,
-        authors_roster_top=prepared_payload.authors_roster_top,
-        authors_roster_rest=prepared_payload.authors_roster_rest,
         reviewers=prepared_payload.reviewers,
         reviewers_top=prepared_payload.reviewers_top,
         reviewers_rest=prepared_payload.reviewers_rest,
@@ -119,14 +150,21 @@ def render_dashboard_html(
         monthly_trends_older=prepared_payload.monthly_trends_older,
         methodology=prepared_payload.methodology,
         reference_summary=prepared_payload.reference_summary,
-        size_diagnostic=prepared_payload.size_diagnostic,
+        size_diagnostic=_build_size_diagnostic(
+            prepared_payload.size_buckets,
+            locale=resolved_locale,
+        ).model_dump(mode="json"),
         default_author=prepared_payload.default_author,
         author_details_json=Markup(prepared_payload.author_details_json),
     )
 
 
-def _render_html(payload: DashboardPreparedPayload) -> str:
-    return render_dashboard_html(payload)
+def _render_html(
+    payload: DashboardPreparedPayload,
+    *,
+    locale: ReportLocale | str | None = None,
+) -> str:
+    return render_dashboard_html(payload, locale=locale)
 
 
 def prepare_dashboard_payload(
@@ -178,7 +216,9 @@ def prepare_dashboard_payload(
         normalized_payload["size_buckets"]
     ).model_dump(mode="json")
     normalized_payload["default_author"] = (
-        normalized_payload["authors"][0]["author_login"] if normalized_payload["authors"] else None
+        normalized_payload["authors"][0]["author_login"]
+        if normalized_payload["authors"]
+        else None
     )
     normalized_payload["author_details_json"] = _build_author_details_json(
         authors=normalized_payload["authors"],
@@ -334,19 +374,21 @@ def _build_dashboard_sections(
 
 
 def _attach_dashboard_slices(payload: dict[str, Any]) -> None:
-    payload["authors_roster_top"] = payload["authors"][:AUTHOR_ROSTER_LIMIT]
-    payload["authors_roster_rest"] = payload["authors"][AUTHOR_ROSTER_LIMIT:]
     payload["reviewers_top"] = payload["reviewers"][:LEADERBOARD_LIMIT]
     payload["reviewers_rest"] = payload["reviewers"][LEADERBOARD_LIMIT:]
     payload["repositories_top"] = payload["repositories"][:LEADERBOARD_LIMIT]
     payload["repositories_rest"] = payload["repositories"][LEADERBOARD_LIMIT:]
-    payload["weekly_trends_recent"], payload["weekly_trends_older"] = _split_recent_rows(
-        payload["weekly_trends"],
-        recent_count=WEEKLY_RECENT_TREND_COUNT,
+    payload["weekly_trends_recent"], payload["weekly_trends_older"] = (
+        _split_recent_rows(
+            payload["weekly_trends"],
+            recent_count=WEEKLY_RECENT_TREND_COUNT,
+        )
     )
-    payload["monthly_trends_recent"], payload["monthly_trends_older"] = _split_recent_rows(
-        payload["monthly_trends"],
-        recent_count=MONTHLY_RECENT_TREND_COUNT,
+    payload["monthly_trends_recent"], payload["monthly_trends_older"] = (
+        _split_recent_rows(
+            payload["monthly_trends"],
+            recent_count=MONTHLY_RECENT_TREND_COUNT,
+        )
     )
 
 
@@ -456,7 +498,11 @@ def _build_overview(
         "average_changed_lines_per_pr": _round(changed_lines["average"]),
         "review_coverage_pct": _round(
             (
-                sum(1 for pull_request in pull_requests if pull_request["review_count"] > 0)
+                sum(
+                    1
+                    for pull_request in pull_requests
+                    if pull_request["review_count"] > 0
+                )
                 / len(pull_requests)
                 * 100
             )
@@ -494,7 +540,9 @@ def _build_overview(
         "open_week": source_as_of < _week_end(until),
         "open_week_key": _week_key(until) if source_as_of < _week_end(until) else None,
         "open_month": source_as_of < _month_end(until),
-        "open_month_key": until.strftime("%Y-%m") if source_as_of < _month_end(until) else None,
+        "open_month_key": until.strftime("%Y-%m")
+        if source_as_of < _month_end(until)
+        else None,
         "distribution_percentile": distribution_percentile,
     }
 
@@ -523,7 +571,11 @@ def _build_author_rows(
     ]
     return sorted(
         rows,
-        key=lambda row: (-row["pull_requests"], -row["changed_lines"], row["author_login"]),
+        key=lambda row: (
+            -row["pull_requests"],
+            -row["changed_lines"],
+            row["author_login"],
+        ),
     )
 
 
@@ -890,7 +942,8 @@ def _build_author_details(
         author_pull_requests = grouped.get(author_login, [])
         reviewer = reviewer_by_login.get(author_login, {})
         repository_counter = Counter(
-            str(pull_request["repository_full_name"]) for pull_request in author_pull_requests
+            str(pull_request["repository_full_name"])
+            for pull_request in author_pull_requests
         )
         size_counter = Counter(
             str(pull_request["size_bucket"]) for pull_request in author_pull_requests
@@ -942,14 +995,14 @@ def _build_author_details(
                     else None
                 ),
                 "review_submissions_given": int(reviewer.get("review_submissions", 0)),
-                "pull_requests_reviewed": int(reviewer.get("pull_requests_reviewed", 0)),
+                "pull_requests_reviewed": int(
+                    reviewer.get("pull_requests_reviewed", 0)
+                ),
                 "reviewed_lines": int(reviewer.get("reviewed_lines", 0)),
                 "pull_requests_reviewed_per_month": reviewer.get(
                     "pull_requests_reviewed_per_month"
                 ),
-                "reviewed_lines_per_month": reviewer.get(
-                    "reviewed_lines_per_month"
-                ),
+                "reviewed_lines_per_month": reviewer.get("reviewed_lines_per_month"),
                 "approvals_given": int(reviewer.get("approvals", 0)),
                 "changes_requested_given": int(reviewer.get("changes_requested", 0)),
                 "review_comments_given": int(reviewer.get("comments", 0)),
@@ -1150,7 +1203,9 @@ def _build_author_size_mix_rows(
                 "bucket": bucket,
                 "pull_requests": pull_request_count,
                 "changed_lines": _as_int(changed_lines["total"]),
-                "median_first_review_hours": _round(_median_or_none(first_review_values)),
+                "median_first_review_hours": _round(
+                    _median_or_none(first_review_values)
+                ),
                 "median_approval_hours": _round(_median_or_none(approval_values)),
                 "median_merge_hours": _round(_median_or_none(merge_values)),
                 "average_reviews_per_pr": _round(
@@ -1271,33 +1326,13 @@ def _build_reference_summary(
     payload: dict[str, Any],
 ) -> DashboardReferenceSummaryPayload:
     overview = payload["overview"]
-    authors = payload["authors"]
-    reviewers = payload["reviewers"]
     repositories = payload["repositories"]
     return DashboardReferenceSummaryPayload(
-        author_roster_coverage_pct=_coverage_share(
-            authors,
-            value_key="pull_requests",
-            total=float(overview["pull_requests"]),
-            top_n=AUTHOR_ROSTER_LIMIT,
-        ),
-        reviewers_top_coverage_pct=_coverage_share(
-            reviewers,
-            value_key="pull_requests_reviewed",
-            total=float(sum(int(row["pull_requests_reviewed"]) for row in reviewers)),
-            top_n=LEADERBOARD_LIMIT,
-        ),
         repositories_top_coverage_pct=_coverage_share(
             repositories,
             value_key="pull_requests",
             total=float(overview["pull_requests"]),
             top_n=LEADERBOARD_LIMIT,
-        ),
-        top3_author_share_pct=_coverage_share(
-            authors,
-            value_key="pull_requests",
-            total=float(overview["pull_requests"]),
-            top_n=3,
         ),
         top3_repository_share_pct=_coverage_share(
             repositories,
@@ -1307,28 +1342,28 @@ def _build_reference_summary(
         ),
         weekly_hidden_count=len(payload["weekly_trends_older"]),
         monthly_hidden_count=len(payload["monthly_trends_older"]),
-        author_reference_count=len(payload["authors"]),
     )
 
 
 def _build_size_diagnostic(
     size_buckets: list[dict[str, Any]],
+    *,
+    locale: ReportLocale | str | None = None,
 ) -> DashboardSizeDiagnosticPayload:
+    resolved_locale = resolve_report_locale(locale)
     rows_with_latency = [
         row
         for row in size_buckets
         if row["pull_requests"] and row["median_first_review_hours"] is not None
     ]
     if not rows_with_latency:
-        return DashboardSizeDiagnosticPayload(
-            headline="No review-latency size signal available in this window.",
-            supporting=(
-                "This window does not contain enough reviewed PR size data "
-                "to compare latency by bucket."
-            ),
-        )
-    slowest_row = max(rows_with_latency, key=lambda row: row["median_first_review_hours"])
-    fastest_row = min(rows_with_latency, key=lambda row: row["median_first_review_hours"])
+        return _empty_size_diagnostic(resolved_locale)
+    slowest_row = max(
+        rows_with_latency, key=lambda row: row["median_first_review_hours"]
+    )
+    fastest_row = min(
+        rows_with_latency, key=lambda row: row["median_first_review_hours"]
+    )
     gap = None
     if (
         slowest_row["median_first_review_hours"] is not None
@@ -1338,16 +1373,76 @@ def _build_size_diagnostic(
             float(slowest_row["median_first_review_hours"])
             - float(fastest_row["median_first_review_hours"])
         )
+    if resolved_locale is ReportLocale.KO:
+        return _korean_size_diagnostic(
+            slowest_row=slowest_row,
+            fastest_row=fastest_row,
+            gap=gap,
+        )
     return DashboardSizeDiagnosticPayload(
         headline=(
-            f"{slowest_row['bucket']} PRs waited the longest for first review at "
-            f"{_format_duration(slowest_row['median_first_review_hours'])} median."
+            f"{slowest_row['bucket']} PRs had the longest median time to first "
+            f"review: {format_duration(slowest_row['median_first_review_hours'], resolved_locale)}."
         ),
+        supporting=_english_size_diagnostic_supporting(
+            slowest_row=slowest_row,
+            fastest_row=fastest_row,
+            gap=gap,
+            locale=resolved_locale,
+        ),
+    )
+
+
+def _empty_size_diagnostic(locale: ReportLocale) -> DashboardSizeDiagnosticPayload:
+    if locale is ReportLocale.KO:
+        return DashboardSizeDiagnosticPayload(
+            headline="이 기간에는 변경 규모별 리뷰 소요 시간을 비교할 만큼 데이터가 충분하지 않습니다.",
+            supporting="변경 규모와 첫 리뷰 시간이 모두 있는 PR만 이 비교에 포함됩니다.",
+        )
+    return DashboardSizeDiagnosticPayload(
+        headline="There is not enough size data to compare review timing in this period.",
+        supporting="Only PRs with both a size bucket and first-review timing are included here.",
+    )
+
+
+def _korean_size_diagnostic(
+    *,
+    slowest_row: dict[str, Any],
+    fastest_row: dict[str, Any],
+    gap: float | None,
+) -> DashboardSizeDiagnosticPayload:
+    headline = (
+        f"첫 리뷰까지 가장 오래 걸린 구간은 {slowest_row['bucket']} 크기 PR이며 "
+        f"중앙값은 {format_duration(slowest_row['median_first_review_hours'], ReportLocale.KO)}입니다."
+    )
+    if slowest_row["bucket"] == fastest_row["bucket"] or gap == 0:
+        return DashboardSizeDiagnosticPayload(
+            headline=headline,
+            supporting="비교 가능한 다른 변경 규모와의 차이는 크지 않습니다.",
+        )
+    return DashboardSizeDiagnosticPayload(
+        headline=headline,
         supporting=(
-            "Compared with "
-            f"{fastest_row['bucket']} at {_format_duration(fastest_row['median_first_review_hours'])}, "
-            f"the gap is {_format_duration(gap) if gap is not None else '-'}."
+            f"{fastest_row['bucket']} 크기 PR의 중앙값 "
+            f"{format_duration(fastest_row['median_first_review_hours'], ReportLocale.KO)}보다 "
+            f"{format_duration(gap, ReportLocale.KO)} 더 걸렸습니다."
         ),
+    )
+
+
+def _english_size_diagnostic_supporting(
+    *,
+    slowest_row: dict[str, Any],
+    fastest_row: dict[str, Any],
+    gap: float | None,
+    locale: ReportLocale,
+) -> str:
+    if slowest_row["bucket"] == fastest_row["bucket"] or gap == 0:
+        return "There is little difference from the other comparable size buckets."
+    return (
+        f"That is {format_duration(gap, locale)} longer than "
+        f"{fastest_row['bucket']} PRs "
+        f"({format_duration(fastest_row['median_first_review_hours'], locale)})."
     )
 
 
@@ -1471,7 +1566,9 @@ def _group_pull_requests_by_period(
 def _merged_pull_request_count(
     pull_requests: list[dict[str, Any]],
 ) -> int:
-    return sum(1 for pull_request in pull_requests if pull_request["merged_at"] is not None)
+    return sum(
+        1 for pull_request in pull_requests if pull_request["merged_at"] is not None
+    )
 
 
 def _open_pull_request_count(
@@ -1500,7 +1597,11 @@ def _unique_value_count(
     *,
     include_empty: bool = True,
 ) -> int:
-    values = {str(pull_request[key]) for pull_request in pull_requests if include_empty or pull_request[key]}
+    values = {
+        str(pull_request[key])
+        for pull_request in pull_requests
+        if include_empty or pull_request[key]
+    }
     return len(values)
 
 
@@ -1525,9 +1626,7 @@ def _build_distribution_thresholds(
             if pull_request[metric_key] is not None
         ]
         if distribution_percentile == 100:
-            thresholds[metric_key] = (
-                max(values) if values else None
-            )
+            thresholds[metric_key] = max(values) if values else None
             continue
         thresholds[metric_key] = upper_percentile_threshold(
             values,
@@ -1633,16 +1732,14 @@ def _as_int(value: int | float | None) -> int:
     return int(value)
 
 
-def _template_environment() -> Environment:
+def _template_environment(locale: ReportLocale) -> Environment:
     environment = Environment(
-        loader=FileSystemLoader(
-            str(Path(__file__).resolve().parents[2] / "templates")
-        ),
+        loader=FileSystemLoader(str(Path(__file__).resolve().parents[2] / "templates")),
         autoescape=select_autoescape(["html", "html.j2", "xml"]),
     )
-    environment.filters["intfmt"] = _format_integer
-    environment.filters["numfmt"] = _format_number
-    environment.filters["duration"] = _format_duration
+    environment.filters["intfmt"] = lambda value: format_integer(value, locale)
+    environment.filters["numfmt"] = lambda value: format_number(value, locale)
+    environment.filters["duration"] = lambda value: format_duration(value, locale)
     environment.filters["deltafmt"] = _format_delta
     return environment
 

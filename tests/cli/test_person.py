@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 # ruff: noqa: F403,F405
+from orgpulse.common.config import get_settings
+
 from ..helpers.cli import *
 
 
@@ -124,6 +126,7 @@ class TestPersonCommand:
         # Then
         assert result.exit_code == 0
         payload = json.loads(result.stdout)
+        assert "locale" not in payload
         assert payload["target_org"] == "acme"
         assert payload["login"] == "ALICE"
         assert payload["summary"] == {
@@ -181,6 +184,29 @@ class TestPersonCommand:
                 "status": "closed",
             }
         ]
+        get_settings.cache_clear()
+        invalid_locale_result = runner.invoke(
+            app,
+            [
+                "person",
+                "--org",
+                "acme",
+                "--login",
+                "ALICE",
+                "--since",
+                "2026-04-01",
+                "--until",
+                "2026-04-30",
+                "--output-dir",
+                str(tmp_path),
+                "--format",
+                "json",
+            ],
+            env={"ORGPULSE_LOCALE": "bad-locale"},
+        )
+        assert invalid_locale_result.exit_code == 0
+        assert "locale" not in json.loads(invalid_locale_result.stdout)
+        get_settings.cache_clear()
 
     def test_counts_approval_time_only_when_final_external_decision_is_approved(
         self,
@@ -1018,13 +1044,18 @@ class TestPersonCommand:
         assert "## Org Trends" not in markdown_result.stdout
         assert html_result.exit_code == 0
         assert "<title>orgpulse person metrics: alice</title>" in html_result.stdout
-        assert '<div class="shell person-report">' in html_result.stdout
+        assert '<div class="report person-report">' in html_result.stdout
         assert 'data-theme-option="dark"' in html_result.stdout
         assert 'id="org-trend-chart-root"' not in html_result.stdout
         assert 'id="person-trend-chart-root"' in html_result.stdout
         assert 'id="person-trend-chart-readout"' in html_result.stdout
-        assert 'class="tab-strip primary-tabs"' in html_result.stdout
-        assert 'class="tab-strip secondary-tabs"' in html_result.stdout
+        assert (
+            'class="report__tab-strip report__tab-strip--primary"' in html_result.stdout
+        )
+        assert (
+            'class="report__tab-strip report__tab-strip--secondary"'
+            in html_result.stdout
+        )
         assert (
             'data-person-trend-metric="authored_pull_request_count"'
             in html_result.stdout
@@ -1042,6 +1073,57 @@ class TestPersonCommand:
         assert 'data-person-trend-metric="changed_lines_total"' in html_result.stdout
         assert 'data-person-trend-metric="commits_total"' in html_result.stdout
         assert "Yellow band = open period" in html_result.stdout
+        assert "100th percentile" in html_result.stdout
+        get_settings.cache_clear()
+        env_locale_result = runner.invoke(
+            app,
+            [
+                "person",
+                "--org",
+                "acme",
+                "--login",
+                "alice",
+                "--output-dir",
+                str(tmp_path),
+                "--format",
+                "html",
+            ],
+            env={"ORGPULSE_LOCALE": "ko"},
+        )
+        get_settings.cache_clear()
+        override_locale_result = runner.invoke(
+            app,
+            [
+                "person",
+                "--org",
+                "acme",
+                "--login",
+                "alice",
+                "--output-dir",
+                str(tmp_path),
+                "--format",
+                "html",
+                "--locale",
+                "en",
+            ],
+            env={"ORGPULSE_LOCALE": "ko"},
+        )
+        assert env_locale_result.exit_code == 0
+        assert '<html lang="ko">' in env_locale_result.stdout
+        assert "개인 기여 요약" in env_locale_result.stdout
+        assert "선택한 사람이 작성한 PR 수입니다." in env_locale_result.stdout
+        assert "머지됨 /" in env_locale_result.stdout
+        assert "받은 리뷰 수" in env_locale_result.stdout
+        assert "중앙값 머지 시간" in env_locale_result.stdout
+        assert "100번째 백분위" in env_locale_result.stdout
+        assert "100percentile" not in override_locale_result.stdout
+        assert "review submissions received" not in env_locale_result.stdout
+        assert "PRs per month" not in env_locale_result.stdout
+        assert override_locale_result.exit_code == 0
+        assert '<html lang="en">' in override_locale_result.stdout
+        assert "<title>orgpulse person metrics: alice</title>" in (
+            override_locale_result.stdout
+        )
         assert (
             '<script id="person-report-data" type="application/json">'
             in html_result.stdout
@@ -1077,19 +1159,22 @@ class TestPersonCommand:
         assert 'id="person-trend-grain-tabs"' in html_result.stdout
         assert 'data-person-trend-grain="weekly"' in html_result.stdout
         assert 'data-person-trend-grain="monthly"' in html_result.stdout
-        assert '<div class="two-col">' in html_result.stdout
+        assert '<div class="report__two-column">' in html_result.stdout
         assert "grid-template-columns: minmax(0, 1fr) auto;" in html_result.stdout
         assert "width: fit-content;" in html_result.stdout
-        assert ".two-col > .secondary-tabs" in html_result.stdout
+        assert (
+            ".report__two-column > .report__tab-strip--secondary" in html_result.stdout
+        )
         assert "margin-left: auto;" in html_result.stdout
         assert (
-            '<nav class="section-nav" aria-label="Report sections">'
+            '<nav class="report__section-nav" aria-label="Sections">'
             in html_result.stdout
         )
         assert '<a href="#charts">Charts</a>' in html_result.stdout
         assert '<a href="#cadences">Weekly / Monthly</a>' in html_result.stdout
         assert '<a href="#repositories">Repositories</a>' in html_result.stdout
-        assert '<a href="#methodology">Methodology</a>' in html_result.stdout
+        assert '<a href="#methodology">Methodology</a>' not in html_result.stdout
+        assert 'id="methodology"' not in html_result.stdout
         assert "<h3>Weekly report</h3>" in html_result.stdout
         assert "<h3>Monthly report</h3>" in html_result.stdout
         assert str(tmp_path) not in html_result.stdout
@@ -1225,16 +1310,22 @@ class TestPersonCommand:
         # Then
         assert json_result.exit_code == 0
         payload = json.loads(json_result.stdout)
+        assert "locale" not in payload
         assert payload["include_org_trends"] is True
         assert payload["org_monthly_trend_rows"][0]["period_key"] == "2026-04"
         assert payload["org_monthly_trend_rows"][0]["pull_requests"] == 3
         assert payload["org_monthly_trend_rows"][0]["active_authors"] == 3
         assert payload["org_monthly_trend_rows"][0]["changed_lines"] == 65
+        assert payload["org_monthly_trend_rows"][0]["authored_pull_request_count"] == 3
+        assert payload["org_monthly_trend_rows"][0]["changed_lines_total"] == 65
+        assert payload["org_monthly_trend_rows"][0]["commits_total"] == 3
         assert (
             payload["org_monthly_trend_rows"][0]["changed_lines_per_active_author"]
             == 21.67
         )
         assert payload["org_monthly_trend_rows"][0]["review_submissions"] == 1
+        assert payload["org_monthly_trend_rows"][0]["review_submissions_given"] == 1
+        assert payload["org_monthly_trend_rows"][0]["pull_requests_reviewed"] == 1
         assert payload["org_weekly_trend_rows"][0]["period_key"] == "2026-W14"
         assert markdown_result.exit_code == 0
         assert "## Org Trends" in markdown_result.stdout
@@ -1244,20 +1335,26 @@ class TestPersonCommand:
             markdown_result.stdout
         )
         assert html_result.exit_code == 0
-        assert 'class="chart-card org-chart-card"' in html_result.stdout
-        assert 'class="chart-card person-trend-card"' in html_result.stdout
-        assert 'class="tab-strip primary-tabs" id="org-trend-metric-tabs"' in (
-            html_result.stdout
+        assert (
+            'class="person-report__chart-card org-chart-card"' not in html_result.stdout
         )
-        assert 'class="tab-strip secondary-tabs" id="org-trend-grain-tabs"' in (
-            html_result.stdout
+        assert (
+            'class="person-report__chart-card person-report__trend-card"'
+            in html_result.stdout
         )
-        assert 'id="org-trend-chart-root"' in html_result.stdout
-        assert 'id="org-trend-chart-readout"' in html_result.stdout
-        assert 'data-org-trend-metric="pull_requests"' in html_result.stdout
-        assert 'data-org-trend-metric="pull_requests_per_active_author"' in (
-            html_result.stdout
-        )
+        assert 'id="org-trend-chart-root"' not in html_result.stdout
+        assert 'id="org-comparison-toggle"' in html_result.stdout
+        assert 'class="person-report__comparison-switch"' in html_result.stdout
+        assert 'role="switch"' in html_result.stdout
+        assert 'aria-checked="true"' in html_result.stdout
+        assert "person-report__comparison-switch-track" in html_result.stdout
+        assert "person-report__comparison-switch-thumb" in html_result.stdout
+        assert 'id="org-comparison-legend"' in html_result.stdout
+        assert "person-report__org-comparison-line" in html_result.stdout
+        assert "person-report__org-comparison-node" in html_result.stdout
+        assert "person-report__org-comparison-point" in html_result.stdout
+        assert "data-point-series" in html_result.stdout
+        assert "data-point-value" in html_result.stdout
         report_payload_match = re.search(
             r'<script id="person-report-data" type="application/json">(.*?)</script>',
             html_result.stdout,
@@ -1266,6 +1363,13 @@ class TestPersonCommand:
         report_payload = json.loads(report_payload_match.group(1))
         assert report_payload["org_monthly_trend_rows"][0]["pull_requests"] == 3
         assert report_payload["org_monthly_trend_rows"][0]["changed_lines"] == 65
+        assert (
+            report_payload["org_monthly_trend_rows"][0]["authored_pull_request_count"]
+            == 3
+        )
+        assert (
+            report_payload["org_monthly_trend_rows"][0]["review_submissions_given"] == 1
+        )
         assert report_payload["org_weekly_trend_rows"][0]["period_key"] == "2026-W14"
 
     def test_applies_repo_filters_to_person_org_trends(
@@ -1712,22 +1816,22 @@ class TestPersonCommand:
 
         # Then
         assert result.exit_code == 0
-        assert 'id="weekly-period-extra" class="hidden"' in result.stdout
+        assert 'id="weekly-period-extra" class="report--hidden"' in result.stdout
         assert (
-            'id="weekly-period-toggle" class="ghost-button" aria-expanded="false"'
+            'id="weekly-period-toggle" class="report__ghost-button" aria-expanded="false"'
             in result.stdout
         )
         assert "Show 5 more weekly rows" in result.stdout
-        assert 'id="monthly-period-extra" class="hidden"' in result.stdout
+        assert 'id="monthly-period-extra" class="report--hidden"' in result.stdout
         assert (
-            'id="monthly-period-toggle" class="ghost-button" aria-expanded="false"'
+            'id="monthly-period-toggle" class="report__ghost-button" aria-expanded="false"'
             in result.stdout
         )
         assert "Show 3 more monthly rows" in result.stdout
-        assert 'id="repository-extra" class="hidden"' in result.stdout
+        assert 'id="repository-extra" class="report--hidden"' in result.stdout
         assert "Show 5 more repositories" in result.stdout
         assert (
-            'id="repository-toggle" class="ghost-button" aria-expanded="false"'
+            'id="repository-toggle" class="report__ghost-button" aria-expanded="false"'
             in result.stdout
         )
 

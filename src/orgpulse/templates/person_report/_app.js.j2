@@ -2,10 +2,11 @@
     (function () {
       const storageKey = "orgpulse-manual-dashboard-theme";
       const root = document.documentElement;
-      const switcher = document.querySelector(".theme-switch");
-      const buttons = Array.from(document.querySelectorAll(".theme-switch-button"));
+      const switcher = document.querySelector(".report__theme-switch");
+      const buttons = Array.from(document.querySelectorAll(".report__theme-switch-button"));
       const repositoryToggle = document.getElementById("repository-toggle");
       const repositoryExtra = document.getElementById("repository-extra");
+      const i18n = JSON.parse(document.getElementById("report-i18n").textContent);
       const report = JSON.parse(document.getElementById("person-report-data").textContent);
       const trendSeries = {
         weekly: Array.isArray(report.weekly_period_rows) ? report.weekly_period_rows : [],
@@ -15,14 +16,11 @@
         weekly: Array.isArray(report.org_weekly_trend_rows) ? report.org_weekly_trend_rows : [],
         monthly: Array.isArray(report.org_monthly_trend_rows) ? report.org_monthly_trend_rows : [],
       };
-      const orgTrendMetricTabs = Array.from(document.querySelectorAll("#org-trend-metric-tabs .tab-button"));
-      const orgTrendGrainTabs = Array.from(document.querySelectorAll("#org-trend-grain-tabs .tab-button"));
-      const orgTrendChartTitle = document.getElementById("org-trend-chart-title");
-      const orgTrendChartReadout = document.getElementById("org-trend-chart-readout");
-      const orgTrendChartRoot = document.getElementById("org-trend-chart-root");
-      const trendMetricTabs = Array.from(document.querySelectorAll("#person-trend-metric-tabs .tab-button"));
-      const trendGrainTabs = Array.from(document.querySelectorAll("#person-trend-grain-tabs .tab-button"));
-      const cadenceTabs = Array.from(document.querySelectorAll("#person-cadence-tabs .tab-button"));
+      const orgComparisonToggle = document.getElementById("org-comparison-toggle");
+      const orgComparisonLegend = document.getElementById("org-comparison-legend");
+      const trendMetricTabs = Array.from(document.querySelectorAll("#person-trend-metric-tabs .report__tab-button"));
+      const trendGrainTabs = Array.from(document.querySelectorAll("#person-trend-grain-tabs .report__tab-button"));
+      const cadenceTabs = Array.from(document.querySelectorAll("#person-cadence-tabs .report__tab-button"));
       const cadencePanels = Array.from(document.querySelectorAll("[data-person-cadence-panel]"));
       const weeklyPeriodToggle = document.getElementById("weekly-period-toggle");
       const weeklyPeriodExtra = document.getElementById("weekly-period-extra");
@@ -31,7 +29,7 @@
       const trendChartTitle = document.getElementById("person-trend-chart-title");
       const trendChartReadout = document.getElementById("person-trend-chart-readout");
       const trendChartRoot = document.getElementById("person-trend-chart-root");
-      const sectionNavLinks = Array.from(document.querySelectorAll('.section-nav a[href^="#"]'));
+      const sectionNavLinks = Array.from(document.querySelectorAll('.report__section-nav a[href^="#"]'));
       const sectionTargets = sectionNavLinks
         .map(link => {
           const sectionId = link.getAttribute("href")?.slice(1);
@@ -49,9 +47,7 @@
       let activeTrendGrain = report.grain === "week" ? "weekly" : "monthly";
       let activeCadence = report.grain === "week" ? "weekly" : "monthly";
       let activeTrendPointIndex = null;
-      let activeOrgTrendMetric = "pull_requests";
-      let activeOrgTrendGrain = report.grain === "week" ? "weekly" : "monthly";
-      let activeOrgTrendPointIndex = null;
+      let activeShowOrgComparison = Boolean(report.include_org_trends);
       let resizeFrameId = null;
 
       function activeTheme() {
@@ -81,37 +77,25 @@
             // Ignore localStorage failures; the current page state still updates.
           }
           syncThemeButtons();
-          renderOrgTrendChart();
           renderPersonTrendChart();
         });
       });
 
       syncThemeButtons();
-      syncOrgTrendMetricTabs();
-      syncOrgTrendGrainTabs();
       syncTrendMetricTabs();
       syncTrendGrainTabs();
       syncCadenceTabs();
+      syncOrgComparisonToggle();
       syncActiveSectionNav();
       setupSectionSpy();
-      renderOrgTrendChart();
       renderPersonTrendChart();
-      orgTrendMetricTabs.forEach(button => {
-        button.addEventListener("click", () => {
-          activeOrgTrendMetric = button.dataset.orgTrendMetric;
-          activeOrgTrendPointIndex = null;
-          syncOrgTrendMetricTabs();
-          renderOrgTrendChart();
+      if (orgComparisonToggle) {
+        orgComparisonToggle.addEventListener("click", () => {
+          activeShowOrgComparison = !activeShowOrgComparison;
+          syncOrgComparisonToggle();
+          renderPersonTrendChart();
         });
-      });
-      orgTrendGrainTabs.forEach(button => {
-        button.addEventListener("click", () => {
-          activeOrgTrendGrain = button.dataset.orgTrendGrain;
-          activeOrgTrendPointIndex = null;
-          syncOrgTrendGrainTabs();
-          renderOrgTrendChart();
-        });
-      });
+      }
       trendMetricTabs.forEach(button => {
         button.addEventListener("click", () => {
           activeTrendMetric = button.dataset.personTrendMetric;
@@ -166,7 +150,6 @@
           : (callback => window.setTimeout(callback, 16));
         resizeFrameId = scheduleFrame(() => {
           resizeFrameId = null;
-          renderOrgTrendChart();
           renderPersonTrendChart();
         });
       }
@@ -187,17 +170,17 @@
         });
 
         function sync() {
-          container.classList.toggle("hidden", visibleCount === 0);
+          container.classList.toggle("report--hidden", visibleCount === 0);
           items.forEach((item, index) => {
-            item.classList.toggle("hidden", index >= visibleCount);
+            item.classList.toggle("report--hidden", index >= visibleCount);
           });
           const remaining = Math.max(0, items.length - visibleCount);
           if (remaining === 0) {
-            button.textContent = `Collapse ${label}`;
+            button.textContent = t("common.collapse");
             button.setAttribute("aria-expanded", "true");
             return;
           }
-          button.textContent = `Show ${Math.min(chunkSize, remaining)} more ${label}`;
+          button.textContent = i18n.locale === "ko" ? `${Math.min(chunkSize, remaining)}개 ${t("common.show_more_rows")}` : `Show ${Math.min(chunkSize, remaining)} more ${label}`;
           button.setAttribute("aria-expanded", String(visibleCount > 0));
         }
       }
@@ -273,15 +256,7 @@
       function syncTrendMetricTabs() {
         trendMetricTabs.forEach(button => {
           const isActive = button.dataset.personTrendMetric === activeTrendMetric;
-          button.classList.toggle("active", isActive);
-          button.setAttribute("aria-selected", String(isActive));
-        });
-      }
-
-      function syncOrgTrendMetricTabs() {
-        orgTrendMetricTabs.forEach(button => {
-          const isActive = button.dataset.orgTrendMetric === activeOrgTrendMetric;
-          button.classList.toggle("active", isActive);
+          button.classList.toggle("report__tab-button--active", isActive);
           button.setAttribute("aria-selected", String(isActive));
         });
       }
@@ -289,15 +264,7 @@
       function syncTrendGrainTabs() {
         trendGrainTabs.forEach(button => {
           const isActive = button.dataset.personTrendGrain === activeTrendGrain;
-          button.classList.toggle("active", isActive);
-          button.setAttribute("aria-selected", String(isActive));
-        });
-      }
-
-      function syncOrgTrendGrainTabs() {
-        orgTrendGrainTabs.forEach(button => {
-          const isActive = button.dataset.orgTrendGrain === activeOrgTrendGrain;
-          button.classList.toggle("active", isActive);
+          button.classList.toggle("report__tab-button--active", isActive);
           button.setAttribute("aria-selected", String(isActive));
         });
       }
@@ -305,54 +272,30 @@
       function syncCadenceTabs() {
         cadenceTabs.forEach(button => {
           const isActive = button.dataset.personCadence === activeCadence;
-          button.classList.toggle("active", isActive);
+          button.classList.toggle("report__tab-button--active", isActive);
           button.setAttribute("aria-selected", String(isActive));
         });
         cadencePanels.forEach(panel => {
           const isActive = panel.dataset.personCadencePanel === activeCadence;
-          panel.classList.toggle("hidden", !isActive);
+          panel.classList.toggle("report--hidden", !isActive);
           panel.toggleAttribute("hidden", !isActive);
         });
       }
 
-      function renderOrgTrendChart() {
-        if (!orgTrendChartRoot || !orgTrendChartReadout || !orgTrendChartTitle) {
+      function syncOrgComparisonToggle() {
+        if (!orgComparisonToggle) {
           return;
         }
-        const trendRows = orgTrendSeries[activeOrgTrendGrain] || [];
-        const grainLabel = activeOrgTrendGrain === "weekly" ? "week" : "month";
-        activeOrgTrendPointIndex = clampSelectedIndex(trendRows, activeOrgTrendPointIndex, activeOrgTrendMetric);
-        orgTrendChartTitle.textContent = `${metricLabel(activeOrgTrendMetric)} by ${grainLabel}`;
-        orgTrendChartReadout.innerHTML = renderOrgTrendReadout(trendRows, activeOrgTrendMetric, activeOrgTrendPointIndex);
-        renderSeriesChart({
-          element: orgTrendChartRoot,
-          rows: trendRows,
-          metric: activeOrgTrendMetric,
-          selectedIndex: activeOrgTrendPointIndex,
-          onSelect: index => {
-            activeOrgTrendPointIndex = index;
-            renderOrgTrendChart();
-          },
-        });
-      }
-
-      function renderOrgTrendReadout(rows, metric, selectedIndex) {
-        if (!rows.length) {
-          return readoutCard("Selected period", "-")
-            + readoutCard(metricLabel(metric), "-")
-            + readoutCard("PRs", "-")
-            + readoutCard("Active authors", "-");
+        orgComparisonToggle.setAttribute("aria-checked", String(activeShowOrgComparison));
+        orgComparisonToggle.setAttribute(
+          "aria-label",
+          activeShowOrgComparison
+            ? t("person.hide_org_comparison")
+            : t("person.show_org_comparison"),
+        );
+        if (orgComparisonLegend) {
+          orgComparisonLegend.classList.toggle("report--hidden", !activeShowOrgComparison);
         }
-        const selectedRow = rows[selectedIndex] || rows[rows.length - 1];
-        return [
-          readoutCard("Selected period", selectedRow.period_key || "-"),
-          readoutCard(metricLabel(metric), formatMetricValue(selectedRow[metric], metric)),
-          readoutCard("PRs", formatMetricValue(selectedRow.pull_requests, "pull_requests")),
-          readoutCard("Active authors", formatMetricValue(selectedRow.active_authors, "active_authors")),
-          readoutCard("Changed lines", formatMetricValue(selectedRow.changed_lines, "changed_lines")),
-          readoutCard("Reviews", formatMetricValue(selectedRow.review_submissions, "review_submissions")),
-          readoutCard("State", periodStatusText(selectedRow)),
-        ].join("");
       }
 
       function renderPersonTrendChart() {
@@ -360,13 +303,25 @@
           return;
         }
         const trendRows = trendSeries[activeTrendGrain] || [];
+        const comparisonRows = activeShowOrgComparison ? (orgTrendSeries[activeTrendGrain] || []) : [];
         const grainLabel = activeTrendGrain === "weekly" ? "week" : "month";
-        activeTrendPointIndex = clampSelectedIndex(trendRows, activeTrendPointIndex, activeTrendMetric);
+        activeTrendPointIndex = clampSelectedIndex(
+          trendRows,
+          activeTrendPointIndex,
+          activeTrendMetric,
+          comparisonRows,
+        );
         trendChartTitle.textContent = `${metricLabel(activeTrendMetric)} by ${grainLabel}`;
-        trendChartReadout.innerHTML = renderTrendReadout(trendRows, activeTrendMetric, activeTrendPointIndex);
+        trendChartReadout.innerHTML = renderTrendReadout(
+          trendRows,
+          comparisonRows,
+          activeTrendMetric,
+          activeTrendPointIndex,
+        );
         renderSeriesChart({
           element: trendChartRoot,
           rows: trendRows,
+          comparisonRows,
           metric: activeTrendMetric,
           selectedIndex: activeTrendPointIndex,
           onSelect: index => {
@@ -376,32 +331,43 @@
         });
       }
 
-      function renderTrendReadout(rows, metric, selectedIndex) {
+      function renderTrendReadout(rows, comparisonRows, metric, selectedIndex) {
         if (!rows.length) {
-          return readoutCard("Selected period", "-")
+          return readoutCard(t("common.selected_period"), "-")
             + readoutCard(metricLabel(metric), "-")
-            + readoutCard("Authored PRs", "-")
-            + readoutCard("Reviews given", "-");
+            + comparisonReadoutCard(null, metric)
+            + readoutCard(metricLabel("authored_pull_request_count"), "-")
+            + readoutCard(metricLabel("review_submissions_given"), "-");
         }
         const selectedRow = rows[selectedIndex] || rows[rows.length - 1];
+        const comparisonRow = comparisonRows.find(row => row.period_key === selectedRow.period_key);
         return [
-          readoutCard("Selected period", selectedRow.period_key || "-"),
+          readoutCard(t("common.selected_period"), selectedRow.period_key || "-"),
           readoutCard(metricLabel(metric), formatMetricValue(selectedRow[metric], metric)),
-          readoutCard("Authored PRs", formatMetricValue(selectedRow.authored_pull_request_count, "authored_pull_request_count")),
-          readoutCard("Reviews given", formatMetricValue(selectedRow.review_submissions_given, "review_submissions_given")),
-          readoutCard("PRs reviewed", formatMetricValue(selectedRow.pull_requests_reviewed, "pull_requests_reviewed")),
-          readoutCard("Reviewed lines", formatMetricValue(selectedRow.reviewed_lines, "reviewed_lines")),
-          readoutCard("State", periodStatusText(selectedRow)),
+          comparisonReadoutCard(comparisonRow, metric),
+          readoutCard(metricLabel("authored_pull_request_count"), formatMetricValue(selectedRow.authored_pull_request_count, "authored_pull_request_count")),
+          readoutCard(metricLabel("review_submissions_given"), formatMetricValue(selectedRow.review_submissions_given, "review_submissions_given")),
+          readoutCard(metricLabel("pull_requests_reviewed"), formatMetricValue(selectedRow.pull_requests_reviewed, "pull_requests_reviewed")),
+          readoutCard(metricLabel("reviewed_lines"), formatMetricValue(selectedRow.reviewed_lines, "reviewed_lines")),
+          readoutCard(t("common.state"), periodStatusText(selectedRow)),
         ].join("");
       }
 
-      function readoutCard(label, value) {
-        return `<article class="readout-card"><strong>${escapeHtml(label)}</strong><span>${escapeHtml(value)}</span></article>`;
+      function comparisonReadoutCard(row, metric) {
+        if (!activeShowOrgComparison || !report.include_org_trends) {
+          return "";
+        }
+        const value = row ? formatMetricValue(row[metric], metric) : "-";
+        return readoutCard(`${t("common.organization")} ${metricLabel(metric)}`, value);
       }
 
-      function renderSeriesChart({ element, rows, metric, selectedIndex, onSelect }) {
+      function readoutCard(label, value) {
+        return `<article class="report__readout-card"><strong>${escapeHtml(label)}</strong><span>${escapeHtml(value)}</span></article>`;
+      }
+
+      function renderSeriesChart({ element, rows, comparisonRows = [], metric, selectedIndex, onSelect }) {
         if (!rows.length) {
-          element.innerHTML = `<div class="small-note">No period data available.</div>`;
+          element.innerHTML = `<div class="report__small-note">${escapeHtml(t("common.no_period_data"))}</div>`;
           return;
         }
         const width = 920;
@@ -412,11 +378,25 @@
         const points = rows
           .map((row, index) => ({ row, index, value: toNumber(row[metric]) }))
           .filter(point => point.value !== null);
-        if (!points.length) {
-          element.innerHTML = `<div class="small-note">No data for this metric.</div>`;
+        const comparisonByPeriod = new Map(
+          comparisonRows.map(row => [row.period_key, row]),
+        );
+        const comparisonPoints = rows
+          .map((row, index) => ({
+            row: comparisonByPeriod.get(row.period_key),
+            index,
+            value: toNumber(comparisonByPeriod.get(row.period_key)?.[metric]),
+          }))
+          .filter(point => point.row && point.value !== null);
+        if (!points.length && !comparisonPoints.length) {
+          element.innerHTML = `<div class="report__small-note">${escapeHtml(t("common.no_metric_data"))}</div>`;
           return;
         }
-        const maxValue = Math.max(1, ...points.map(point => point.value));
+        const maxValue = Math.max(
+          1,
+          ...points.map(point => point.value),
+          ...comparisonPoints.map(point => point.value),
+        );
         const stepX = rows.length > 1 ? plotWidth / (rows.length - 1) : plotWidth / 2;
         const xFor = index => rows.length > 1 ? padding.left + index * stepX : padding.left + plotWidth / 2;
         const yFor = value => padding.top + plotHeight - (value / maxValue) * plotHeight;
@@ -433,25 +413,30 @@
         const linePath = points
           .map((point, pathIndex) => `${pathIndex === 0 ? "M" : "L"} ${xFor(point.index)} ${yFor(point.value)}`)
           .join(" ");
+        const comparisonLinePath = comparisonPoints
+          .map((point, pathIndex) => `${pathIndex === 0 ? "M" : "L"} ${xFor(point.index)} ${yFor(point.value)}`)
+          .join(" ");
         const areaPath = points.length
           ? `${linePath} L ${xFor(points.at(-1).index)} ${padding.top + plotHeight} L ${xFor(points[0].index)} ${padding.top + plotHeight} Z`
           : "";
-        const averageValue = points.reduce((sum, point) => sum + point.value, 0) / points.length;
-        const averageLineY = yFor(averageValue);
+        const averageValue = points.length
+          ? points.reduce((sum, point) => sum + point.value, 0) / points.length
+          : null;
+        const averageLineY = averageValue === null ? null : yFor(averageValue);
         const labelInterval = chartLabelInterval(rows.length);
         const fillId = `${element.id || "series"}-fill-${metric}`;
         const partialBands = rows.map((row, index) => {
           if (!row.is_partial) {
             return "";
           }
-          return `<rect class="chart-partial-band" x="${bandStart(index)}" y="${padding.top}" width="${Math.max(8, bandEnd(index) - bandStart(index))}" height="${plotHeight}"></rect>`;
+          return `<rect class="report__chart-partial-band" x="${bandStart(index)}" y="${padding.top}" width="${Math.max(8, bandEnd(index) - bandStart(index))}" height="${plotHeight}"></rect>`;
         }).join("");
         const ticks = [0, 0.25, 0.5, 0.75, 1].map(ratio => {
           const value = maxValue * ratio;
           const y = padding.top + plotHeight - plotHeight * ratio;
           return `
             <line x1="${padding.left}" x2="${width - padding.right}" y1="${y}" y2="${y}" stroke="${cssVar("--grid-stroke")}"></line>
-            <text x="${padding.left - 10}" y="${y + 4}" text-anchor="end" class="chart-axis">${formatMetricValue(value, metric)}</text>
+            <text x="${padding.left - 10}" y="${y + 4}" text-anchor="end" class="report__chart-axis">${formatMetricValue(value, metric)}</text>
           `;
         }).join("");
         const chartNodes = rows.map((row, index) => {
@@ -461,16 +446,23 @@
           }
           const isSelected = index === selectedIndex;
           const showLabel = index === 0 || index === rows.length - 1 || index % labelInterval === 0;
-          const stateSuffix = row.is_partial ? ", open period" : "";
+          const stateSuffix = row.is_partial ? `, ${t("common.open_period")}` : "";
           return `
-            <g class="chart-node ${row.is_partial ? "partial-period" : ""}" data-point-index="${index}" data-point-label="${escapeAttribute(row.period_key || "-")}" data-point-value="${escapeAttribute(formatMetricValue(value, metric))}" data-point-state="${escapeAttribute(periodStatusText(row))}" tabindex="0" role="button" aria-label="${escapeAttribute(`${row.period_key || "Period"} ${formatMetricValue(value, metric)}${stateSuffix}`)}">
+            <g class="report__chart-node ${row.is_partial ? "report__chart-node--partial" : ""}" data-point-index="${index}" data-point-label="${escapeAttribute(row.period_key || "-")}" data-point-value="${escapeAttribute(formatMetricValue(value, metric))}" data-point-state="${escapeAttribute(periodStatusText(row))}" tabindex="0" role="button" aria-label="${escapeAttribute(`${row.period_key || "Period"} ${formatMetricValue(value, metric)}${stateSuffix}`)}">
               <circle cx="${xFor(index)}" cy="${yFor(value)}" r="${isSelected ? 6 : 4}" fill="${cssVar("--accent")}" stroke="${isSelected ? cssVar("--text") : "transparent"}" stroke-width="${isSelected ? 2 : 0}">
                 <title>${escapeHtml(row.period_key || "-")}: ${escapeHtml(formatMetricValue(value, metric))}${row.is_partial ? ` (${escapeHtml(periodStatusText(row))})` : ""}</title>
               </circle>
             </g>
-            ${showLabel ? `<text x="${xFor(index)}" y="${height - 12}" text-anchor="middle" class="chart-axis">${escapeHtml(shortLabel(row.period_key || ""))}</text>` : ""}
+            ${showLabel ? `<text x="${xFor(index)}" y="${height - 12}" text-anchor="middle" class="report__chart-axis">${escapeHtml(shortLabel(row.period_key || ""))}</text>` : ""}
           `;
         }).join("");
+        const comparisonNodes = comparisonPoints.map(point => `
+          <g class="report__chart-node person-report__org-comparison-node ${point.row.is_partial ? "report__chart-node--partial" : ""}" data-point-index="${point.index}" data-point-label="${escapeAttribute(point.row.period_key || "-")}" data-point-series="${escapeAttribute(t("common.organization"))}" data-point-value="${escapeAttribute(formatMetricValue(point.value, metric))}" data-point-state="${escapeAttribute(periodStatusText(point.row))}" tabindex="0" role="button" aria-label="${escapeAttribute(`${t("common.organization")} ${point.row.period_key || "Period"} ${formatMetricValue(point.value, metric)}`)}">
+            <circle class="person-report__org-comparison-point" cx="${xFor(point.index)}" cy="${yFor(point.value)}" r="4" fill="currentColor">
+              <title>${escapeHtml(t("common.organization"))} ${escapeHtml(point.row.period_key || "-")}: ${escapeHtml(formatMetricValue(point.value, metric))}</title>
+            </circle>
+          </g>
+        `).join("");
         element.innerHTML = `
           <svg viewBox="0 0 ${width} ${height}" preserveAspectRatio="xMidYMid meet" role="img" aria-label="${escapeAttribute(metricLabel(metric))} chart">
             <defs>
@@ -481,9 +473,11 @@
             </defs>
             ${ticks}
             ${partialBands}
-            <line x1="${padding.left}" x2="${width - padding.right}" y1="${averageLineY}" y2="${averageLineY}" stroke="${cssVar("--avg-stroke")}" stroke-dasharray="5 5"></line>
+            ${averageLineY === null ? "" : `<line x1="${padding.left}" x2="${width - padding.right}" y1="${averageLineY}" y2="${averageLineY}" stroke="${cssVar("--avg-stroke")}" stroke-dasharray="5 5"></line>`}
             ${areaPath ? `<path d="${areaPath}" fill="url(#${escapeAttribute(fillId)})"></path>` : ""}
-            <path d="${linePath}" fill="none" stroke="${cssVar("--accent")}" stroke-width="3" stroke-linecap="round"></path>
+            ${comparisonLinePath ? `<path class="person-report__org-comparison-line" d="${comparisonLinePath}" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-dasharray="7 5"></path>` : ""}
+            ${linePath ? `<path d="${linePath}" fill="none" stroke="${cssVar("--accent")}" stroke-width="3" stroke-linecap="round"></path>` : ""}
+            ${comparisonNodes}
             ${chartNodes}
           </svg>
         `;
@@ -509,12 +503,12 @@
       }
 
       function ensureChartTooltip(element) {
-        let tooltip = element.querySelector(".chart-tooltip");
+        let tooltip = element.querySelector(".report__chart-tooltip");
         if (tooltip) {
           return tooltip;
         }
         tooltip = document.createElement("div");
-        tooltip.className = "chart-tooltip hidden";
+        tooltip.className = "report__chart-tooltip report--hidden";
         tooltip.setAttribute("aria-hidden", "true");
         element.appendChild(tooltip);
         return tooltip;
@@ -523,10 +517,11 @@
       function showChartTooltip(tooltip, chartElement, node, metric, event) {
         tooltip.innerHTML = `
           <strong>${escapeHtml(node.dataset.pointLabel || "-")}</strong>
+          ${node.dataset.pointSeries ? `<span>${escapeHtml(node.dataset.pointSeries)}</span>` : ""}
           <span>${escapeHtml(metricLabel(metric))}: ${escapeHtml(node.dataset.pointValue || "-")}</span>
-          ${node.classList.contains("partial-period") ? `<span>${escapeHtml(node.dataset.pointState || "partial period")}</span>` : ""}
+          ${node.classList.contains("report__chart-node--partial") ? `<span>${escapeHtml(node.dataset.pointState || "partial period")}</span>` : ""}
         `;
-        tooltip.classList.remove("hidden");
+        tooltip.classList.remove("report--hidden");
         tooltip.setAttribute("aria-hidden", "false");
         const chartRect = chartElement.getBoundingClientRect();
         const nodeRect = node.getBoundingClientRect();
@@ -542,19 +537,29 @@
       }
 
       function hideChartTooltip(tooltip) {
-        tooltip.classList.add("hidden");
+        tooltip.classList.add("report--hidden");
         tooltip.setAttribute("aria-hidden", "true");
       }
 
-      function clampSelectedIndex(rows, selectedIndex, metric) {
+      function clampSelectedIndex(rows, selectedIndex, metric, comparisonRows = []) {
         if (!rows.length) {
           return null;
         }
-        if (selectedIndex !== null && rows[selectedIndex] && toNumber(rows[selectedIndex][metric]) !== null) {
+        const comparisonByPeriod = new Map(
+          comparisonRows.map(row => [row.period_key, row]),
+        );
+        const hasMetricValue = row => (
+          row
+          && (
+            toNumber(row[metric]) !== null
+            || toNumber(comparisonByPeriod.get(row.period_key)?.[metric]) !== null
+          )
+        );
+        if (selectedIndex !== null && hasMetricValue(rows[selectedIndex])) {
           return selectedIndex;
         }
         for (let index = rows.length - 1; index >= 0; index -= 1) {
-          if (toNumber(rows[index][metric]) !== null) {
+          if (hasMetricValue(rows[index])) {
             return index;
           }
         }
@@ -562,23 +567,7 @@
       }
 
       function metricLabel(metric) {
-        return {
-          authored_pull_request_count: "Authored PRs",
-          review_submissions_given: "Reviews given",
-          pull_requests_reviewed: "PRs reviewed",
-          reviewed_lines: "Reviewed lines",
-          median_merge_hours: "Median merge",
-          median_first_review_hours: "Median first review",
-          median_approval_hours: "Median approval",
-          changed_lines_total: "Changed lines",
-          commits_total: "Commits",
-          pull_requests: "PR throughput",
-          pull_requests_per_active_author: "PRs per active author",
-          changed_lines: "Changed lines",
-          changed_lines_per_active_author: "Lines per active author",
-          active_authors: "Active authors",
-          review_submissions: "Reviews",
-        }[metric] || metric;
+        return i18n.metrics[metric]?.label || metric;
       }
 
       function formatMetricValue(value, metric) {
@@ -589,32 +578,55 @@
         if (metric === "median_merge_hours" || metric === "median_first_review_hours" || metric === "median_approval_hours") {
           return formatDuration(number);
         }
-        return new Intl.NumberFormat("en-US", {
+        return new Intl.NumberFormat(numberLocale(), {
           maximumFractionDigits: Number.isInteger(number) ? 0 : 2,
         }).format(number);
       }
 
       function formatDuration(hours) {
         if (hours < 1) {
-          return `${Math.round(hours * 60).toLocaleString("en-US")} min`;
+          return `${Math.round(hours * 60).toLocaleString(numberLocale())}${i18n.locale === "ko" ? "분" : " min"}`;
         }
         if (hours >= 24) {
-          return `${(hours / 24).toLocaleString("en-US", { maximumFractionDigits: 1 })} d`;
+          return `${(hours / 24).toLocaleString(numberLocale(), { maximumFractionDigits: 1 })}${i18n.locale === "ko" ? "일" : " d"}`;
         }
-        return `${hours.toLocaleString("en-US", { maximumFractionDigits: 1 })} h`;
+        return `${hours.toLocaleString(numberLocale(), { maximumFractionDigits: 1 })}${i18n.locale === "ko" ? "시간" : " h"}`;
       }
 
       function periodStatusText(row) {
         if (row.open_week) {
-          return "open week";
+          return t("common.open_week");
         }
         if (row.open_month) {
-          return "open month";
+          return t("common.open_month");
         }
         if (row.is_partial) {
-          return row.label || "partial period";
+          return t("common.partial_period");
         }
-        return row.label || "closed period";
+        return localizedPeriodLabel(row.label);
+      }
+
+      function localizedPeriodLabel(label) {
+        if (i18n.locale !== "ko") {
+          return label || t("common.closed_period");
+        }
+        return {
+          "open week": t("common.open_week"),
+          "open month": t("common.open_month"),
+          "partial period": t("common.partial_period"),
+          "closed week": t("common.closed_week"),
+          "closed month": t("common.closed_month"),
+          "closed window": t("common.closed_window"),
+          "closed period": t("common.closed_period"),
+        }[label] || t("common.closed_period");
+      }
+
+      function t(key) {
+        return i18n.static[key] || key;
+      }
+
+      function numberLocale() {
+        return i18n.locale === "ko" ? "ko-KR" : "en-US";
       }
 
       function toNumber(value) {

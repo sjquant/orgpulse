@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+
 # ruff: noqa: F403,F405
 from ..helpers.cli import *
 
@@ -81,13 +83,76 @@ class TestDashboardCommand:
         assert Path(payload["json_path"]).exists()
         assert Path(payload["csv_path"]).exists()
         assert Path(payload["html_path"]).exists()
-        assert json.loads(Path(payload["json_path"]).read_text(encoding="utf-8"))[
-            "overview"
-        ]["org"] == "acme"
         assert (
-            "Lines / Active Author"
-            in Path(payload["html_path"]).read_text(encoding="utf-8")
+            json.loads(Path(payload["json_path"]).read_text(encoding="utf-8"))[
+                "overview"
+            ]["org"]
+            == "acme"
         )
+        assert "Lines / Active Author" in Path(payload["html_path"]).read_text(
+            encoding="utf-8"
+        )
+        ko_result = runner.invoke(
+            app,
+            [
+                "dashboard",
+                "--org",
+                "acme",
+                "--since",
+                "2026-03-01",
+                "--until",
+                "2026-03-31",
+                "--source-output-dir",
+                str(source_output_dir),
+                "--output-dir",
+                str(report_output_dir),
+                "--base-name",
+                "acme-ko-dashboard",
+                "--no-refresh",
+                "--locale",
+                "ko",
+            ],
+        )
+        assert ko_result.exit_code == 0
+        ko_payload = json.loads(ko_result.stdout)
+        ko_html = Path(ko_payload["html_path"]).read_text(encoding="utf-8")
+        assert '<html lang="ko">' in ko_html
+        assert "엔지니어링 생산성 현황" in ko_html
+        assert "24시간 안에 첫 리뷰를 받은 PR 비율입니다." in ko_html
+        assert "오래 열린 PR" in ko_html
+        assert "24시간 이내" in ko_html
+        assert "머지됨 /" in ko_html
+        assert "저장소별 현황" in ko_html
+        assert "<summary>작성자 원장</summary>" not in ko_html
+        assert "<summary>방법론</summary>" not in ko_html
+        assert '<span class="report__meta-label">분포 절단값</span>' not in ko_html
+        assert "100백분위" not in ko_html
+        assert not re.search(
+            r'class="report__tab-button[^"]*"[^>]*\sdata-tooltip=', ko_html
+        )
+        assert "열린 월" in ko_html or "닫힌 기간" in ko_html
+        assert "stale open PRs" not in ko_html
+        assert "total review submissions" not in ko_html
+        assert "from PR creation to merge" not in ko_html
+
+        render_output_path = report_output_dir / "rendered-ko-dashboard.html"
+        render_result = runner.invoke(
+            app,
+            [
+                "dashboard-render",
+                "--input-json",
+                payload["json_path"],
+                "--output-html",
+                str(render_output_path),
+                "--locale",
+                "ko",
+            ],
+        )
+        assert render_result.exit_code == 0
+        rendered_html = render_output_path.read_text(encoding="utf-8")
+        assert '<html lang="ko">' in rendered_html
+        assert "PR 처리량" in rendered_html
+        assert "작성한 PR" in rendered_html
 
     def test_counts_reviewer_trends_by_review_submission_date(
         self,
@@ -182,9 +247,10 @@ class TestDashboardCommand:
             prepare_dashboard_payload(dashboard_payload).author_details_json
         )
         assert author_details["reviewer-1"]["summary"]["pull_requests_reviewed"] == 1
-        assert author_details["reviewer-1"]["monthly_trends"][0][
-            "pull_requests_reviewed"
-        ] == 1
+        assert (
+            author_details["reviewer-1"]["monthly_trends"][0]["pull_requests_reviewed"]
+            == 1
+        )
 
     def test_ignores_run_mode_environment_when_rendering_dashboard(
         self,
@@ -315,6 +381,7 @@ class TestDashboardCommand:
         tmp_path,
     ) -> None:
         """Report dashboard payload validation failures through the normal CLI error flow."""
+
         # Given
         def fake_generate_dashboard_report(**_: object) -> dict[str, object]:
             raise RuntimeError("dashboard payload validation failed: bad payload")
@@ -386,7 +453,10 @@ class TestDashboardCommand:
 
         # Then
         assert result.exit_code == 1
-        assert "dashboard currently supports only month/created_at local outputs" in result.stderr
+        assert (
+            "dashboard currently supports only month/created_at local outputs"
+            in result.stderr
+        )
 
 
 class TestDashboardRenderCommand:

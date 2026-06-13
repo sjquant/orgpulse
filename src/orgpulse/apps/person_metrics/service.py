@@ -28,6 +28,7 @@ from orgpulse.common.models import (
     OrgSlug,
     PeriodGrain,
     RawSnapshotPeriod,
+    ReportLocale,
     RepoSlug,
     TimeAnchor,
     canonicalize_repo_filter,
@@ -77,6 +78,7 @@ class PersonConfig(BaseModel):
     until: date | None = None
     distribution_percentile: int = 100
     export_format: PersonExportFormat = PersonExportFormat.JSON
+    locale: ReportLocale = Field(default=ReportLocale.EN, exclude=True)
     include_repos: tuple[RepoSlug, ...] = ()
     exclude_repos: tuple[RepoSlug, ...] = ()
     include_org_trends: bool = False
@@ -275,9 +277,15 @@ class OrgTrendRow(BaseModel):
     open_pull_requests: int
     active_authors: int
     changed_lines: int
+    authored_pull_request_count: int
+    changed_lines_total: int
+    commits_total: int
     pull_requests_per_active_author: float | None
     changed_lines_per_active_author: float | None
     review_submissions: int
+    review_submissions_given: int
+    pull_requests_reviewed: int
+    reviewed_lines: int
     median_first_review_hours: float | None
     median_approval_hours: float | None
     median_merge_hours: float | None
@@ -306,6 +314,7 @@ class PersonMetricsResult(BaseModel):
     org_monthly_trend_rows: tuple[OrgTrendRow, ...] | None = None
     repository_rows: tuple[PersonRepositoryRow, ...]
     export_format: PersonExportFormat
+    locale: ReportLocale = Field(default=ReportLocale.EN, exclude=True)
     include_org_trends: bool = False
 
     @model_validator(mode="after")
@@ -410,6 +419,7 @@ class PersonMetricsService:
             org_monthly_trend_rows=org_monthly_trend_rows,
             repository_rows=repository_rows,
             export_format=config.export_format,
+            locale=config.locale,
             include_org_trends=config.include_org_trends,
         )
 
@@ -425,6 +435,7 @@ class PersonMetricsService:
             return None, None
 
         org_pull_requests = self._org_pull_requests(config, pull_requests)
+        org_review_submissions = self._org_review_submissions(config, pull_requests)
         return (
             self._org_trend_rows(
                 config=config,
@@ -432,6 +443,7 @@ class PersonMetricsService:
                 periods=periods,
                 source_as_of=source_as_of,
                 pull_requests=org_pull_requests,
+                review_submissions=org_review_submissions,
             ),
             self._org_trend_rows(
                 config=config,
@@ -439,6 +451,7 @@ class PersonMetricsService:
                 periods=periods,
                 source_as_of=source_as_of,
                 pull_requests=org_pull_requests,
+                review_submissions=org_review_submissions,
             ),
         )
 
@@ -457,6 +470,39 @@ class PersonMetricsService:
             )
         )
 
+    def _org_review_submissions(
+        self,
+        config: PersonConfig,
+        pull_requests: tuple[PullRequestFact, ...],
+    ) -> tuple[ReviewFact, ...]:
+        reviews: list[ReviewFact] = []
+        for pull_request in pull_requests:
+            for review in pull_request.reviews:
+                if review.submitted_at is None:
+                    continue
+                if self._same_login(
+                    review.pull_request_author_login, review.author_login
+                ):
+                    continue
+                if not self._in_window(
+                    review.submitted_at.date(),
+                    since=config.since,
+                    until=config.until,
+                ):
+                    continue
+                reviews.append(review)
+        return tuple(
+            sorted(
+                reviews,
+                key=lambda review: (
+                    review.submitted_at or datetime.min,
+                    review.repository_full_name,
+                    review.pull_request_number,
+                    review.review_id,
+                ),
+            )
+        )
+
     def _org_trend_rows(
         self,
         *,
@@ -465,6 +511,7 @@ class PersonMetricsService:
         periods: tuple[RawSnapshotPeriod, ...],
         source_as_of: date,
         pull_requests: tuple[PullRequestFact, ...],
+        review_submissions: tuple[ReviewFact, ...],
     ) -> tuple[OrgTrendRow, ...]:
         pull_requests_by_period: dict[str, list[PullRequestFact]] = defaultdict(list)
         for pull_request in pull_requests:
@@ -473,12 +520,21 @@ class PersonMetricsService:
                     self._anchor_datetime(config.time_anchor, pull_request).date()
                 )
             ].append(pull_request)
+        reviews_by_period: dict[str, list[ReviewFact]] = defaultdict(list)
+        for review in review_submissions:
+            if review.submitted_at is not None:
+                reviews_by_period[grain.key_for(review.submitted_at.date())].append(
+                    review
+                )
         period_catalog = self._period_catalog(
             config,
             grain,
             periods,
             source_as_of=source_as_of,
-            activity_period_keys=tuple(pull_requests_by_period.keys()),
+            activity_period_keys=(
+                *pull_requests_by_period.keys(),
+                *reviews_by_period.keys(),
+            ),
         )
         changed_lines_threshold = self._changed_lines_threshold(
             pull_requests,
@@ -491,6 +547,7 @@ class PersonMetricsService:
                 period=period,
                 source_as_of=source_as_of,
                 pull_requests=tuple(pull_requests_by_period.get(period.key, ())),
+                review_submissions=tuple(reviews_by_period.get(period.key, ())),
                 changed_lines_threshold=changed_lines_threshold,
             )
             for period in period_catalog
@@ -515,6 +572,7 @@ class PersonMetricsService:
         period: RawSnapshotPeriod,
         source_as_of: date,
         pull_requests: tuple[PullRequestFact, ...],
+        review_submissions: tuple[ReviewFact, ...],
         changed_lines_threshold: float | None,
     ) -> OrgTrendRow:
         period_state = build_period_state_payload(
@@ -527,6 +585,7 @@ class PersonMetricsService:
             until=config.until,
         )
         pull_request_count = len(pull_requests)
+        review_submission_count = len(review_submissions)
         active_authors = len(
             {
                 pull_request.author_login.lower()
@@ -559,6 +618,9 @@ class PersonMetricsService:
             ),
             active_authors=active_authors,
             changed_lines=changed_lines,
+            authored_pull_request_count=pull_request_count,
+            changed_lines_total=changed_lines,
+            commits_total=sum(pull_request.commits for pull_request in pull_requests),
             pull_requests_per_active_author=_round_metric(
                 pull_request_count / active_authors if active_authors else None
             ),
@@ -568,6 +630,11 @@ class PersonMetricsService:
             review_submissions=sum(
                 self._review_count(pull_request) for pull_request in pull_requests
             ),
+            review_submissions_given=review_submission_count,
+            pull_requests_reviewed=len(
+                {self._review_pull_request_key(review) for review in review_submissions}
+            ),
+            reviewed_lines=self._reviewed_lines(review_submissions),
             median_first_review_hours=self._median_metric(
                 tuple(
                     first_review_hours
@@ -1304,6 +1371,7 @@ def build_person_config(
     until: date | str | None = None,
     distribution_percentile: int | None = None,
     export_format: PersonExportFormat | None = None,
+    locale: ReportLocale | str | None = None,
     include_repos: list[str] | None = None,
     exclude_repos: list[str] | None = None,
     include_org_trends: bool = False,
@@ -1311,14 +1379,20 @@ def build_person_config(
     """Build person metric settings from CLI inputs and application defaults."""
 
     settings = get_settings()
+    resolved_export_format = (
+        PersonExportFormat.JSON if export_format is None else export_format
+    )
     payload: dict[str, object] = {
         "org": settings.org if org is None else org,
         "login": login,
         "output_dir": settings.output_dir if output_dir is None else output_dir,
         "grain": PeriodGrain.MONTH if grain is None else grain,
         "time_anchor": settings.time_anchor if time_anchor is None else time_anchor,
-        "export_format": (
-            PersonExportFormat.JSON if export_format is None else export_format
+        "export_format": resolved_export_format,
+        "locale": (
+            (settings.locale if locale is None else locale)
+            if resolved_export_format is PersonExportFormat.HTML
+            else ReportLocale.EN
         ),
         "include_org_trends": include_org_trends,
     }

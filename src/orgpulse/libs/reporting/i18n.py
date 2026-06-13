@@ -1,0 +1,812 @@
+from __future__ import annotations
+
+import json
+from typing import Any
+
+from markupsafe import Markup, escape
+
+from orgpulse.common.config import get_settings
+from orgpulse.common.models import ReportLocale
+
+
+def resolve_report_locale(locale: ReportLocale | str | None = None) -> ReportLocale:
+    """Resolve an explicit or environment-backed report locale."""
+
+    if locale is None:
+        return ReportLocale(get_settings().locale)
+    return ReportLocale(locale)
+
+
+def report_i18n_payload(locale: ReportLocale | str | None = None) -> dict[str, Any]:
+    """Return JSON-serializable translation data for report templates."""
+
+    resolved_locale = resolve_report_locale(locale)
+    return {
+        "locale": resolved_locale.value,
+        "static": _STATIC[resolved_locale],
+        "metrics": _METRICS[resolved_locale],
+    }
+
+
+def report_i18n_json(locale: ReportLocale | str | None = None) -> Markup:
+    """Return an escaped JSON translation payload for inline report scripts."""
+
+    payload = json.dumps(
+        report_i18n_payload(locale),
+        ensure_ascii=False,
+        sort_keys=True,
+    ).replace("</", "<\\/")
+    return Markup(
+        payload.replace("&", "\\u0026")
+        .replace("<", "\\u003c")
+        .replace(">", "\\u003e")
+        .replace("'", "\\u0027")
+    )
+
+
+def report_text(
+    locale: ReportLocale | str | None,
+    key: str,
+) -> str:
+    """Return a translated static report string."""
+
+    resolved_locale = resolve_report_locale(locale)
+    return _STATIC[resolved_locale].get(key, _STATIC[ReportLocale.EN].get(key, key))
+
+
+def metric_text(
+    locale: ReportLocale | str | None,
+    key: str,
+    *,
+    fallback: str | None = None,
+) -> str:
+    """Return a translated metric label."""
+
+    resolved_locale = resolve_report_locale(locale)
+    return (
+        _METRICS[resolved_locale].get(key, {}).get("label")
+        or _METRICS[ReportLocale.EN].get(key, {}).get("label")
+        or fallback
+        or key.replace("_", " ")
+    )
+
+
+def metric_description(
+    locale: ReportLocale | str | None,
+    key: str,
+    *,
+    fallback: str | None = None,
+) -> str:
+    """Return a translated metric description."""
+
+    resolved_locale = resolve_report_locale(locale)
+    return (
+        _METRICS[resolved_locale].get(key, {}).get("description")
+        or _METRICS[ReportLocale.EN].get(key, {}).get("description")
+        or fallback
+        or metric_text(resolved_locale, key)
+    )
+
+
+def metric_label_html(
+    locale: ReportLocale | str | None,
+    key: str,
+    *,
+    fallback: str | None = None,
+) -> Markup:
+    """Render an accessible metric label with a custom tooltip."""
+
+    label = metric_text(locale, key, fallback=fallback)
+    description = metric_description(locale, key, fallback=label)
+    return Markup(
+        '<span class="report__metric-label">'
+        f"<span>{escape(label)}</span>"
+        '<span class="report__metric-tooltip" tabindex="0" role="note" '
+        f'aria-label="{escape(description)}" '
+        f'data-tooltip="{escape(description)}">?</span>'
+        "</span>"
+    )
+
+
+def period_state_text(
+    locale: ReportLocale | str | None,
+    row: Any,
+) -> str:
+    """Return localized display text for a period state row."""
+
+    resolved_locale = resolve_report_locale(locale)
+    label = _row_value(row, "state_label") or _row_value(row, "label")
+    if resolved_locale is ReportLocale.EN and label:
+        return str(label)
+    if _row_value(row, "open_week"):
+        return report_text(resolved_locale, "common.open_week")
+    if _row_value(row, "open_month"):
+        return report_text(resolved_locale, "common.open_month")
+    if _row_value(row, "is_partial"):
+        return report_text(resolved_locale, "common.partial_period")
+    label_key = _PERIOD_LABEL_KEYS.get(str(label or "").lower())
+    if label_key is not None:
+        return report_text(resolved_locale, label_key)
+    if _row_value(row, "is_open") or _row_value(row, "status") == "open":
+        return report_text(resolved_locale, "common.open_period")
+    return report_text(resolved_locale, "common.closed_period")
+
+
+def _row_value(row: Any, key: str) -> Any:
+    if isinstance(row, dict):
+        return row.get(key)
+    return getattr(row, key, None)
+
+
+def format_integer(
+    value: Any,
+    locale: ReportLocale | str | None = None,
+) -> str:
+    """Format an integer metric for the selected report locale."""
+
+    if value is None or value == "":
+        return "-"
+    return f"{int(float(value)):,}"
+
+
+def format_number(
+    value: Any,
+    locale: ReportLocale | str | None = None,
+) -> str:
+    """Format a numeric metric for the selected report locale."""
+
+    if value is None or value == "":
+        return "-"
+    number = float(value)
+    if number.is_integer():
+        return f"{int(number):,}"
+    return f"{number:,.2f}".rstrip("0").rstrip(".")
+
+
+def format_duration(
+    value: Any,
+    locale: ReportLocale | str | None = None,
+) -> str:
+    """Format an hour-based duration for the selected report locale."""
+
+    if value is None or value == "":
+        return "-"
+    resolved_locale = resolve_report_locale(locale)
+    hours = float(value)
+    if hours < 1:
+        minutes = format_integer(round(hours * 60), resolved_locale)
+        return (
+            f"{minutes}분" if resolved_locale is ReportLocale.KO else f"{minutes} min"
+        )
+    if hours >= 24:
+        days = format_number(hours / 24, resolved_locale)
+        return f"{days}일" if resolved_locale is ReportLocale.KO else f"{days} d"
+    formatted_hours = format_number(hours, resolved_locale)
+    return (
+        f"{formatted_hours}시간"
+        if resolved_locale is ReportLocale.KO
+        else f"{formatted_hours} h"
+    )
+
+
+def format_percent(
+    value: Any,
+    locale: ReportLocale | str | None = None,
+) -> str:
+    """Format a percent value for the selected report locale."""
+
+    if value is None or value == "":
+        return "-"
+    return f"{format_number(value, locale)}%"
+
+
+_STATIC: dict[ReportLocale, dict[str, str]] = {
+    ReportLocale.EN: {
+        "analysis.title": "orgpulse analysis report",
+        "analysis.eyebrow": "Diagnostics and visualization",
+        "analysis.view": "View",
+        "analysis.metric": "Metric",
+        "analysis.period": "Period",
+        "analysis.top_series": "Top series",
+        "analysis.series_filter": "Series filter",
+        "analysis.series_filter_placeholder": "repo or author name",
+        "analysis.single_series_focus": "Single-series focus",
+        "analysis.trend_view": "Trend view",
+        "analysis.trend": "Trend",
+        "analysis.selected_period": "Selected period",
+        "analysis.spike_diagnostics": "Spike diagnostics",
+        "analysis.ranking": "Ranking",
+        "analysis.current_ranking": "Current ranking",
+        "analysis.same_period_created": "Same-period created",
+        "analysis.older_pr_ratio": "Older PR ratio",
+        "dashboard.title_suffix": "productivity leaderboard",
+        "dashboard.eyebrow": "Engineering Productivity Leaderboard",
+        "dashboard.heading_suffix": "review and throughput board",
+        "dashboard.subtitle": "Shows review throughput, review load, and repository flow for the selected period.",
+        "person.title_prefix": "orgpulse person metrics",
+        "person.eyebrow": "Individual Contribution Summary",
+        "person.heading_suffix": "activity",
+        "person.subtitle_suffix": "Review-given activity is counted by review submission time.",
+        "theme.color": "Color theme",
+        "theme.dark": "Dark theme",
+        "theme.light": "Light theme",
+        "common.window": "Window",
+        "common.organization": "Organization",
+        "common.author": "Author",
+        "common.source_grain": "Time grouping",
+        "common.distribution_cutoff": "Outlier cutoff",
+        "common.percentile": "percentile",
+        "common.anchor": "Anchor",
+        "common.generated": "Generated",
+        "common.open_period_label": "Open period",
+        "common.closed_window": "closed window",
+        "common.weekly": "Weekly",
+        "common.monthly": "Monthly",
+        "common.weekly_report": "Weekly report",
+        "common.monthly_report": "Monthly report",
+        "common.week": "Week",
+        "common.month": "Month",
+        "common.state": "State",
+        "common.repository": "Repository",
+        "common.repositories": "Repositories",
+        "common.methodology": "Methodology",
+        "common.charts": "Charts",
+        "common.reference": "Detailed data",
+        "common.trends": "Trends",
+        "common.people": "People",
+        "common.diagnostics": "Diagnostics",
+        "common.selected_metric": "Selected metric",
+        "common.open_period_legend": "Yellow band = open period",
+        "common.selected_period": "Selected period",
+        "common.selected_value": "Selected value",
+        "common.window_average": "Window average",
+        "common.period_state": "Period state",
+        "common.no_period_data": "No period data available.",
+        "common.no_metric_data": "No data for this metric.",
+        "common.no_view_data": "No data for this view.",
+        "common.open_week": "open week",
+        "common.open_month": "open month",
+        "common.closed_week": "closed week",
+        "common.closed_month": "closed month",
+        "common.partial_period": "partial period",
+        "common.closed_period": "closed period",
+        "common.open_period": "open period",
+        "common.observed_through": "observed through",
+        "common.to": "to",
+        "common.report_sections": "Sections",
+        "common.report_cadence": "Time view",
+        "common.show_more_rows": "Show more rows",
+        "common.show_more_repositories": "Show more repositories",
+        "common.show_more_people": "Show more people",
+        "common.collapse": "Collapse",
+        "common.rows_hidden_until_expanded": "more rows are available.",
+        "metric.merged_open": "merged / open",
+        "metric.merged": "merged",
+        "metric.open": "open",
+        "metric.total_review_submissions": "total review submissions",
+        "metric.review_submissions_received": "review submissions received",
+        "metric.review_submissions": "review submissions",
+        "metric.reviews": "reviews",
+        "metric.reviews_per_pr": "reviews per PR",
+        "metric.prs": "PRs",
+        "metric.prs_per_month": "PRs per month",
+        "metric.lines_per_month": "lines / month",
+        "metric.lines_per_pr": "lines per PR",
+        "metric.changed_lines": "changed lines",
+        "metric.reviewed_lines": "reviewed lines",
+        "metric.commits_across_authored_prs": "commits across authored PRs",
+        "metric.median_merge_time": "median merge time",
+        "metric.median_approval_time": "median time to final approval on authored PRs",
+        "metric.median_first_review_window": "median time to first review in this period.",
+        "metric.within_24h": "within 24h",
+        "metric.stale_open_prs": "stale open PRs",
+        "metric.approvals": "approvals",
+        "metric.changes_requested": "changes requested",
+        "metric.comments": "comments",
+        "metric.reviewers": "reviewers",
+        "metric.average_active_authors_per_month": "avg active authors / month",
+        "metric.normalized_changed_lines_per_active_author": "normalized changed lines per active author",
+        "metric.reviewers_in_window": "reviewers in window",
+        "metric.top3_repository_share": "of PRs came from the top 3 repositories",
+        "metric.authored_prs": "authored PRs",
+        "metric.reviews_given": "reviews given",
+        "metric.ready_to_approval": "from ready/request to final approval",
+        "metric.creation_to_merge": "from PR creation to merge",
+        "dashboard.trend_surface_copy": "Compare throughput, code volume, and approval speed over time.",
+        "dashboard.interpretation": "Interpretation",
+        "dashboard.interpretation_copy": "Use the charts to spot direction changes, then open the detailed tables when you need exact period values.",
+        "dashboard.normalized_lens": "Per-person view",
+        "dashboard.normalized_lens_copy": "Across the period, the team averaged",
+        "dashboard.normalized_lens_suffix": "which works out to",
+        "dashboard.backlog": "Backlog",
+        "dashboard.backlog_copy": "open PRs are older than 72 hours at window end.",
+        "dashboard.people_copy": "Choose a metric to see who drove that signal. Selecting a person opens their profile and keeps it in view as rankings change.",
+        "dashboard.people_ranking_metric": "People ranking metric",
+        "dashboard.people_top_note": "The ranking starts with the top 10; expand it to review everyone else.",
+        "dashboard.selected_profile": "Selected profile",
+        "dashboard.person_detail": "Person detail",
+        "dashboard.author_reviewer_signals": "Author + reviewer signals",
+        "dashboard.author_chart": "Author chart",
+        "dashboard.selected_person": "Selected person",
+        "dashboard.repository_leaderboard": "Repository leaderboard",
+        "dashboard.repository_concentration": "Where throughput concentrated",
+        "dashboard.repository_copy": "Repositories are ranked by PR share so the most concentrated work is easiest to spot.",
+        "dashboard.top_repositories_cover": "Top 5 repositories cover",
+        "dashboard.top_repositories_suffix": "of org PR throughput.",
+        "dashboard.latency_by_size": "Review timing by change size",
+        "dashboard.size_flow": "Change size and review flow",
+        "dashboard.latency_quality": "Review speed and quality",
+        "dashboard.review_depth": "Review depth",
+        "dashboard.prs_first_review_day": "PRs that received a first review within one day of becoming reviewable.",
+        "dashboard.reviewed_prs": "of PRs received at least one review.",
+        "dashboard.open_prs_older_72h": "Open pull requests older than 72 hours at the end of the reporting window.",
+        "dashboard.dense_tables": "Detailed trend data",
+        "dashboard.reference_copy": "Open the weekly or monthly table when you need the exact values behind the charts.",
+        "dashboard.trend_tables": "Weekly and monthly values",
+        "person.authored_anchor_prefix": "Authored pull request metrics use",
+        "person.chart_copy": "Compare this person's trend with the organization for each metric.",
+        "person.cadence_copy": "Review weekly and monthly movement side by side.",
+        "person.repository_copy": "Top repositories are ranked by authored PR count, then review activity and code volume.",
+        "person.org_comparison": "Org comparison",
+        "person.show_org_comparison": "Show org comparison",
+        "person.hide_org_comparison": "Hide org comparison",
+    },
+    ReportLocale.KO: {
+        "analysis.title": "orgpulse 분석 보고서",
+        "analysis.eyebrow": "진단 및 시각화",
+        "analysis.view": "보기",
+        "analysis.metric": "지표",
+        "analysis.period": "기간",
+        "analysis.top_series": "상위 시리즈",
+        "analysis.series_filter": "시리즈 필터",
+        "analysis.series_filter_placeholder": "저장소 또는 작성자 이름",
+        "analysis.single_series_focus": "단일 시리즈 집중",
+        "analysis.trend_view": "추세 보기",
+        "analysis.trend": "추세",
+        "analysis.selected_period": "선택한 기간",
+        "analysis.spike_diagnostics": "스파이크 진단",
+        "analysis.ranking": "순위",
+        "analysis.current_ranking": "현재 순위",
+        "analysis.same_period_created": "같은 기간에 생성됨",
+        "analysis.older_pr_ratio": "이전 PR 비율",
+        "dashboard.title_suffix": "생산성 현황",
+        "dashboard.eyebrow": "엔지니어링 생산성 현황",
+        "dashboard.heading_suffix": "리뷰와 처리량 현황",
+        "dashboard.subtitle": "선택한 기간의 PR 처리량, 리뷰 부담, 저장소별 작업 흐름을 확인합니다.",
+        "person.title_prefix": "orgpulse 개인 지표",
+        "person.eyebrow": "개인 기여 요약",
+        "person.heading_suffix": "활동",
+        "person.subtitle_suffix": "제공한 리뷰 활동은 리뷰 제출 시간을 기준으로 집계합니다.",
+        "theme.color": "색상 테마",
+        "theme.dark": "어두운 테마",
+        "theme.light": "밝은 테마",
+        "common.window": "기간",
+        "common.organization": "조직",
+        "common.author": "작성자",
+        "common.source_grain": "기간 단위",
+        "common.distribution_cutoff": "이상치 기준",
+        "common.percentile": "백분위",
+        "common.anchor": "기준",
+        "common.generated": "생성 시각",
+        "common.open_period_label": "열린 기간",
+        "common.closed_window": "닫힌 기간",
+        "common.weekly": "주간",
+        "common.monthly": "월간",
+        "common.weekly_report": "주간 보고서",
+        "common.monthly_report": "월간 보고서",
+        "common.week": "주",
+        "common.month": "월",
+        "common.state": "상태",
+        "common.repository": "저장소",
+        "common.repositories": "저장소",
+        "common.methodology": "방법론",
+        "common.charts": "차트",
+        "common.reference": "상세 데이터",
+        "common.trends": "추세",
+        "common.people": "사람",
+        "common.diagnostics": "진단",
+        "common.selected_metric": "선택한 지표",
+        "common.open_period_legend": "노란색 구간 = 열린 기간",
+        "common.selected_period": "선택한 기간",
+        "common.selected_value": "선택값",
+        "common.window_average": "기간 평균",
+        "common.period_state": "기간 상태",
+        "common.no_period_data": "기간 데이터가 없습니다.",
+        "common.no_metric_data": "이 지표의 데이터가 없습니다.",
+        "common.no_view_data": "이 보기의 데이터가 없습니다.",
+        "common.open_week": "열린 주",
+        "common.open_month": "열린 월",
+        "common.closed_week": "닫힌 주",
+        "common.closed_month": "닫힌 월",
+        "common.partial_period": "부분 기간",
+        "common.closed_period": "닫힌 기간",
+        "common.open_period": "열린 기간",
+        "common.observed_through": "관측일",
+        "common.to": "부터",
+        "common.report_sections": "섹션",
+        "common.report_cadence": "기간 보기",
+        "common.show_more_rows": "행 더 보기",
+        "common.show_more_repositories": "저장소 더 보기",
+        "common.show_more_people": "사람 더 보기",
+        "common.collapse": "접기",
+        "common.rows_hidden_until_expanded": "행을 더 볼 수 있습니다.",
+        "metric.merged_open": "머지됨 / 열림",
+        "metric.merged": "머지됨",
+        "metric.open": "열림",
+        "metric.total_review_submissions": "전체 리뷰 수",
+        "metric.review_submissions_received": "받은 리뷰 수",
+        "metric.review_submissions": "리뷰 수",
+        "metric.reviews": "리뷰",
+        "metric.reviews_per_pr": "PR당 리뷰",
+        "metric.prs": "PR",
+        "metric.prs_per_month": "월별 PR 수",
+        "metric.lines_per_month": "월별 변경 라인",
+        "metric.lines_per_pr": "PR당 변경 라인",
+        "metric.changed_lines": "변경 라인",
+        "metric.reviewed_lines": "리뷰한 라인",
+        "metric.commits_across_authored_prs": "작성한 PR의 커밋",
+        "metric.median_merge_time": "중앙값 머지 시간",
+        "metric.median_approval_time": "작성한 PR이 최종 승인되기까지 걸린 시간의 중앙값",
+        "metric.median_first_review_window": "첫 리뷰까지 걸린 시간의 중앙값입니다.",
+        "metric.within_24h": "24시간 이내",
+        "metric.stale_open_prs": "오래 열린 PR",
+        "metric.approvals": "승인",
+        "metric.changes_requested": "변경 요청",
+        "metric.comments": "코멘트",
+        "metric.reviewers": "리뷰어",
+        "metric.average_active_authors_per_month": "월평균 활성 작성자",
+        "metric.normalized_changed_lines_per_active_author": "활성 작성자 1인당 변경 라인",
+        "metric.reviewers_in_window": "기간 내 리뷰어",
+        "metric.top3_repository_share": "상위 3개 저장소에서 나온 PR 비율",
+        "metric.authored_prs": "작성한 PR",
+        "metric.reviews_given": "제공한 리뷰",
+        "metric.ready_to_approval": "리뷰 요청/준비부터 최종 승인까지",
+        "metric.creation_to_merge": "PR 생성부터 머지까지",
+        "dashboard.trend_surface_copy": "기간별 처리량, 코드 규모, 승인 속도의 변화를 비교합니다.",
+        "dashboard.interpretation": "읽는 법",
+        "dashboard.interpretation_copy": "차트로 방향 변화를 먼저 확인하고, 정확한 기간별 값이 필요할 때 상세 표를 엽니다.",
+        "dashboard.normalized_lens": "1인 기준 보기",
+        "dashboard.normalized_lens_copy": "이 기간 팀의 월평균 활성 작성자는",
+        "dashboard.normalized_lens_suffix": "명이며, 활성 작성자 1인당",
+        "dashboard.backlog": "오래 열린 PR",
+        "dashboard.backlog_copy": "개의 열린 PR이 기간 종료 시점에 72시간을 넘었습니다.",
+        "dashboard.people_copy": "지표를 선택하면 해당 지표에서 두드러진 사람이 먼저 보입니다. 사람을 선택하면 오른쪽에서 상세 흐름을 확인할 수 있습니다.",
+        "dashboard.people_ranking_metric": "사람 순위 기준",
+        "dashboard.people_top_note": "상위 10명부터 보여줍니다. 펼치면 나머지 인원도 확인할 수 있습니다.",
+        "dashboard.selected_profile": "선택한 프로필",
+        "dashboard.person_detail": "개인 상세",
+        "dashboard.author_reviewer_signals": "작성 및 리뷰 활동",
+        "dashboard.author_chart": "작성자 차트",
+        "dashboard.selected_person": "선택한 사람",
+        "dashboard.repository_leaderboard": "저장소별 현황",
+        "dashboard.repository_concentration": "작업이 집중된 저장소",
+        "dashboard.repository_copy": "PR 비중이 큰 저장소부터 보여 작업이 어디에 집중됐는지 확인합니다.",
+        "dashboard.top_repositories_cover": "상위 5개 저장소가 조직 PR의",
+        "dashboard.top_repositories_suffix": "를 차지합니다.",
+        "dashboard.latency_by_size": "변경 규모별 리뷰 소요 시간",
+        "dashboard.size_flow": "변경 규모와 리뷰 흐름",
+        "dashboard.latency_quality": "리뷰 속도와 품질",
+        "dashboard.review_depth": "리뷰 밀도",
+        "dashboard.prs_first_review_day": "리뷰 준비 후 하루 안에 첫 리뷰를 받은 PR입니다.",
+        "dashboard.reviewed_prs": "의 PR이 하나 이상의 리뷰를 받았습니다.",
+        "dashboard.open_prs_older_72h": "보고 기간 종료 시점에 72시간 넘게 열려 있던 PR입니다.",
+        "dashboard.dense_tables": "기간별 상세 값",
+        "dashboard.reference_copy": "차트 뒤의 정확한 값을 확인해야 할 때 주간 또는 월간 표를 엽니다.",
+        "dashboard.trend_tables": "주간 및 월간 값",
+        "person.authored_anchor_prefix": "작성한 PR 지표 기준:",
+        "person.chart_copy": "각 지표에서 개인 흐름과 조직 흐름을 함께 비교합니다.",
+        "person.cadence_copy": "주간 변화와 월간 변화를 나란히 확인합니다.",
+        "person.repository_copy": "상위 저장소는 작성한 PR 수, 리뷰 활동, 변경 규모 순으로 정렬됩니다.",
+        "person.org_comparison": "조직 비교",
+        "person.show_org_comparison": "조직 비교 표시",
+        "person.hide_org_comparison": "조직 비교 숨기기",
+    },
+}
+
+
+_PERIOD_LABEL_KEYS = {
+    "open week": "common.open_week",
+    "open month": "common.open_month",
+    "open period": "common.open_period",
+    "partial period": "common.partial_period",
+    "closed week": "common.closed_week",
+    "closed month": "common.closed_month",
+    "closed window": "common.closed_window",
+    "closed period": "common.closed_period",
+}
+
+
+_METRICS: dict[ReportLocale, dict[str, dict[str, str]]] = {
+    ReportLocale.EN: {
+        "pull_requests": {
+            "label": "PR throughput",
+            "description": "Pull requests counted in the selected reporting window.",
+        },
+        "pull_request_count": {
+            "label": "Pull requests",
+            "description": "Pull requests counted in the selected reporting window.",
+        },
+        "authored_pull_request_count": {
+            "label": "Authored PRs",
+            "description": "Pull requests authored by the selected person.",
+        },
+        "merged_pull_requests": {
+            "label": "Merged",
+            "description": "Pull requests merged during the selected window.",
+        },
+        "merged_pull_request_count": {
+            "label": "Merged pull requests",
+            "description": "Pull requests that were merged.",
+        },
+        "open_pull_requests": {
+            "label": "Open",
+            "description": "Pull requests still open at the reporting cutoff.",
+        },
+        "active_authors": {
+            "label": "Active authors",
+            "description": "Unique authors with pull requests in the selected window.",
+        },
+        "active_author_count": {
+            "label": "Active authors",
+            "description": "Unique authors with pull requests in the selected window.",
+        },
+        "pull_requests_per_active_author": {
+            "label": "PRs per active author",
+            "description": "Pull request volume normalized by active author count.",
+        },
+        "merged_pull_requests_per_active_author": {
+            "label": "Merged PRs / active author",
+            "description": "Merged pull request volume normalized by active author count.",
+        },
+        "changed_lines": {
+            "label": "Changed lines",
+            "description": "Added plus deleted lines across pull requests.",
+        },
+        "changed_lines_total": {
+            "label": "Changed lines",
+            "description": "Added plus deleted lines across authored pull requests.",
+        },
+        "total_changed_lines": {
+            "label": "Changed lines",
+            "description": "Added plus deleted lines across pull requests.",
+        },
+        "changed_lines_per_active_author": {
+            "label": "Lines / Active Author",
+            "description": "Changed lines normalized by active author count.",
+        },
+        "commits_total": {
+            "label": "Commits",
+            "description": "Total commits across authored pull requests.",
+        },
+        "review_coverage_pct": {
+            "label": "Review coverage",
+            "description": "Share of pull requests that received at least one review.",
+        },
+        "review_submissions": {
+            "label": "Reviews",
+            "description": "Review submissions recorded in the selected window.",
+        },
+        "review_submissions_given": {
+            "label": "Reviews given",
+            "description": "Review submissions made by the selected person.",
+        },
+        "pull_requests_reviewed": {
+            "label": "Reviewed PRs",
+            "description": "Distinct pull requests reviewed by the selected person.",
+        },
+        "reviewed_lines": {
+            "label": "Reviewed lines",
+            "description": "Changed lines on pull requests reviewed by the selected person.",
+        },
+        "reviewed_lines_per_month": {
+            "label": "Reviewed lines / month",
+            "description": "Reviewed lines normalized by month in the selected window.",
+        },
+        "reviews_per_pr": {
+            "label": "Reviews / PR",
+            "description": "Average number of review submissions per pull request.",
+        },
+        "average_reviews_per_pr": {
+            "label": "Reviews / PR",
+            "description": "Average number of review submissions per pull request.",
+        },
+        "merge_rate_pct": {
+            "label": "Merge rate",
+            "description": "Share of authored pull requests that were merged.",
+        },
+        "median_merge_hours": {
+            "label": "Median merge",
+            "description": "Median time from pull request creation to merge.",
+        },
+        "median_time_to_merge_hours": {
+            "label": "Median time to merge",
+            "description": "Median time from pull request creation to merge.",
+        },
+        "time_to_merge_median_hours": {
+            "label": "Median time to merge",
+            "description": "Median time from pull request creation to merge.",
+        },
+        "median_first_review_hours": {
+            "label": "Median first review",
+            "description": "Median time from becoming reviewable to first review.",
+        },
+        "median_time_to_first_review_hours": {
+            "label": "Median time to first review",
+            "description": "Median time from becoming reviewable to first review.",
+        },
+        "time_to_first_review_median_hours": {
+            "label": "Median time to first review",
+            "description": "Median time from becoming reviewable to first review.",
+        },
+        "median_approval_hours": {
+            "label": "Median approval time",
+            "description": "Median time from becoming reviewable to final approval.",
+        },
+        "review_sla_24h_pct": {
+            "label": "Review SLA",
+            "description": "Share of pull requests with first review within 24 hours.",
+        },
+        "stale_open_pull_requests": {
+            "label": "Open backlog risk",
+            "description": "Open pull requests older than 72 hours at the reporting cutoff.",
+        },
+        "average_changed_lines_per_pr": {
+            "label": "Avg lines / PR",
+            "description": "Average changed lines per pull request.",
+        },
+        "repository_share": {
+            "label": "PR share",
+            "description": "Share of organization pull requests for this repository or author.",
+        },
+        "authors": {
+            "label": "Authors",
+            "description": "Unique pull request authors in the selected row.",
+        },
+    },
+    ReportLocale.KO: {
+        "pull_requests": {
+            "label": "PR 처리량",
+            "description": "선택한 보고 기간에 집계된 PR 수입니다.",
+        },
+        "pull_request_count": {
+            "label": "PR",
+            "description": "선택한 보고 기간에 집계된 PR 수입니다.",
+        },
+        "authored_pull_request_count": {
+            "label": "작성한 PR",
+            "description": "선택한 사람이 작성한 PR 수입니다.",
+        },
+        "merged_pull_requests": {
+            "label": "머지됨",
+            "description": "선택한 기간에 머지된 PR 수입니다.",
+        },
+        "merged_pull_request_count": {
+            "label": "머지된 PR",
+            "description": "머지된 상태의 PR 수입니다.",
+        },
+        "open_pull_requests": {
+            "label": "열림",
+            "description": "보고 기준 시점에 아직 열려 있는 PR 수입니다.",
+        },
+        "active_authors": {
+            "label": "활성 작성자",
+            "description": "선택한 기간에 PR을 작성한 고유 작성자 수입니다.",
+        },
+        "active_author_count": {
+            "label": "활성 작성자",
+            "description": "선택한 기간에 PR을 작성한 고유 작성자 수입니다.",
+        },
+        "pull_requests_per_active_author": {
+            "label": "활성 작성자당 PR",
+            "description": "PR 처리량을 활성 작성자 수로 나눈 값입니다.",
+        },
+        "merged_pull_requests_per_active_author": {
+            "label": "활성 작성자당 머지 PR",
+            "description": "머지된 PR 수를 활성 작성자 수로 나눈 값입니다.",
+        },
+        "changed_lines": {
+            "label": "변경 라인",
+            "description": "PR의 추가 라인과 삭제 라인을 합산한 값입니다.",
+        },
+        "changed_lines_total": {
+            "label": "변경 라인",
+            "description": "작성한 PR의 추가 라인과 삭제 라인을 합산한 값입니다.",
+        },
+        "total_changed_lines": {
+            "label": "변경 라인",
+            "description": "PR의 추가 라인과 삭제 라인을 합산한 값입니다.",
+        },
+        "changed_lines_per_active_author": {
+            "label": "활성 작성자당 라인",
+            "description": "변경 라인을 활성 작성자 수로 나눈 값입니다.",
+        },
+        "commits_total": {
+            "label": "커밋",
+            "description": "작성한 PR의 총 커밋 수입니다.",
+        },
+        "review_coverage_pct": {
+            "label": "리뷰 커버리지",
+            "description": "하나 이상의 리뷰를 받은 PR 비율입니다.",
+        },
+        "review_submissions": {
+            "label": "리뷰",
+            "description": "선택한 기간에 제출된 리뷰 수입니다.",
+        },
+        "review_submissions_given": {
+            "label": "제공한 리뷰",
+            "description": "선택한 사람이 제출한 리뷰 수입니다.",
+        },
+        "pull_requests_reviewed": {
+            "label": "리뷰한 PR",
+            "description": "선택한 사람이 리뷰한 고유 PR 수입니다.",
+        },
+        "reviewed_lines": {
+            "label": "리뷰한 라인",
+            "description": "선택한 사람이 리뷰한 PR의 변경 라인 수입니다.",
+        },
+        "reviewed_lines_per_month": {
+            "label": "월별 리뷰 라인",
+            "description": "선택한 기간의 월 단위 평균 리뷰 라인 수입니다.",
+        },
+        "reviews_per_pr": {
+            "label": "PR당 리뷰",
+            "description": "PR당 평균 리뷰 수입니다.",
+        },
+        "average_reviews_per_pr": {
+            "label": "PR당 리뷰",
+            "description": "PR당 평균 리뷰 수입니다.",
+        },
+        "merge_rate_pct": {
+            "label": "머지율",
+            "description": "작성한 PR 중 머지된 비율입니다.",
+        },
+        "median_merge_hours": {
+            "label": "중앙값 머지 시간",
+            "description": "PR 생성부터 머지까지 걸린 시간의 중앙값입니다.",
+        },
+        "median_time_to_merge_hours": {
+            "label": "중앙값 머지 시간",
+            "description": "PR 생성부터 머지까지 걸린 시간의 중앙값입니다.",
+        },
+        "time_to_merge_median_hours": {
+            "label": "중앙값 머지 시간",
+            "description": "PR 생성부터 머지까지 걸린 시간의 중앙값입니다.",
+        },
+        "median_first_review_hours": {
+            "label": "중앙값 첫 리뷰",
+            "description": "리뷰 준비 시점부터 첫 리뷰까지 걸린 시간의 중앙값입니다.",
+        },
+        "median_time_to_first_review_hours": {
+            "label": "중앙값 첫 리뷰 시간",
+            "description": "리뷰 준비 시점부터 첫 리뷰까지 걸린 시간의 중앙값입니다.",
+        },
+        "time_to_first_review_median_hours": {
+            "label": "중앙값 첫 리뷰 시간",
+            "description": "리뷰 준비 시점부터 첫 리뷰까지 걸린 시간의 중앙값입니다.",
+        },
+        "median_approval_hours": {
+            "label": "중앙값 승인 시간",
+            "description": "리뷰 준비 시점부터 최종 승인까지 걸린 시간의 중앙값입니다.",
+        },
+        "review_sla_24h_pct": {
+            "label": "리뷰 SLA",
+            "description": "24시간 안에 첫 리뷰를 받은 PR 비율입니다.",
+        },
+        "stale_open_pull_requests": {
+            "label": "오래 열린 PR",
+            "description": "보고 기준 시점에 72시간 넘게 열려 있는 PR 수입니다.",
+        },
+        "average_changed_lines_per_pr": {
+            "label": "PR당 평균 라인",
+            "description": "PR당 평균 변경 라인 수입니다.",
+        },
+        "repository_share": {
+            "label": "PR 비중",
+            "description": "이 저장소 또는 작성자가 차지하는 조직 PR 비율입니다.",
+        },
+        "authors": {
+            "label": "작성자",
+            "description": "선택한 행에 포함된 고유 PR 작성자 수입니다.",
+        },
+    },
+}

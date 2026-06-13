@@ -82,8 +82,8 @@ uv run orgpulse analyze \
   --time-anchor created_at \
   --since 2026-04-01 \
   --until 2026-04-30 \
-  --format html \
-  --output-dir output > analysis.html
+  --format json \
+  --output-dir output > analysis.json
 ```
 
 Extract one person's metrics:

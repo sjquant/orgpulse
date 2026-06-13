@@ -18,6 +18,7 @@ from orgpulse.common.models import (
     PeriodGrain,
     PullRequestCollection,
     PullRequestRecord,
+    ReportLocale,
     RunConfig,
     RunMode,
     TimeAnchor,
@@ -41,6 +42,7 @@ def main() -> None:
         demo=demo,
         output_root=args.output_root,
         base_name=args.base_name,
+        locale=ReportLocale(args.locale),
     )
     _print_summary(paths)
 
@@ -66,6 +68,12 @@ def _parse_args() -> argparse.Namespace:
         default="acme-cloud-org-dashboard",
         help="Base filename for the organization dashboard outputs.",
     )
+    parser.add_argument(
+        "--locale",
+        choices=[locale.value for locale in ReportLocale],
+        default=ReportLocale.EN.value,
+        help="HTML report locale.",
+    )
     return parser.parse_args()
 
 
@@ -78,6 +86,7 @@ def _render_reports(
     demo: dict[str, Any],
     output_root: Path,
     base_name: str,
+    locale: ReportLocale,
 ) -> dict[str, Path]:
     source_dir = output_root / "source"
     report_dir = output_root / "reports"
@@ -103,6 +112,7 @@ def _render_reports(
         demo=demo,
         source_dir=source_dir,
         report_dir=report_dir,
+        locale=locale,
     )
     dashboard_outputs = generate_dashboard_report(
         org=str(demo["org"]),
@@ -113,6 +123,7 @@ def _render_reports(
         base_name=base_name,
         refresh=False,
         distribution_percentile=int(demo["distribution_percentile"]),
+        locale=locale,
     )
     return {
         "person_html": person_path,
@@ -151,6 +162,7 @@ def _write_person_report(
     demo: dict[str, Any],
     source_dir: Path,
     report_dir: Path,
+    locale: ReportLocale,
 ) -> Path:
     config = build_person_config(
         org=str(demo["org"]),
@@ -162,6 +174,7 @@ def _write_person_report(
         until=date.fromisoformat(str(demo["until"])),
         distribution_percentile=int(demo["distribution_percentile"]),
         export_format=PersonExportFormat.HTML,
+        locale=locale,
         include_org_trends=True,
     )
     result = PersonMetricsService().extract(config)

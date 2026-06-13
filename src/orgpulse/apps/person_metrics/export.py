@@ -23,7 +23,7 @@ def render_person_metrics_result(
     if result.export_format is PersonExportFormat.MARKDOWN:
         return _render_markdown(result)
     if result.export_format is PersonExportFormat.HTML:
-        return render_person_report_html(result)
+        return render_person_report_html(result, locale=result.locale)
     return _render_json(result)
 
 

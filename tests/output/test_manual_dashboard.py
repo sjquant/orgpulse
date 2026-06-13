@@ -101,9 +101,9 @@ class TestManualDashboardPayload:
         assert prepared.monthly_trends[0]["open_month"] is True
         assert prepared.monthly_trends[0]["label"] == "open month"
         assert "2026-04 open month" in html
-        assert "chart-partial-band" in html
-        assert "partial-period-row" in html
-        assert "period-state-pill open" in html
+        assert "report__chart-partial-band" in html
+        assert "report__table-row--partial" in html
+        assert "report__period-state-pill report__period-state-pill--open" in html
         assert "Yellow band = open period" in html
         assert 'rx="8"' not in html
 
@@ -160,7 +160,7 @@ class TestManualDashboardPayload:
         assert prepared.monthly_trends[0]["is_partial"] is True
         assert prepared.monthly_trends[0]["open_month"] is False
         assert "open month" in html
-        assert "period-state-pill open" in html
+        assert "report__period-state-pill report__period-state-pill--open" in html
         assert "Yellow band = open period" in html
         assert 'rx="8"' not in html
 
@@ -212,14 +212,14 @@ class TestManualDashboardPayload:
         html = render_dashboard_html(prepared)
 
         # Then
-        assert 'orgpulse-manual-dashboard-theme' in html
+        assert "orgpulse-manual-dashboard-theme" in html
         assert 'data-theme-option="dark"' in html
         assert 'data-theme-option="light"' in html
         assert 'aria-label="Dark theme"' in html
         assert 'aria-label="Light theme"' in html
-        assert 'class="theme-switch-icon"' in html
-        assert 'class="theme-switch-indicator"' in html
-        assert 'data-active-theme' in html
+        assert 'class="report__theme-switch-icon"' in html
+        assert 'class="report__theme-switch-indicator"' in html
+        assert "data-active-theme" in html
         assert "transform 180ms cubic-bezier(0.22, 1, 0.36, 1)" in html
         assert "--bg-canvas" in html
         assert "--panel-raised" in html
@@ -577,8 +577,7 @@ class TestManualDashboardPayload:
         assert prepared.monthly_trends[0]["median_approval_hours"] == 6.0
         assert author_details["alice"]["summary"]["median_approval_hours"] == 6.0
         assert (
-            author_details["alice"]["monthly_trends"][0]["median_approval_hours"]
-            == 6.0
+            author_details["alice"]["monthly_trends"][0]["median_approval_hours"] == 6.0
         )
         assert "Median approval time" in html
         assert 'data-metric="median_approval_hours"' in html
@@ -726,33 +725,52 @@ class TestManualDashboardPayload:
         html = render_dashboard_html(prepared)
 
         # Then
-        assert 'class="table-footer"' in html
+        assert 'class="report__table-footer"' in html
         assert 'id="people-metric-tabs"' in html
         assert 'data-people-metric="pull_requests"' in html
         assert 'data-people-metric="changed_lines"' in html
         assert 'data-people-metric="median_merge_hours"' in html
         assert 'id="people-ranking-list"' in html
         assert 'id="people-ranking-toggle"' in html
-        assert "Top 10 people shown first." in html
+        assert (
+            "The ranking starts with the top 10; expand it to review everyone else."
+            in html
+        )
         assert "peopleRankingChunkSize = 10" in html
         assert '"people-controls people-controls"' in html
         assert '"people-ranking profile-detail"' in html
-        assert ".people-ranking-controls .primary-tabs" in html
-        assert ".people-ranking-controls .secondary-tabs" in html
-        assert html.index('id="author-detail-grain-tabs"') < html.index('id="people-ranking-list"')
-        assert html.index('id="author-detail-grain-tabs"') < html.index('id="author-detail"')
-        assert 'class="tab-strip primary-tabs"' in html
-        assert 'class="tab-strip secondary-tabs"' in html
+        assert (
+            ".org-dashboard__people-ranking-controls .report__tab-strip--primary"
+            in html
+        )
+        assert (
+            ".org-dashboard__people-ranking-controls .report__tab-strip--secondary"
+            in html
+        )
+        assert html.index('id="author-detail-grain-tabs"') < html.index(
+            'id="people-ranking-list"'
+        )
+        assert html.index('id="author-detail-grain-tabs"') < html.index(
+            'id="author-detail"'
+        )
+        assert 'class="report__tab-strip report__tab-strip--primary"' in html
+        assert 'class="report__tab-strip report__tab-strip--secondary"' in html
         assert "grid-template-columns: minmax(0, 1fr) auto;" in html
         assert "width: fit-content;" in html
-        assert ".two-col > .secondary-tabs" in html
+        assert ".report__two-column > .report__tab-strip--secondary" in html
         assert 'id="author-detail-metric-tabs"' not in html
         assert "Size mix" not in html
         assert "Timeline" not in html
         assert "activeAuthorMetric = activePeopleMetric" in html
-        assert html.index('id="repository-toggle"') > html.index('id="repository-extra"')
-        assert html.index('id="weekly-trend-toggle"') > html.index('id="weekly-trend-extra"')
-        assert html.index('id="monthly-trend-toggle"') > html.index('id="monthly-trend-extra"')
+        assert html.index('id="repository-toggle"') > html.index(
+            'id="repository-extra"'
+        )
+        assert html.index('id="weekly-trend-toggle"') > html.index(
+            'id="weekly-trend-extra"'
+        )
+        assert html.index('id="monthly-trend-toggle"') > html.index(
+            'id="monthly-trend-extra"'
+        )
         assert 'id="reference-trend-tabs"' in html
         assert 'data-reference-trend="weekly"' in html
         assert 'data-reference-trend="monthly"' in html
@@ -826,7 +844,7 @@ class TestManualDashboardPayload:
         ]
 
     def test_renders_latency_quality_summary_and_chart_tooltip_wiring(self) -> None:
-        """Render latency-quality summary cards and explicit chart tooltip wiring in the dashboard shell."""
+        """Render latency-quality summary cards and explicit chart tooltip wiring in the dashboard report."""
         # Given
         payload = {
             "overview": {
@@ -883,11 +901,16 @@ class TestManualDashboardPayload:
         # When
         prepared = prepare_dashboard_payload(payload)
         html = render_dashboard_html(prepared)
+        ko_html = render_dashboard_html(prepared, locale="ko")
 
         # Then
-        assert "Latency and quality" in html
+        assert "Review speed and quality" in html
+        assert "첫 리뷰까지 가장 오래 걸린 구간은 S 크기 PR" in ko_html
+        assert "XS 크기 PR의 중앙값 1시간보다 11시간 더 걸렸습니다." in ko_html
+        assert "waited the longest for first review" not in ko_html
+        assert "Compared with" not in ko_html
         assert "within 24h" in html
-        assert "chart-tooltip" in html
+        assert "report__chart-tooltip" in html
         assert "data-point-label=" in html
         assert "showChartTooltip" in html
         assert "positionChartTooltip" in html
@@ -952,8 +975,11 @@ class TestManualDashboardPayload:
         html = render_dashboard_html(prepared)
 
         # Then
-        assert '["Value", "value", true]' in html
-        assert 'const numericClass = isNumeric || typeof value === "number" ? ` class="num"` : "";' in html
+        assert '[i18n.locale === "ko" ? "값" : "Value", "value", true]' in html
+        assert (
+            'const numericClass = isNumeric || typeof value === "number" ? ` class="report__table-cell--numeric"` : "";'
+            in html
+        )
 
     def test_sorts_reviewer_leaderboard_by_reviewed_pull_requests_first(
         self,

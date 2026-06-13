@@ -1,13 +1,14 @@
   <script>
     const themeStorageKey = "orgpulse-manual-dashboard-theme";
-    const themeButtons = Array.from(document.querySelectorAll(".theme-switch-button"));
-    const themeSwitch = document.querySelector(".theme-switch");
+    const themeButtons = Array.from(document.querySelectorAll(".report__theme-switch-button"));
+    const themeSwitch = document.querySelector(".report__theme-switch");
+    const i18n = JSON.parse(document.getElementById("report-i18n").textContent);
     const authorDetails = JSON.parse(document.getElementById("author-details-data").textContent);
     const peopleRows = Object.entries(authorDetails).map(([authorLogin, detail]) => ({
       authorLogin,
       ...detail.summary,
     }));
-    const peopleMetricTabs = Array.from(document.querySelectorAll("#people-metric-tabs .tab-button"));
+    const peopleMetricTabs = Array.from(document.querySelectorAll("#people-metric-tabs .report__tab-button"));
     const peopleRankingList = document.getElementById("people-ranking-list");
     const peopleRankingToggle = document.getElementById("people-ranking-toggle");
     const authorDetailRoot = document.getElementById("author-detail-root");
@@ -22,15 +23,15 @@
     const weeklyTrendExtra = document.getElementById("weekly-trend-extra");
     const monthlyTrendToggle = document.getElementById("monthly-trend-toggle");
     const monthlyTrendExtra = document.getElementById("monthly-trend-extra");
-    const referenceTrendTabs = Array.from(document.querySelectorAll("#reference-trend-tabs .tab-button"));
+    const referenceTrendTabs = Array.from(document.querySelectorAll("#reference-trend-tabs .report__tab-button"));
     const referenceTrendPanels = Array.from(document.querySelectorAll("[data-reference-trend-panel]"));
     const trendChartRoot = document.getElementById("trend-chart-root");
     const trendChartReadout = document.getElementById("trend-chart-readout");
     const trendChartTitle = document.getElementById("trend-chart-title");
-    const trendMetricTabs = Array.from(document.querySelectorAll("#trend-metric-tabs .tab-button"));
-    const trendGrainTabs = Array.from(document.querySelectorAll("#trend-grain-tabs .tab-button"));
-    const authorGrainTabs = Array.from(document.querySelectorAll("#author-detail-grain-tabs .tab-button"));
-    const sectionNavLinks = Array.from(document.querySelectorAll('.section-nav a[href^="#"]'));
+    const trendMetricTabs = Array.from(document.querySelectorAll("#trend-metric-tabs .report__tab-button"));
+    const trendGrainTabs = Array.from(document.querySelectorAll("#trend-grain-tabs .report__tab-button"));
+    const authorGrainTabs = Array.from(document.querySelectorAll("#author-detail-grain-tabs .report__tab-button"));
+    const sectionNavLinks = Array.from(document.querySelectorAll('.report__section-nav a[href^="#"]'));
     const peopleRankingChunkSize = 10;
     const sectionTargets = sectionNavLinks
       .map((link) => {
@@ -98,7 +99,7 @@
       if (!(event.target instanceof Element)) {
         return;
       }
-      const button = event.target.closest(".author-button[data-author]");
+      const button = event.target.closest(".org-dashboard__author-button[data-author]");
       if (!button) {
         return;
       }
@@ -256,14 +257,14 @@
       if (!peopleRankingToggle) {
         return;
       }
-      peopleRankingToggle.classList.toggle("hidden", totalCount <= peopleRankingChunkSize);
+      peopleRankingToggle.classList.toggle("report--hidden", totalCount <= peopleRankingChunkSize);
       const remaining = Math.max(0, totalCount - visiblePeopleCount);
       if (remaining === 0) {
-        peopleRankingToggle.textContent = "Collapse people";
+        peopleRankingToggle.textContent = t("common.collapse");
         peopleRankingToggle.setAttribute("aria-expanded", "true");
         return;
       }
-      peopleRankingToggle.textContent = `Show ${Math.min(peopleRankingChunkSize, remaining)} more people`;
+      peopleRankingToggle.textContent = i18n.locale === "ko" ? `${Math.min(peopleRankingChunkSize, remaining)}명 ${t("common.show_more_people")}` : `Show ${Math.min(peopleRankingChunkSize, remaining)} more people`;
       peopleRankingToggle.setAttribute("aria-expanded", String(visiblePeopleCount > peopleRankingChunkSize));
     }
 
@@ -272,19 +273,19 @@
       return `
         <button
           type="button"
-          class="author-button person-card${row.authorLogin === activeAuthor ? " active" : ""}"
+          class="org-dashboard__author-button org-dashboard__person-card${row.authorLogin === activeAuthor ? " org-dashboard__author-button--active org-dashboard__person-card--active" : ""}"
           data-author="${formatAttribute(row.authorLogin)}"
           aria-pressed="${row.authorLogin === activeAuthor ? "true" : "false"}"
         >
-          <span class="person-card-header">
+          <span class="org-dashboard__person-card-header">
             <strong>${formatCell(row.authorLogin)}</strong>
             <small>#${rank}</small>
           </span>
-          <span class="person-card-metrics">
+          <span class="org-dashboard__person-card-metrics">
             <span>${metricLabel(activePeopleMetric)}: ${metricValue}</span>
-            <span>${formatMetric(row.pull_requests)} PRs</span>
-            <span>${formatMetric(row.changed_lines)} lines</span>
-            <span>${formatDuration(row.median_merge_hours)} merge</span>
+            <span>${metricLabel("pull_requests")}: ${formatMetric(row.pull_requests)}</span>
+            <span>${metricLabel("changed_lines")}: ${formatMetric(row.changed_lines)}</span>
+            <span>${metricLabel("median_merge_hours")}: ${formatDuration(row.median_merge_hours)}</span>
           </span>
         </button>
       `;
@@ -304,15 +305,16 @@
       );
       for (const panel of referenceTrendPanels) {
         const isActive = panel.dataset.referenceTrendPanel === activeReferenceTrend;
-        panel.classList.toggle("hidden", !isActive);
+        panel.classList.toggle("report--hidden", !isActive);
         panel.toggleAttribute("hidden", !isActive);
       }
     }
 
     function syncActiveAuthorButtons() {
-      for (const other of document.querySelectorAll(".author-button")) {
+      for (const other of document.querySelectorAll(".org-dashboard__author-button")) {
         const isActive = other.dataset.author === activeAuthor;
-        other.classList.toggle("active", isActive);
+        other.classList.toggle("org-dashboard__author-button--active", isActive);
+        other.classList.toggle("org-dashboard__person-card--active", isActive);
         other.setAttribute("aria-pressed", String(isActive));
       }
     }
@@ -333,17 +335,17 @@
       });
 
       function sync() {
-        container.classList.toggle("hidden", visibleCount === 0);
+        container.classList.toggle("report--hidden", visibleCount === 0);
         items.forEach((item, index) => {
-          item.classList.toggle("hidden", index >= visibleCount);
+          item.classList.toggle("report--hidden", index >= visibleCount);
         });
         const remaining = Math.max(0, items.length - visibleCount);
         if (remaining === 0) {
-          button.textContent = `Collapse ${label}`;
+          button.textContent = t("common.collapse");
           button.setAttribute("aria-expanded", "true");
           return;
         }
-        button.textContent = `Show ${Math.min(chunkSize, remaining)} more ${label}`;
+        button.textContent = i18n.locale === "ko" ? `${Math.min(chunkSize, remaining)}개 ${t("common.show_more_rows")}` : `Show ${Math.min(chunkSize, remaining)} more ${label}`;
         button.setAttribute("aria-expanded", String(visibleCount > 0));
       }
     }
@@ -422,64 +424,64 @@
       const detail = authorDetails[authorLogin];
       if (!detail) {
         authorDetailRoot.innerHTML = "";
-        authorDetailTitle.textContent = "Person detail";
+        authorDetailTitle.textContent = i18n.locale === "ko" ? "개인 상세" : "Person detail";
         return;
       }
       const summary = detail.summary;
-      authorDetailTitle.textContent = `${authorLogin} profile`;
+      authorDetailTitle.textContent = i18n.locale === "ko" ? `${authorLogin} 프로필` : `${authorLogin} profile`;
       renderAuthorChart(detail, authorLogin);
       authorDetailRoot.innerHTML = `
-        <div class="detail-grid">
-          ${detailCard("Authored PRs", summary.pull_requests)}
-          ${detailCard("Reviewed PRs", summary.pull_requests_reviewed)}
-          ${detailCard("Reviewed PRs / month", formatMetric(summary.pull_requests_reviewed_per_month))}
-          ${detailCard("Reviews given", summary.review_submissions_given)}
-          ${detailCard("Reviewed lines", formatMetric(summary.reviewed_lines))}
-          ${detailCard("Reviewed lines / month", formatMetric(summary.reviewed_lines_per_month))}
-          ${detailCard("Merge rate", formatMetric(summary.merge_rate_pct, "%"))}
-          ${detailCard("Avg lines / PR", formatMetric(summary.average_changed_lines_per_pr))}
-          ${detailCard("Approval time", formatDuration(summary.median_approval_hours))}
-          ${detailCard("First review", formatDuration(summary.median_first_review_hours))}
+        <div class="org-dashboard__detail-grid">
+          ${detailCard(metricLabel("authored_pull_request_count"), summary.pull_requests)}
+          ${detailCard(metricLabel("pull_requests_reviewed"), summary.pull_requests_reviewed)}
+          ${detailCard(i18n.locale === "ko" ? "월별 리뷰한 PR" : "Reviewed PRs / month", formatMetric(summary.pull_requests_reviewed_per_month))}
+          ${detailCard(metricLabel("review_submissions_given"), summary.review_submissions_given)}
+          ${detailCard(metricLabel("reviewed_lines"), formatMetric(summary.reviewed_lines))}
+          ${detailCard(metricLabel("reviewed_lines_per_month"), formatMetric(summary.reviewed_lines_per_month))}
+          ${detailCard(metricLabel("merge_rate_pct"), formatMetric(summary.merge_rate_pct, "%"))}
+          ${detailCard(metricLabel("average_changed_lines_per_pr"), formatMetric(summary.average_changed_lines_per_pr))}
+          ${detailCard(metricLabel("median_approval_hours"), formatDuration(summary.median_approval_hours))}
+          ${detailCard(metricLabel("median_first_review_hours"), formatDuration(summary.median_first_review_hours))}
         </div>
-        <div class="profile-subgrid">
+        <div class="org-dashboard__profile-subgrid">
           <div>
-            <p class="section-kicker">Delivery footprint</p>
+            <p class="report__section-kicker">${i18n.locale === "ko" ? "작성 활동" : "Authored work"}</p>
             ${renderMiniTable(
               [
-                ["Repository", "repository_full_name"],
-                ["PRs", "pull_requests", true],
-                ["Changed lines", "changed_lines", true],
+                [t("common.repository"), "repository_full_name"],
+                [metricLabel("pull_requests"), "pull_requests", true],
+                [metricLabel("changed_lines"), "changed_lines", true],
               ],
               detail.top_repositories,
             )}
           </div>
           <div>
-            <p class="section-kicker">Review footprint</p>
+            <p class="report__section-kicker">${i18n.locale === "ko" ? "리뷰 활동" : "Review work"}</p>
             ${renderMiniTable(
               [
-                ["Signal", "label"],
-                ["Count", "value", true],
+                [i18n.locale === "ko" ? "구분" : "Type", "label"],
+                [i18n.locale === "ko" ? "수" : "Count", "value", true],
               ],
               [
-                { label: "Approvals", value: summary.approvals_given },
-                { label: "Changes requested", value: summary.changes_requested_given },
-                { label: "Comments", value: summary.review_comments_given },
-                { label: "Authors supported", value: summary.authors_supported },
+                { label: i18n.locale === "ko" ? "승인" : "Approvals", value: summary.approvals_given },
+                { label: i18n.locale === "ko" ? "변경 요청" : "Changes requested", value: summary.changes_requested_given },
+                { label: i18n.locale === "ko" ? "코멘트" : "Comments", value: summary.review_comments_given },
+                { label: i18n.locale === "ko" ? "지원한 작성자" : "Authors supported", value: summary.authors_supported },
               ],
             )}
           </div>
           <div>
-            <p class="section-kicker">Composition</p>
+            <p class="report__section-kicker">${i18n.locale === "ko" ? "작업 구성" : "Work mix"}</p>
             ${renderMiniTable(
               [
-                ["Metric", "label"],
-                ["Value", "value", true],
+                [i18n.locale === "ko" ? "항목" : "Measure", "label"],
+                [i18n.locale === "ko" ? "값" : "Value", "value", true],
               ],
               [
-                { label: "Share of org PRs", value: formatMetric(summary.share_of_prs_pct, "%") },
-                { label: "Avg commits / PR", value: formatMetric(summary.average_commits_per_pr) },
-                { label: "Approvals given", value: summary.approvals_given },
-                { label: "Authors supported", value: summary.authors_supported },
+                { label: metricLabel("repository_share"), value: formatMetric(summary.share_of_prs_pct, "%") },
+                { label: i18n.locale === "ko" ? "PR당 평균 커밋" : "Avg commits / PR", value: formatMetric(summary.average_commits_per_pr) },
+                { label: i18n.locale === "ko" ? "제공한 승인" : "Approvals given", value: summary.approvals_given },
+                { label: i18n.locale === "ko" ? "지원한 작성자" : "Authors supported", value: summary.authors_supported },
               ],
             )}
           </div>
@@ -493,9 +495,9 @@
 
     function renderTrendChart() {
       const rows = trendSeries[activeTrendGrain];
-      const label = activeTrendGrain === "weekly" ? "week" : "month";
+      const label = activeTrendGrain === "weekly" ? t("common.week") : t("common.month");
       activeTrendPointIndex = clampSelectedIndex(rows, activeTrendPointIndex, activeTrendMetric);
-      trendChartTitle.textContent = `${metricLabel(activeTrendMetric)} by ${label}`;
+      trendChartTitle.textContent = i18n.locale === "ko" ? `${label}별 ${metricLabel(activeTrendMetric)}` : `${metricLabel(activeTrendMetric)} by ${label}`;
       trendChartReadout.innerHTML = renderSeriesReadout({
         rows,
         metric: activeTrendMetric,
@@ -517,9 +519,9 @@
 
     function renderAuthorChart(detail, authorLogin) {
       const rows = detail[`${activeAuthorGrain}_trends`];
-      const label = activeAuthorGrain === "weekly" ? "week" : "month";
+      const label = activeAuthorGrain === "weekly" ? t("common.week") : t("common.month");
       activeAuthorPointIndex = clampSelectedIndex(rows, activeAuthorPointIndex, activeAuthorMetric);
-      authorChartTitle.textContent = `${authorLogin} ${metricLabel(activeAuthorMetric)} by ${label}`;
+      authorChartTitle.textContent = i18n.locale === "ko" ? `${authorLogin} ${label}별 ${metricLabel(activeAuthorMetric)}` : `${authorLogin} ${metricLabel(activeAuthorMetric)} by ${label}`;
       authorChartReadout.innerHTML = renderSeriesReadout({
         rows,
         metric: activeAuthorMetric,
@@ -549,7 +551,7 @@
       onSelect,
     }) {
       if (!rows || rows.length === 0) {
-        element.innerHTML = `<div class="small-note">No data for this view.</div>`;
+        element.innerHTML = `<div class="report__small-note">${formatCell(t("common.no_view_data"))}</div>`;
         return;
       }
       const width = 920;
@@ -560,7 +562,7 @@
       const metricValues = rows.map((row) => toNumeric(row[metric]));
       const primaryValues = metricValues.filter((value) => value !== null);
       if (primaryValues.length === 0) {
-        element.innerHTML = `<div class="small-note">No data for this metric in the selected window.</div>`;
+        element.innerHTML = `<div class="report__small-note">${formatCell(t("common.no_metric_data"))}</div>`;
         return;
       }
       const secondaryValues = secondaryMetric
@@ -607,7 +609,7 @@
         if (!row.is_partial) {
           return "";
         }
-        return `<rect class="chart-partial-band" x="${bandStart(index)}" y="${padding.top}" width="${Math.max(8, bandEnd(index) - bandStart(index))}" height="${plotHeight}"></rect>`;
+        return `<rect class="report__chart-partial-band" x="${bandStart(index)}" y="${padding.top}" width="${Math.max(8, bandEnd(index) - bandStart(index))}" height="${plotHeight}"></rect>`;
       }).join("");
       const points = rows.map((row, index) => {
         const value = toNumeric(row[metric]);
@@ -618,12 +620,12 @@
         const showLabel = index === 0 || index === rows.length - 1 || index % labelInterval === 0;
         const stateSuffix = row.is_partial ? `, ${periodStatusText(row)}` : "";
         return `
-          <g class="chart-node ${row.is_partial ? "partial-period" : ""}" data-point-index="${index}" data-point-label="${formatAttribute(row[labelKey])}" data-point-value="${formatAttribute(formatChartValue(value, metric))}" tabindex="0" role="button" aria-label="${formatAttribute(row[labelKey])} ${formatAttribute(formatChartValue(value, metric))}${formatAttribute(stateSuffix)}">
+          <g class="report__chart-node ${row.is_partial ? "report__chart-node--partial" : ""}" data-point-index="${index}" data-point-label="${formatAttribute(row[labelKey])}" data-point-value="${formatAttribute(formatChartValue(value, metric))}" tabindex="0" role="button" aria-label="${formatAttribute(row[labelKey])} ${formatAttribute(formatChartValue(value, metric))}${formatAttribute(stateSuffix)}">
             <circle cx="${xFor(index)}" cy="${yFor(value)}" r="${isSelected ? 6 : 4}" fill="${getCss("--accent")}" stroke="${isSelected ? getCss("--text") : "transparent"}" stroke-width="${isSelected ? 2 : 0}">
               <title>${formatCell(row[labelKey])}: ${formatChartValue(value, metric)}${row.is_partial ? ` (${periodStatusText(row)})` : ""}</title>
             </circle>
           </g>
-          ${showLabel ? `<text x="${xFor(index)}" y="${height - 12}" text-anchor="middle" class="chart-axis">${shortLabel(row[labelKey])}</text>` : ""}
+          ${showLabel ? `<text x="${xFor(index)}" y="${height - 12}" text-anchor="middle" class="report__chart-axis">${shortLabel(row[labelKey])}</text>` : ""}
         `;
       }).join("");
       const ticks = [0, 0.25, 0.5, 0.75, 1].map((ratio) => {
@@ -631,7 +633,7 @@
         const y = padding.top + plotHeight - plotHeight * ratio;
         return `
           <line x1="${padding.left}" x2="${width - padding.right}" y1="${y}" y2="${y}" stroke="${getCss("--grid-stroke")}"></line>
-          <text x="${padding.left - 10}" y="${y + 4}" text-anchor="end" class="chart-axis">${formatChartValue(value, metric)}</text>
+          <text x="${padding.left - 10}" y="${y + 4}" text-anchor="end" class="report__chart-axis">${formatChartValue(value, metric)}</text>
         `;
       }).join("");
       element.innerHTML = `
@@ -655,7 +657,7 @@
         element,
         {
           metricLabel: metricLabel(metric),
-          subtitle: secondaryMetric ? "Compare primary and secondary movement" : "Select a point to pin the readout",
+          subtitle: secondaryMetric ? (i18n.locale === "ko" ? "주요 지표와 보조 지표 움직임 비교" : "Compare primary and secondary movement") : (i18n.locale === "ko" ? "점을 선택해 읽기 값을 고정" : "Select a point to pin the readout"),
         },
         onSelect,
       );
@@ -691,12 +693,12 @@
     }
 
     function ensureChartTooltip(element) {
-      let tooltip = element.querySelector(".chart-tooltip");
+      let tooltip = element.querySelector(".report__chart-tooltip");
       if (tooltip) {
         return tooltip;
       }
       tooltip = document.createElement("div");
-      tooltip.className = "chart-tooltip hidden";
+      tooltip.className = "report__chart-tooltip report--hidden";
       tooltip.setAttribute("aria-hidden", "true");
       element.appendChild(tooltip);
       return tooltip;
@@ -713,7 +715,7 @@
         tooltipText("span", `${tooltipMeta.metricLabel}: ${value}`),
         tooltipText("span", tooltipMeta.subtitle)
       );
-      tooltip.classList.remove("hidden");
+      tooltip.classList.remove("report--hidden");
       tooltip.setAttribute("aria-hidden", "false");
       positionChartTooltip(tooltip, chartElement, node, event);
     }
@@ -728,7 +730,7 @@
       if (!tooltip) {
         return;
       }
-      tooltip.classList.add("hidden");
+      tooltip.classList.add("report--hidden");
       tooltip.setAttribute("aria-hidden", "true");
     }
 
@@ -754,22 +756,22 @@
 
     function renderMiniTable(columns, rows) {
       const head = columns
-        .map(([label, _key, isNumeric = false]) => `<th${isNumeric ? ' class="num"' : ""}>${label}</th>`)
+        .map(([label, _key, isNumeric = false]) => `<th${isNumeric ? ' class="report__table-cell--numeric"' : ""}>${displayLabel(label)}</th>`)
         .join("");
       const body = rows.map((row) => `
         <tr>
           ${columns.map(([label, key, isNumeric = false]) => {
             const value = row[key];
-            const numericClass = isNumeric || typeof value === "number" ? ` class="num"` : "";
-            return `<td${numericClass} data-label="${formatCell(label)}">${formatCell(value)}</td>`;
+            const numericClass = isNumeric || typeof value === "number" ? ` class="report__table-cell--numeric"` : "";
+            return `<td${numericClass} data-label="${formatCell(displayLabel(label))}">${formatCell(value)}</td>`;
           }).join("")}
         </tr>
       `).join("");
-      return `<div class="table-wrap"><table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>`;
+      return `<div class="report__table-wrap"><table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>`;
     }
 
     function detailCard(label, value) {
-      return `<div class="detail-card"><strong>${label}</strong><span>${formatCell(value)}</span></div>`;
+      return `<div class="org-dashboard__detail-card"><strong>${label}</strong><span>${formatCell(value)}</span></div>`;
     }
 
     function renderSeriesReadout({ rows, metric, labelKey, selectedIndex }) {
@@ -779,11 +781,11 @@
       const rowsWithValues = rows.filter((row) => toNumeric(row[metric]) !== null);
       if (rowsWithValues.length === 0) {
         return [
-          ["Selected period", "-"],
-          ["Selected value", "-"],
-          ["Window average", "-"],
-          ["Peak period", "-"],
-        ].map(([label, value]) => `<div class="readout-card"><strong>${label}</strong><span>${value}</span></div>`).join("");
+          [t("common.selected_period"), "-"],
+          [t("common.selected_value"), "-"],
+          [t("common.window_average"), "-"],
+          [i18n.locale === "ko" ? "최고 기간" : "Peak period", "-"],
+        ].map(([label, value]) => `<div class="report__readout-card"><strong>${label}</strong><span>${value}</span></div>`).join("");
       }
       const selectedRow = rows[selectedIndex] ?? rowsWithValues.at(-1);
       const selectedValue = toNumeric(selectedRow[metric]);
@@ -792,11 +794,11 @@
         return toNumeric(row[metric]) > toNumeric(best[metric]) ? row : best;
       }, rowsWithValues[0]);
       return [
-        ["Selected period", selectedRow[labelKey]],
-        ["Selected value", formatChartValue(selectedValue, metric)],
-        ["Window average", formatChartValue(average, metric)],
-        ["Period state", periodStatusText(selectedRow)],
-      ].map(([label, value]) => `<div class="readout-card"><strong>${label}</strong><span>${value}</span></div>`).join("");
+        [t("common.selected_period"), selectedRow[labelKey]],
+        [t("common.selected_value"), formatChartValue(selectedValue, metric)],
+        [t("common.window_average"), formatChartValue(average, metric)],
+        [t("common.period_state"), periodStatusText(selectedRow)],
+      ].map(([label, value]) => `<div class="report__readout-card"><strong>${label}</strong><span>${value}</span></div>`).join("");
     }
 
     function clampSelectedIndex(rows, currentIndex, metricKey) {
@@ -826,24 +828,22 @@
     }
 
     function metricLabel(metric) {
-      const labels = {
-        pull_requests: "PR throughput",
-        pull_requests_reviewed: "Reviewed PRs",
-        review_submissions_given: "Reviews given",
-        reviewed_lines: "Reviewed lines",
-        pull_requests_per_active_author: "PRs per active author",
-        changed_lines: "Changed lines",
-        changed_lines_per_active_author: "Lines per active author",
-        median_approval_hours: "Median approval",
-        median_first_review_hours: "Median first review",
-        median_merge_hours: "Median merge",
-      };
-      return labels[metric] || metric;
+      return i18n.metrics[metric]?.label || metric;
+    }
+
+    function displayLabel(label) {
+      if (i18n.locale !== "ko") {
+        return label;
+      }
+      return {
+        Metric: t("analysis.metric"),
+        Value: "값",
+      }[label] || label;
     }
 
     function syncTabs(buttons, activeButton) {
       for (const button of buttons) {
-        button.classList.toggle("active", button === activeButton);
+        button.classList.toggle("report__tab-button--active", button === activeButton);
         button.setAttribute("aria-selected", String(button === activeButton));
       }
     }
@@ -891,13 +891,13 @@
         return "-";
       }
       if (row.open_week) {
-        return "open week";
+        return t("common.open_week");
       }
       if (row.open_month) {
-        return "open month";
+        return t("common.open_month");
       }
       if (row.is_partial) {
-        return "open period";
+        return t("common.open_period");
       }
       return row.status || "closed";
     }
@@ -916,12 +916,20 @@
       }
       const numericHours = Number(hours);
       if (numericHours < 1) {
-        return `${Math.round(numericHours * 60)} min`;
+        return `${Math.round(numericHours * 60).toLocaleString(numberLocale())}${i18n.locale === "ko" ? "분" : " min"}`;
       }
       if (numericHours >= 24) {
-        return `${(numericHours / 24).toLocaleString(undefined, { maximumFractionDigits: 1 })} d`;
+        return `${(numericHours / 24).toLocaleString(numberLocale(), { maximumFractionDigits: 1 })}${i18n.locale === "ko" ? "일" : " d"}`;
       }
-      return `${numericHours.toLocaleString(undefined, { maximumFractionDigits: 1 })} h`;
+      return `${numericHours.toLocaleString(numberLocale(), { maximumFractionDigits: 1 })}${i18n.locale === "ko" ? "시간" : " h"}`;
+    }
+
+    function t(key) {
+      return i18n.static[key] || key;
+    }
+
+    function numberLocale() {
+      return i18n.locale === "ko" ? "ko-KR" : "en-US";
     }
 
     function getCss(variableName) {
@@ -933,7 +941,7 @@
         return "-";
       }
       if (typeof value === "number") {
-        return value.toLocaleString(undefined, { maximumFractionDigits: 2 });
+        return value.toLocaleString(numberLocale(), { maximumFractionDigits: 2 });
       }
       return String(value)
         .replaceAll("&", "&amp;")

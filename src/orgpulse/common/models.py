@@ -107,6 +107,13 @@ class TimeAnchor(StrEnum):
         return self is not TimeAnchor.MERGED_AT
 
 
+class ReportLocale(StrEnum):
+    """Enumerate supported report presentation locales."""
+
+    EN = "en"
+    KO = "ko"
+
+
 class RunScope(StrEnum):
     """Enumerate effective collection scopes derived from run mode."""
 
@@ -443,36 +450,6 @@ class OrgSummaryWriteResult(BaseModel):
     periods: tuple[OrgSummaryPeriodWriteResult, ...]
 
 
-class AnalysisReportPeriodWriteResult(BaseModel):
-    """Describe one written analysis report period artifact set."""
-
-    model_config = ConfigDict(frozen=True)
-
-    key: str
-    start_date: date
-    end_date: date
-    closed: bool
-    directory: Path
-    html_path: Path
-    json_path: Path
-
-
-class AnalysisReportWriteResult(BaseModel):
-    """Describe all analysis report artifacts written for a run."""
-
-    model_config = ConfigDict(frozen=True)
-
-    target_org: str
-    root_dir: Path
-    contract_path: Path
-    index_path: Path
-    readme_path: Path
-    latest_directory: Path | None
-    latest_html_path: Path | None
-    latest_json_path: Path | None
-    periods: tuple[AnalysisReportPeriodWriteResult, ...]
-
-
 class DashboardOverviewPayload(BaseModel):
     """Store high-level dashboard summary metrics."""
 
@@ -708,9 +685,9 @@ class DashboardChartsPayload(BaseModel):
     review_latency_by_author: list[DashboardReviewLatencyPointPayload] = Field(
         default_factory=list
     )
-    repository_throughput: list[
-        DashboardRepositoryThroughputPointPayload
-    ] = Field(default_factory=list)
+    repository_throughput: list[DashboardRepositoryThroughputPointPayload] = Field(
+        default_factory=list
+    )
     size_bucket_latency: list[DashboardSizeBucketPayload] = Field(default_factory=list)
 
 
@@ -762,14 +739,10 @@ class DashboardReferenceSummaryPayload(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    author_roster_coverage_pct: float | None = None
-    reviewers_top_coverage_pct: float | None = None
     repositories_top_coverage_pct: float | None = None
-    top3_author_share_pct: float | None = None
     top3_repository_share_pct: float | None = None
     weekly_hidden_count: int
     monthly_hidden_count: int
-    author_reference_count: int
 
 
 class DashboardSizeDiagnosticPayload(BaseModel):
@@ -794,8 +767,12 @@ class DashboardSourcePayload(BaseModel):
     repositories: list[DashboardRepositoryPayload] = Field(default_factory=list)
     size_buckets: list[DashboardSizeBucketPayload] = Field(default_factory=list)
     review_state_rows: list[DashboardReviewStatePayload] = Field(default_factory=list)
-    reviewer_weekly_trends: list[DashboardReviewerTrendPayload] = Field(default_factory=list)
-    reviewer_monthly_trends: list[DashboardReviewerTrendPayload] = Field(default_factory=list)
+    reviewer_weekly_trends: list[DashboardReviewerTrendPayload] = Field(
+        default_factory=list
+    )
+    reviewer_monthly_trends: list[DashboardReviewerTrendPayload] = Field(
+        default_factory=list
+    )
     pull_requests: list[DashboardPullRequestPayload]
 
 
@@ -806,8 +783,6 @@ class DashboardPreparedPayload(BaseModel):
 
     overview: dict[str, Any]
     authors: list[dict[str, Any]]
-    authors_roster_top: list[dict[str, Any]]
-    authors_roster_rest: list[dict[str, Any]]
     reviewers: list[dict[str, Any]]
     reviewers_top: list[dict[str, Any]]
     reviewers_rest: list[dict[str, Any]]
@@ -829,129 +804,6 @@ class DashboardPreparedPayload(BaseModel):
     author_details_json: str
     distribution_percentile: int
     pull_requests: list[DashboardPullRequestPayload]
-
-
-class AnalysisReportMetricDefinition(BaseModel):
-    """Describe one metric available in an analysis report view."""
-
-    model_config = ConfigDict(frozen=True, extra="forbid")
-
-    key: str
-    label: str
-    format: str
-
-
-class AnalysisReportPeriodDescriptor(BaseModel):
-    """Describe one period label and boundary in an analysis report."""
-
-    model_config = ConfigDict(frozen=True, extra="forbid")
-
-    key: str
-    label: str
-    start_date: str
-    end_date: str
-    closed: bool
-    status: str
-    state_label: str
-    is_open: bool
-    is_closed: bool
-    is_partial: bool
-    observed_through_date: str
-    open_week: bool = False
-    open_month: bool = False
-
-
-class AnalysisReportPeriodValues(BaseModel):
-    """Store one period's values for a specific analysis report view."""
-
-    model_config = ConfigDict(frozen=True, extra="forbid")
-
-    key: str
-    label: str
-    start_date: str
-    end_date: str
-    closed: bool
-    status: str
-    state_label: str
-    is_open: bool
-    is_closed: bool
-    is_partial: bool
-    observed_through_date: str
-    open_week: bool = False
-    open_month: bool = False
-    values: dict[str, int | float | None]
-
-
-class AnalysisReportPeriodPayload(AnalysisReportPeriodDescriptor):
-    """Store one period section in the analysis report."""
-
-    model_config = ConfigDict(frozen=True, extra="forbid")
-
-    summary: dict[str, int | float | None]
-    values: dict[str, int | float | None]
-    diagnostics: dict[str, Any]
-
-
-class AnalysisReportEntityPayload(BaseModel):
-    """Store one repository or author section in the analysis report."""
-
-    model_config = ConfigDict(frozen=True, extra="forbid")
-
-    key: str
-    label: str
-    period_values: list[AnalysisReportPeriodValues]
-    totals: dict[str, int | float | None]
-
-
-class AnalysisReportPeriodViewPayload(BaseModel):
-    """Store the period-focused interactive analysis report view."""
-
-    model_config = ConfigDict(frozen=True, extra="forbid")
-
-    default_metric: str
-    metrics: list[AnalysisReportMetricDefinition]
-    periods: list[AnalysisReportPeriodValues]
-
-
-class AnalysisReportEntityViewPayload(BaseModel):
-    """Store one entity-focused interactive analysis report view."""
-
-    model_config = ConfigDict(frozen=True, extra="forbid")
-
-    default_metric: str
-    metrics: list[AnalysisReportMetricDefinition]
-    periods: list[AnalysisReportPeriodDescriptor]
-    entities: list[AnalysisReportEntityPayload]
-
-
-class AnalysisReportViewsPayload(BaseModel):
-    """Collect all interactive views exposed by an analysis report."""
-
-    model_config = ConfigDict(frozen=True, extra="forbid")
-
-    period: AnalysisReportPeriodViewPayload
-    repository: AnalysisReportEntityViewPayload
-    author: AnalysisReportEntityViewPayload
-
-
-class AnalysisReportPayload(BaseModel):
-    """Store the complete HTML analysis report payload."""
-
-    model_config = ConfigDict(frozen=True, extra="forbid")
-
-    target_org: str
-    grain: str
-    time_anchor: str
-    time_anchor_context: TimeAnchorContextPayload
-    initial_view: str
-    default_top_n: int
-    since: str | None = None
-    until: str | None = None
-    distribution_percentile: int
-    matched_pull_request_count: int
-    default_period_key: str
-    periods: list[AnalysisReportPeriodPayload]
-    views: AnalysisReportViewsPayload
 
 
 class TimeAnchorContextPayload(BaseModel):

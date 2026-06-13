@@ -99,9 +99,9 @@ def metric_label_html(
     label = metric_text(locale, key, fallback=fallback)
     description = metric_description(locale, key, fallback=label)
     return Markup(
-        '<span class="metric-label-with-tooltip">'
+        '<span class="report__metric-label">'
         f"<span>{escape(label)}</span>"
-        '<span class="metric-tooltip" tabindex="0" role="note" '
+        '<span class="report__metric-tooltip" tabindex="0" role="note" '
         f'aria-label="{escape(description)}" '
         f'data-tooltip="{escape(description)}">?</span>'
         "</span>"

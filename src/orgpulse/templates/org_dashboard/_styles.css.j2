@@ -1,5 +1,5 @@
   <style>
-    .author-button {
+    .org-dashboard__author-button {
       border: 1px solid var(--line-strong);
       background: var(--panel-subtle);
       color: var(--text);
@@ -9,23 +9,23 @@
       cursor: pointer;
     }
 
-    .author-button:hover,
-    .author-button.active {
+    .org-dashboard__author-button:hover,
+    .org-dashboard__author-button.is-active {
       background: var(--active-fill);
       border-color: var(--accent);
     }
 
-    .author-button:focus-visible {
+    .org-dashboard__author-button:focus-visible {
       outline: 2px solid var(--accent);
       outline-offset: 2px;
     }
 
-    .detail-shell {
+    .org-dashboard__detail-shell {
       display: grid;
       gap: 14px;
     }
 
-    .people-grid {
+    .org-dashboard__people-grid {
       display: grid;
       grid-template-columns: minmax(280px, 0.36fr) minmax(0, 0.64fr);
       grid-template-areas:
@@ -35,11 +35,11 @@
       align-items: start;
     }
 
-    .people-grid > * {
+    .org-dashboard__people-grid > * {
       min-width: 0;
     }
 
-    .people-ranking-controls {
+    .org-dashboard__people-ranking-controls {
       grid-area: people-controls;
       display: grid;
       grid-template-columns: minmax(0, 1fr) auto;
@@ -47,26 +47,26 @@
       align-items: start;
     }
 
-    .people-ranking-controls .primary-tabs {
+    .org-dashboard__people-ranking-controls .report__tab-strip--primary {
       width: 100%;
     }
 
-    .people-ranking-controls .secondary-tabs {
+    .org-dashboard__people-ranking-controls .report__tab-strip--secondary {
       justify-self: end;
     }
 
-    .people-ranking-shell {
+    .org-dashboard__people-ranking-shell {
       grid-area: people-ranking;
       display: grid;
       gap: 12px;
     }
 
-    .person-list {
+    .org-dashboard__person-list {
       display: grid;
       gap: 10px;
     }
 
-    .person-card {
+    .org-dashboard__person-card {
       width: 100%;
       min-width: 0;
       display: grid;
@@ -81,26 +81,26 @@
       cursor: pointer;
     }
 
-    .reviewer-rank-card {
+    .org-dashboard__person-card--reviewer-rank {
       cursor: default;
     }
 
-    .person-card:hover,
-    .person-card.active {
+    .org-dashboard__person-card:hover,
+    .org-dashboard__person-card.is-active {
       border-color: var(--line-strong);
       border-left-color: var(--accent);
       background: var(--theme-toggle-hover);
     }
 
-    .reviewer-rank-card:hover {
+    .org-dashboard__person-card--reviewer-rank:hover {
       border-color: var(--line);
       border-left-color: transparent;
       background: var(--panel-subtle);
     }
 
-    .person-card-header,
-    .person-card-metrics,
-    .profile-summary {
+    .org-dashboard__person-card-header,
+    .org-dashboard__person-card-metrics,
+    .org-dashboard__profile-summary {
       display: flex;
       justify-content: space-between;
       gap: 12px;
@@ -108,82 +108,82 @@
       min-width: 0;
     }
 
-    .person-card-metrics,
-    .profile-summary {
+    .org-dashboard__person-card-metrics,
+    .org-dashboard__profile-summary {
       flex-wrap: wrap;
     }
 
-    .person-card strong {
+    .org-dashboard__person-card strong {
       font-size: 1rem;
     }
 
-    .person-card small,
-    .profile-summary span {
+    .org-dashboard__person-card small,
+    .org-dashboard__profile-summary span {
       color: var(--muted);
       font-weight: 700;
       letter-spacing: 0.06em;
       text-transform: uppercase;
     }
 
-    .person-card-metrics span {
+    .org-dashboard__person-card-metrics span {
       color: var(--muted);
       font-size: 0.82rem;
     }
 
-    .person-profile {
+    .org-dashboard__person-profile {
       grid-area: profile-detail;
       display: grid;
       gap: 14px;
       min-width: 0;
     }
 
-    .person-profile > *,
-    .detail-shell,
-    .detail-grid,
-    .profile-subgrid {
+    .org-dashboard__person-profile > *,
+    .org-dashboard__detail-shell,
+    .org-dashboard__detail-grid,
+    .org-dashboard__profile-subgrid {
       min-width: 0;
       max-width: 100%;
     }
 
-    .person-profile .detail-grid {
+    .org-dashboard__person-profile .org-dashboard__detail-grid {
       grid-template-columns: repeat(3, minmax(0, 1fr));
     }
 
-    .person-profile .chart-root {
+    .org-dashboard__person-profile .report__chart-root {
       aspect-ratio: 16 / 5;
       min-height: 220px;
     }
 
-    .person-profile .chart-root svg {
+    .org-dashboard__person-profile .report__chart-root svg {
       min-height: 0;
     }
 
-    .profile-subgrid {
+    .org-dashboard__profile-subgrid {
       display: grid;
       grid-template-columns: minmax(0, 1.35fr) minmax(0, 0.9fr) minmax(0, 0.75fr);
       gap: 14px;
     }
 
-    .detail-tabs {
+    .org-dashboard__detail-tabs {
       display: flex;
       flex-wrap: wrap;
       gap: 8px;
     }
 
-    .detail-grid {
+    .org-dashboard__detail-grid {
       display: grid;
       grid-template-columns: repeat(6, minmax(0, 1fr));
       gap: 10px;
     }
 
-    .detail-card {
+    .org-dashboard__detail-card {
       border: 1px solid var(--line);
       border-radius: var(--radius-control);
       padding: 12px;
       background: var(--panel-subtle);
     }
 
-    .detail-card strong {
+    .org-dashboard__detail-card strong {
       display: block;
       margin-bottom: 6px;
       color: var(--muted);
@@ -192,58 +192,58 @@
       text-transform: uppercase;
     }
 
-    .detail-card span {
+    .org-dashboard__detail-card span {
       font-size: 1.1rem;
       font-weight: 700;
     }
 
-    .state-list {
+    .org-dashboard__state-list {
       display: grid;
       gap: 10px;
     }
 
-    .state-row {
+    .org-dashboard__state-row {
       display: grid;
       grid-template-columns: 160px minmax(0, 1fr) 70px;
       gap: 12px;
       align-items: center;
     }
 
-    .state-track {
+    .org-dashboard__state-track {
       height: 10px;
       background: var(--track);
       border-radius: var(--radius-pill);
       overflow: hidden;
     }
 
-    .state-fill {
+    .org-dashboard__state-fill {
       height: 100%;
       background: linear-gradient(90deg, var(--accent-3), var(--accent));
     }
 
-    .small-note {
+    .report__small-note {
       color: var(--muted);
       font-size: 0.82rem;
     }
 
-    .control-note {
+    .org-dashboard__control-note {
       color: var(--muted);
       line-height: 1.5;
       font-size: 0.86rem;
     }
 
-    .support-grid,
-    .reference-grid,
-    .reference-stack {
+    .report__support-grid,
+    .org-dashboard__reference-grid,
+    .org-dashboard__reference-stack {
       display: grid;
       gap: 12px;
     }
 
-    .support-grid {
+    .report__support-grid {
       grid-template-columns: repeat(3, minmax(0, 1fr));
     }
 
-    .control-row {
+    .org-dashboard__control-row {
       display: flex;
       align-items: center;
       justify-content: space-between;
@@ -252,14 +252,14 @@
       margin-bottom: 12px;
     }
 
-    .control-actions {
+    .org-dashboard__control-actions {
       display: flex;
       align-items: center;
       gap: 10px;
       flex-wrap: wrap;
     }
 
-    .search-input {
+    .org-dashboard__search-input {
       min-width: 220px;
       max-width: 100%;
       border: 1px solid var(--line-strong);
@@ -270,31 +270,31 @@
       font: inherit;
     }
 
-    .search-input::placeholder {
+    .org-dashboard__search-input::placeholder {
       color: var(--muted);
     }
 
-    .search-input:focus-visible {
+    .org-dashboard__search-input:focus-visible {
       outline: 2px solid var(--accent);
       outline-offset: 2px;
     }
 
-    .reference-grid {
+    .org-dashboard__reference-grid {
       grid-template-columns: 1fr;
     }
 
-    .reference-stack {
+    .org-dashboard__reference-stack {
       grid-template-columns: 1fr;
     }
 
-    .disclosure {
+    .org-dashboard__disclosure {
       border: 1px solid var(--line);
       border-radius: var(--radius-control);
       background: var(--panel-subtle);
       overflow: hidden;
     }
 
-    .disclosure > summary {
+    .org-dashboard__disclosure > summary {
       list-style: none;
       cursor: pointer;
       padding: 14px 16px;
@@ -303,43 +303,43 @@
       border-bottom: 1px solid transparent;
     }
 
-    .disclosure[open] > summary {
+    .org-dashboard__disclosure[open] > summary {
       border-bottom-color: var(--line);
     }
 
-    .disclosure > summary::-webkit-details-marker {
+    .org-dashboard__disclosure > summary::-webkit-details-marker {
       display: none;
     }
 
-    .disclosure > :not(summary) {
+    .org-dashboard__disclosure > :not(summary) {
       padding: 14px 16px 16px;
     }
 
-    .disclosure > .secondary-tabs {
+    .org-dashboard__disclosure > .report__tab-strip--secondary {
       margin-left: auto;
     }
 
     @media (max-width: 1320px) {
-      .detail-grid {
+      .org-dashboard__detail-grid {
         grid-template-columns: repeat(3, minmax(0, 1fr));
       }
     }
 
     @media (max-width: 1180px) {
-      .profile-subgrid,
-      .support-grid {
+      .org-dashboard__profile-subgrid,
+      .report__support-grid {
         grid-template-columns: 1fr;
       }
     }
 
     @media (max-width: 1080px) {
-      .person-profile .chart-root {
+      .org-dashboard__person-profile .report__chart-root {
         aspect-ratio: 16 / 6;
       }
     }
 
     @media (max-width: 860px) {
-      .people-grid {
+      .org-dashboard__people-grid {
         grid-template-columns: 1fr;
         grid-template-areas:
           "people-controls"
@@ -347,28 +347,28 @@
           "profile-detail";
       }
 
-      .people-ranking-controls {
+      .org-dashboard__people-ranking-controls {
         grid-template-columns: 1fr;
       }
     }
 
     @media (max-width: 720px) {
-      .detail-grid,
-      .person-profile .detail-grid {
+      .org-dashboard__detail-grid,
+      .org-dashboard__person-profile .org-dashboard__detail-grid {
         grid-template-columns: 1fr;
       }
 
-      .control-actions {
+      .org-dashboard__control-actions {
         width: 100%;
         justify-content: stretch;
       }
 
-      .search-input {
+      .org-dashboard__search-input {
         width: 100%;
         min-width: 0;
       }
 
-      .state-row {
+      .org-dashboard__state-row {
         grid-template-columns: 1fr;
       }
     }

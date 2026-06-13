@@ -48,21 +48,49 @@ def test_generates_korean_visual_testing_reports(
     assert "열린 월" in person_html or "닫힌 월" in person_html
     assert 'href="#methodology"' not in person_html
     assert 'id="methodology"' not in person_html
-    assert "metric-tooltip" in person_html
+    assert "report__metric-tooltip" in person_html
     assert "data-tooltip=" in person_html
-    assert ".person-report #repositories .table-wrap:has(.metric-tooltip:hover)" in (
-        person_html
+    assert (
+        ".person-report #repositories .report__table-wrap:has(.report__metric-tooltip:hover)"
+        in (person_html)
     )
-    assert ".person-report #repositories .table-wrap:focus-within" in person_html
-    assert not re.search(r'class="tab-button[^"]*"[^>]*\sdata-tooltip=', person_html)
-    assert ".metric-tooltip::before" not in person_html
+    assert (
+        ".person-report #repositories .report__table-wrap:focus-within" in person_html
+    )
+    assert not re.search(
+        r'class="report__tab-button[^"]*"[^>]*\sdata-tooltip=', person_html
+    )
+    assert ".report__metric-tooltip::before" not in person_html
+    legacy_classes = (
+        "tab-button",
+        "tab-strip",
+        "ghost-button",
+        "chart-root",
+        "metric-tooltip",
+        "metric-label-with-tooltip",
+        "table-wrap",
+        "person-card",
+        "author-button",
+    )
+    for legacy_class in legacy_classes:
+        assert not re.search(
+            rf'class="(?:[^"]*\s)?{re.escape(legacy_class)}(?:\s|")',
+            person_html,
+        )
     assert '<html lang="ko">' in dashboard_html
     assert "엔지니어링 생산성 리더보드" in dashboard_html
     assert "24시간 이내" in dashboard_html
     assert "저장소 리더보드" in dashboard_html
     assert "<summary>작성자 원장</summary>" not in dashboard_html
     assert "<summary>방법론</summary>" not in dashboard_html
-    assert "metric-tooltip" in dashboard_html
+    assert "report__metric-tooltip" in dashboard_html
     assert "data-tooltip=" in dashboard_html
-    assert not re.search(r'class="tab-button[^"]*"[^>]*\sdata-tooltip=', dashboard_html)
-    assert ".metric-tooltip::before" not in dashboard_html
+    assert not re.search(
+        r'class="report__tab-button[^"]*"[^>]*\sdata-tooltip=', dashboard_html
+    )
+    assert ".report__metric-tooltip::before" not in dashboard_html
+    for legacy_class in legacy_classes:
+        assert not re.search(
+            rf'class="(?:[^"]*\s)?{re.escape(legacy_class)}(?:\s|")',
+            dashboard_html,
+        )

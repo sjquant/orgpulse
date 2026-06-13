@@ -125,9 +125,11 @@ class TestDashboardCommand:
         assert "저장소 리더보드" in ko_html
         assert "<summary>작성자 원장</summary>" not in ko_html
         assert "<summary>방법론</summary>" not in ko_html
-        assert '<span class="meta-label">분포 절단값</span>' not in ko_html
+        assert '<span class="report__meta-label">분포 절단값</span>' not in ko_html
         assert "100퍼센타일" not in ko_html
-        assert not re.search(r'class="tab-button[^"]*"[^>]*\sdata-tooltip=', ko_html)
+        assert not re.search(
+            r'class="report__tab-button[^"]*"[^>]*\sdata-tooltip=', ko_html
+        )
         assert "열린 월" in ko_html or "닫힌 기간" in ko_html
         assert "stale open PRs" not in ko_html
         assert "total review submissions" not in ko_html

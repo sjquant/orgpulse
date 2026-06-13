@@ -1,14 +1,14 @@
   <script>
     const themeStorageKey = "orgpulse-manual-dashboard-theme";
-    const themeButtons = Array.from(document.querySelectorAll(".theme-switch-button"));
-    const themeSwitch = document.querySelector(".theme-switch");
+    const themeButtons = Array.from(document.querySelectorAll(".report__theme-switch-button"));
+    const themeSwitch = document.querySelector(".report__theme-switch");
     const i18n = JSON.parse(document.getElementById("report-i18n").textContent);
     const authorDetails = JSON.parse(document.getElementById("author-details-data").textContent);
     const peopleRows = Object.entries(authorDetails).map(([authorLogin, detail]) => ({
       authorLogin,
       ...detail.summary,
     }));
-    const peopleMetricTabs = Array.from(document.querySelectorAll("#people-metric-tabs .tab-button"));
+    const peopleMetricTabs = Array.from(document.querySelectorAll("#people-metric-tabs .report__tab-button"));
     const peopleRankingList = document.getElementById("people-ranking-list");
     const peopleRankingToggle = document.getElementById("people-ranking-toggle");
     const authorDetailRoot = document.getElementById("author-detail-root");
@@ -23,15 +23,15 @@
     const weeklyTrendExtra = document.getElementById("weekly-trend-extra");
     const monthlyTrendToggle = document.getElementById("monthly-trend-toggle");
     const monthlyTrendExtra = document.getElementById("monthly-trend-extra");
-    const referenceTrendTabs = Array.from(document.querySelectorAll("#reference-trend-tabs .tab-button"));
+    const referenceTrendTabs = Array.from(document.querySelectorAll("#reference-trend-tabs .report__tab-button"));
     const referenceTrendPanels = Array.from(document.querySelectorAll("[data-reference-trend-panel]"));
     const trendChartRoot = document.getElementById("trend-chart-root");
     const trendChartReadout = document.getElementById("trend-chart-readout");
     const trendChartTitle = document.getElementById("trend-chart-title");
-    const trendMetricTabs = Array.from(document.querySelectorAll("#trend-metric-tabs .tab-button"));
-    const trendGrainTabs = Array.from(document.querySelectorAll("#trend-grain-tabs .tab-button"));
-    const authorGrainTabs = Array.from(document.querySelectorAll("#author-detail-grain-tabs .tab-button"));
-    const sectionNavLinks = Array.from(document.querySelectorAll('.section-nav a[href^="#"]'));
+    const trendMetricTabs = Array.from(document.querySelectorAll("#trend-metric-tabs .report__tab-button"));
+    const trendGrainTabs = Array.from(document.querySelectorAll("#trend-grain-tabs .report__tab-button"));
+    const authorGrainTabs = Array.from(document.querySelectorAll("#author-detail-grain-tabs .report__tab-button"));
+    const sectionNavLinks = Array.from(document.querySelectorAll('.report__section-nav a[href^="#"]'));
     const peopleRankingChunkSize = 10;
     const sectionTargets = sectionNavLinks
       .map((link) => {
@@ -99,7 +99,7 @@
       if (!(event.target instanceof Element)) {
         return;
       }
-      const button = event.target.closest(".author-button[data-author]");
+      const button = event.target.closest(".org-dashboard__author-button[data-author]");
       if (!button) {
         return;
       }
@@ -257,7 +257,7 @@
       if (!peopleRankingToggle) {
         return;
       }
-      peopleRankingToggle.classList.toggle("hidden", totalCount <= peopleRankingChunkSize);
+      peopleRankingToggle.classList.toggle("is-hidden", totalCount <= peopleRankingChunkSize);
       const remaining = Math.max(0, totalCount - visiblePeopleCount);
       if (remaining === 0) {
         peopleRankingToggle.textContent = t("common.collapse");
@@ -273,15 +273,15 @@
       return `
         <button
           type="button"
-          class="author-button person-card${row.authorLogin === activeAuthor ? " active" : ""}"
+          class="org-dashboard__author-button org-dashboard__person-card${row.authorLogin === activeAuthor ? " is-active" : ""}"
           data-author="${formatAttribute(row.authorLogin)}"
           aria-pressed="${row.authorLogin === activeAuthor ? "true" : "false"}"
         >
-          <span class="person-card-header">
+          <span class="org-dashboard__person-card-header">
             <strong>${formatCell(row.authorLogin)}</strong>
             <small>#${rank}</small>
           </span>
-          <span class="person-card-metrics">
+          <span class="org-dashboard__person-card-metrics">
             <span>${metricLabel(activePeopleMetric)}: ${metricValue}</span>
             <span>${metricLabel("pull_requests")}: ${formatMetric(row.pull_requests)}</span>
             <span>${metricLabel("changed_lines")}: ${formatMetric(row.changed_lines)}</span>
@@ -305,15 +305,15 @@
       );
       for (const panel of referenceTrendPanels) {
         const isActive = panel.dataset.referenceTrendPanel === activeReferenceTrend;
-        panel.classList.toggle("hidden", !isActive);
+        panel.classList.toggle("is-hidden", !isActive);
         panel.toggleAttribute("hidden", !isActive);
       }
     }
 
     function syncActiveAuthorButtons() {
-      for (const other of document.querySelectorAll(".author-button")) {
+      for (const other of document.querySelectorAll(".org-dashboard__author-button")) {
         const isActive = other.dataset.author === activeAuthor;
-        other.classList.toggle("active", isActive);
+        other.classList.toggle("is-active", isActive);
         other.setAttribute("aria-pressed", String(isActive));
       }
     }
@@ -334,9 +334,9 @@
       });
 
       function sync() {
-        container.classList.toggle("hidden", visibleCount === 0);
+        container.classList.toggle("is-hidden", visibleCount === 0);
         items.forEach((item, index) => {
-          item.classList.toggle("hidden", index >= visibleCount);
+          item.classList.toggle("is-hidden", index >= visibleCount);
         });
         const remaining = Math.max(0, items.length - visibleCount);
         if (remaining === 0) {
@@ -430,7 +430,7 @@
       authorDetailTitle.textContent = i18n.locale === "ko" ? `${authorLogin} 프로필` : `${authorLogin} profile`;
       renderAuthorChart(detail, authorLogin);
       authorDetailRoot.innerHTML = `
-        <div class="detail-grid">
+        <div class="org-dashboard__detail-grid">
           ${detailCard(metricLabel("authored_pull_request_count"), summary.pull_requests)}
           ${detailCard(metricLabel("pull_requests_reviewed"), summary.pull_requests_reviewed)}
           ${detailCard(i18n.locale === "ko" ? "월별 리뷰한 PR" : "Reviewed PRs / month", formatMetric(summary.pull_requests_reviewed_per_month))}
@@ -442,9 +442,9 @@
           ${detailCard(metricLabel("median_approval_hours"), formatDuration(summary.median_approval_hours))}
           ${detailCard(metricLabel("median_first_review_hours"), formatDuration(summary.median_first_review_hours))}
         </div>
-        <div class="profile-subgrid">
+        <div class="org-dashboard__profile-subgrid">
           <div>
-            <p class="section-kicker">Delivery footprint</p>
+            <p class="report__section-kicker">Delivery footprint</p>
             ${renderMiniTable(
               [
                 [t("common.repository"), "repository_full_name"],
@@ -455,7 +455,7 @@
             )}
           </div>
           <div>
-            <p class="section-kicker">Review footprint</p>
+            <p class="report__section-kicker">Review footprint</p>
             ${renderMiniTable(
               [
                 [i18n.locale === "ko" ? "신호" : "Signal", "label"],
@@ -470,7 +470,7 @@
             )}
           </div>
           <div>
-            <p class="section-kicker">Composition</p>
+            <p class="report__section-kicker">Composition</p>
             ${renderMiniTable(
               [
                 ["Metric", "label"],
@@ -550,7 +550,7 @@
       onSelect,
     }) {
       if (!rows || rows.length === 0) {
-        element.innerHTML = `<div class="small-note">${formatCell(t("common.no_view_data"))}</div>`;
+        element.innerHTML = `<div class="report__small-note">${formatCell(t("common.no_view_data"))}</div>`;
         return;
       }
       const width = 920;
@@ -561,7 +561,7 @@
       const metricValues = rows.map((row) => toNumeric(row[metric]));
       const primaryValues = metricValues.filter((value) => value !== null);
       if (primaryValues.length === 0) {
-        element.innerHTML = `<div class="small-note">${formatCell(t("common.no_metric_data"))}</div>`;
+        element.innerHTML = `<div class="report__small-note">${formatCell(t("common.no_metric_data"))}</div>`;
         return;
       }
       const secondaryValues = secondaryMetric
@@ -608,7 +608,7 @@
         if (!row.is_partial) {
           return "";
         }
-        return `<rect class="chart-partial-band" x="${bandStart(index)}" y="${padding.top}" width="${Math.max(8, bandEnd(index) - bandStart(index))}" height="${plotHeight}"></rect>`;
+        return `<rect class="report__chart-partial-band" x="${bandStart(index)}" y="${padding.top}" width="${Math.max(8, bandEnd(index) - bandStart(index))}" height="${plotHeight}"></rect>`;
       }).join("");
       const points = rows.map((row, index) => {
         const value = toNumeric(row[metric]);
@@ -619,12 +619,12 @@
         const showLabel = index === 0 || index === rows.length - 1 || index % labelInterval === 0;
         const stateSuffix = row.is_partial ? `, ${periodStatusText(row)}` : "";
         return `
-          <g class="chart-node ${row.is_partial ? "partial-period" : ""}" data-point-index="${index}" data-point-label="${formatAttribute(row[labelKey])}" data-point-value="${formatAttribute(formatChartValue(value, metric))}" tabindex="0" role="button" aria-label="${formatAttribute(row[labelKey])} ${formatAttribute(formatChartValue(value, metric))}${formatAttribute(stateSuffix)}">
+          <g class="report__chart-node ${row.is_partial ? "report__chart-node--partial" : ""}" data-point-index="${index}" data-point-label="${formatAttribute(row[labelKey])}" data-point-value="${formatAttribute(formatChartValue(value, metric))}" tabindex="0" role="button" aria-label="${formatAttribute(row[labelKey])} ${formatAttribute(formatChartValue(value, metric))}${formatAttribute(stateSuffix)}">
             <circle cx="${xFor(index)}" cy="${yFor(value)}" r="${isSelected ? 6 : 4}" fill="${getCss("--accent")}" stroke="${isSelected ? getCss("--text") : "transparent"}" stroke-width="${isSelected ? 2 : 0}">
               <title>${formatCell(row[labelKey])}: ${formatChartValue(value, metric)}${row.is_partial ? ` (${periodStatusText(row)})` : ""}</title>
             </circle>
           </g>
-          ${showLabel ? `<text x="${xFor(index)}" y="${height - 12}" text-anchor="middle" class="chart-axis">${shortLabel(row[labelKey])}</text>` : ""}
+          ${showLabel ? `<text x="${xFor(index)}" y="${height - 12}" text-anchor="middle" class="report__chart-axis">${shortLabel(row[labelKey])}</text>` : ""}
         `;
       }).join("");
       const ticks = [0, 0.25, 0.5, 0.75, 1].map((ratio) => {
@@ -632,7 +632,7 @@
         const y = padding.top + plotHeight - plotHeight * ratio;
         return `
           <line x1="${padding.left}" x2="${width - padding.right}" y1="${y}" y2="${y}" stroke="${getCss("--grid-stroke")}"></line>
-          <text x="${padding.left - 10}" y="${y + 4}" text-anchor="end" class="chart-axis">${formatChartValue(value, metric)}</text>
+          <text x="${padding.left - 10}" y="${y + 4}" text-anchor="end" class="report__chart-axis">${formatChartValue(value, metric)}</text>
         `;
       }).join("");
       element.innerHTML = `
@@ -692,12 +692,12 @@
     }
 
     function ensureChartTooltip(element) {
-      let tooltip = element.querySelector(".chart-tooltip");
+      let tooltip = element.querySelector(".report__chart-tooltip");
       if (tooltip) {
         return tooltip;
       }
       tooltip = document.createElement("div");
-      tooltip.className = "chart-tooltip hidden";
+      tooltip.className = "report__chart-tooltip is-hidden";
       tooltip.setAttribute("aria-hidden", "true");
       element.appendChild(tooltip);
       return tooltip;
@@ -714,7 +714,7 @@
         tooltipText("span", `${tooltipMeta.metricLabel}: ${value}`),
         tooltipText("span", tooltipMeta.subtitle)
       );
-      tooltip.classList.remove("hidden");
+      tooltip.classList.remove("is-hidden");
       tooltip.setAttribute("aria-hidden", "false");
       positionChartTooltip(tooltip, chartElement, node, event);
     }
@@ -729,7 +729,7 @@
       if (!tooltip) {
         return;
       }
-      tooltip.classList.add("hidden");
+      tooltip.classList.add("is-hidden");
       tooltip.setAttribute("aria-hidden", "true");
     }
 
@@ -755,22 +755,22 @@
 
     function renderMiniTable(columns, rows) {
       const head = columns
-        .map(([label, _key, isNumeric = false]) => `<th${isNumeric ? ' class="num"' : ""}>${displayLabel(label)}</th>`)
+        .map(([label, _key, isNumeric = false]) => `<th${isNumeric ? ' class="report__table-cell--numeric"' : ""}>${displayLabel(label)}</th>`)
         .join("");
       const body = rows.map((row) => `
         <tr>
           ${columns.map(([label, key, isNumeric = false]) => {
             const value = row[key];
-            const numericClass = isNumeric || typeof value === "number" ? ` class="num"` : "";
+            const numericClass = isNumeric || typeof value === "number" ? ` class="report__table-cell--numeric"` : "";
             return `<td${numericClass} data-label="${formatCell(displayLabel(label))}">${formatCell(value)}</td>`;
           }).join("")}
         </tr>
       `).join("");
-      return `<div class="table-wrap"><table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>`;
+      return `<div class="report__table-wrap"><table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>`;
     }
 
     function detailCard(label, value) {
-      return `<div class="detail-card"><strong>${label}</strong><span>${formatCell(value)}</span></div>`;
+      return `<div class="org-dashboard__detail-card"><strong>${label}</strong><span>${formatCell(value)}</span></div>`;
     }
 
     function renderSeriesReadout({ rows, metric, labelKey, selectedIndex }) {
@@ -784,7 +784,7 @@
           [t("common.selected_value"), "-"],
           [t("common.window_average"), "-"],
           [i18n.locale === "ko" ? "최고 기간" : "Peak period", "-"],
-        ].map(([label, value]) => `<div class="readout-card"><strong>${label}</strong><span>${value}</span></div>`).join("");
+        ].map(([label, value]) => `<div class="report__readout-card"><strong>${label}</strong><span>${value}</span></div>`).join("");
       }
       const selectedRow = rows[selectedIndex] ?? rowsWithValues.at(-1);
       const selectedValue = toNumeric(selectedRow[metric]);
@@ -797,7 +797,7 @@
         [t("common.selected_value"), formatChartValue(selectedValue, metric)],
         [t("common.window_average"), formatChartValue(average, metric)],
         [t("common.period_state"), periodStatusText(selectedRow)],
-      ].map(([label, value]) => `<div class="readout-card"><strong>${label}</strong><span>${value}</span></div>`).join("");
+      ].map(([label, value]) => `<div class="report__readout-card"><strong>${label}</strong><span>${value}</span></div>`).join("");
     }
 
     function clampSelectedIndex(rows, currentIndex, metricKey) {
@@ -842,7 +842,7 @@
 
     function syncTabs(buttons, activeButton) {
       for (const button of buttons) {
-        button.classList.toggle("active", button === activeButton);
+        button.classList.toggle("is-active", button === activeButton);
         button.setAttribute("aria-selected", String(button === activeButton));
       }
     }

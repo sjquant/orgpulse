@@ -1044,13 +1044,18 @@ class TestPersonCommand:
         assert "## Org Trends" not in markdown_result.stdout
         assert html_result.exit_code == 0
         assert "<title>orgpulse person metrics: alice</title>" in html_result.stdout
-        assert '<div class="shell person-report">' in html_result.stdout
+        assert '<div class="report person-report">' in html_result.stdout
         assert 'data-theme-option="dark"' in html_result.stdout
         assert 'id="org-trend-chart-root"' not in html_result.stdout
         assert 'id="person-trend-chart-root"' in html_result.stdout
         assert 'id="person-trend-chart-readout"' in html_result.stdout
-        assert 'class="tab-strip primary-tabs"' in html_result.stdout
-        assert 'class="tab-strip secondary-tabs"' in html_result.stdout
+        assert (
+            'class="report__tab-strip report__tab-strip--primary"' in html_result.stdout
+        )
+        assert (
+            'class="report__tab-strip report__tab-strip--secondary"'
+            in html_result.stdout
+        )
         assert (
             'data-person-trend-metric="authored_pull_request_count"'
             in html_result.stdout
@@ -1154,13 +1159,15 @@ class TestPersonCommand:
         assert 'id="person-trend-grain-tabs"' in html_result.stdout
         assert 'data-person-trend-grain="weekly"' in html_result.stdout
         assert 'data-person-trend-grain="monthly"' in html_result.stdout
-        assert '<div class="two-col">' in html_result.stdout
+        assert '<div class="report__two-column">' in html_result.stdout
         assert "grid-template-columns: minmax(0, 1fr) auto;" in html_result.stdout
         assert "width: fit-content;" in html_result.stdout
-        assert ".two-col > .secondary-tabs" in html_result.stdout
+        assert (
+            ".report__two-column > .report__tab-strip--secondary" in html_result.stdout
+        )
         assert "margin-left: auto;" in html_result.stdout
         assert (
-            '<nav class="section-nav" aria-label="Report sections">'
+            '<nav class="report__section-nav" aria-label="Report sections">'
             in html_result.stdout
         )
         assert '<a href="#charts">Charts</a>' in html_result.stdout
@@ -1328,19 +1335,24 @@ class TestPersonCommand:
             markdown_result.stdout
         )
         assert html_result.exit_code == 0
-        assert 'class="chart-card org-chart-card"' not in html_result.stdout
-        assert 'class="chart-card person-trend-card"' in html_result.stdout
+        assert (
+            'class="person-report__chart-card org-chart-card"' not in html_result.stdout
+        )
+        assert (
+            'class="person-report__chart-card person-report__trend-card"'
+            in html_result.stdout
+        )
         assert 'id="org-trend-chart-root"' not in html_result.stdout
         assert 'id="org-comparison-toggle"' in html_result.stdout
-        assert 'class="comparison-switch"' in html_result.stdout
+        assert 'class="person-report__comparison-switch"' in html_result.stdout
         assert 'role="switch"' in html_result.stdout
         assert 'aria-checked="true"' in html_result.stdout
-        assert "comparison-switch-track" in html_result.stdout
-        assert "comparison-switch-thumb" in html_result.stdout
+        assert "person-report__comparison-switch-track" in html_result.stdout
+        assert "person-report__comparison-switch-thumb" in html_result.stdout
         assert 'id="org-comparison-legend"' in html_result.stdout
-        assert "org-comparison-line" in html_result.stdout
-        assert "org-comparison-node" in html_result.stdout
-        assert "org-comparison-point" in html_result.stdout
+        assert "person-report__org-comparison-line" in html_result.stdout
+        assert "person-report__org-comparison-node" in html_result.stdout
+        assert "person-report__org-comparison-point" in html_result.stdout
         assert "data-point-series" in html_result.stdout
         assert "data-point-value" in html_result.stdout
         report_payload_match = re.search(
@@ -1804,22 +1816,22 @@ class TestPersonCommand:
 
         # Then
         assert result.exit_code == 0
-        assert 'id="weekly-period-extra" class="hidden"' in result.stdout
+        assert 'id="weekly-period-extra" class="is-hidden"' in result.stdout
         assert (
-            'id="weekly-period-toggle" class="ghost-button" aria-expanded="false"'
+            'id="weekly-period-toggle" class="report__ghost-button" aria-expanded="false"'
             in result.stdout
         )
         assert "Show 5 more weekly rows" in result.stdout
-        assert 'id="monthly-period-extra" class="hidden"' in result.stdout
+        assert 'id="monthly-period-extra" class="is-hidden"' in result.stdout
         assert (
-            'id="monthly-period-toggle" class="ghost-button" aria-expanded="false"'
+            'id="monthly-period-toggle" class="report__ghost-button" aria-expanded="false"'
             in result.stdout
         )
         assert "Show 3 more monthly rows" in result.stdout
-        assert 'id="repository-extra" class="hidden"' in result.stdout
+        assert 'id="repository-extra" class="is-hidden"' in result.stdout
         assert "Show 5 more repositories" in result.stdout
         assert (
-            'id="repository-toggle" class="ghost-button" aria-expanded="false"'
+            'id="repository-toggle" class="report__ghost-button" aria-expanded="false"'
             in result.stdout
         )
 

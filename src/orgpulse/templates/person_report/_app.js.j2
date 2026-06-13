@@ -2,8 +2,8 @@
     (function () {
       const storageKey = "orgpulse-manual-dashboard-theme";
       const root = document.documentElement;
-      const switcher = document.querySelector(".theme-switch");
-      const buttons = Array.from(document.querySelectorAll(".theme-switch-button"));
+      const switcher = document.querySelector(".report__theme-switch");
+      const buttons = Array.from(document.querySelectorAll(".report__theme-switch-button"));
       const repositoryToggle = document.getElementById("repository-toggle");
       const repositoryExtra = document.getElementById("repository-extra");
       const i18n = JSON.parse(document.getElementById("report-i18n").textContent);
@@ -18,9 +18,9 @@
       };
       const orgComparisonToggle = document.getElementById("org-comparison-toggle");
       const orgComparisonLegend = document.getElementById("org-comparison-legend");
-      const trendMetricTabs = Array.from(document.querySelectorAll("#person-trend-metric-tabs .tab-button"));
-      const trendGrainTabs = Array.from(document.querySelectorAll("#person-trend-grain-tabs .tab-button"));
-      const cadenceTabs = Array.from(document.querySelectorAll("#person-cadence-tabs .tab-button"));
+      const trendMetricTabs = Array.from(document.querySelectorAll("#person-trend-metric-tabs .report__tab-button"));
+      const trendGrainTabs = Array.from(document.querySelectorAll("#person-trend-grain-tabs .report__tab-button"));
+      const cadenceTabs = Array.from(document.querySelectorAll("#person-cadence-tabs .report__tab-button"));
       const cadencePanels = Array.from(document.querySelectorAll("[data-person-cadence-panel]"));
       const weeklyPeriodToggle = document.getElementById("weekly-period-toggle");
       const weeklyPeriodExtra = document.getElementById("weekly-period-extra");
@@ -29,7 +29,7 @@
       const trendChartTitle = document.getElementById("person-trend-chart-title");
       const trendChartReadout = document.getElementById("person-trend-chart-readout");
       const trendChartRoot = document.getElementById("person-trend-chart-root");
-      const sectionNavLinks = Array.from(document.querySelectorAll('.section-nav a[href^="#"]'));
+      const sectionNavLinks = Array.from(document.querySelectorAll('.report__section-nav a[href^="#"]'));
       const sectionTargets = sectionNavLinks
         .map(link => {
           const sectionId = link.getAttribute("href")?.slice(1);
@@ -170,9 +170,9 @@
         });
 
         function sync() {
-          container.classList.toggle("hidden", visibleCount === 0);
+          container.classList.toggle("is-hidden", visibleCount === 0);
           items.forEach((item, index) => {
-            item.classList.toggle("hidden", index >= visibleCount);
+            item.classList.toggle("is-hidden", index >= visibleCount);
           });
           const remaining = Math.max(0, items.length - visibleCount);
           if (remaining === 0) {
@@ -256,7 +256,7 @@
       function syncTrendMetricTabs() {
         trendMetricTabs.forEach(button => {
           const isActive = button.dataset.personTrendMetric === activeTrendMetric;
-          button.classList.toggle("active", isActive);
+          button.classList.toggle("is-active", isActive);
           button.setAttribute("aria-selected", String(isActive));
         });
       }
@@ -264,7 +264,7 @@
       function syncTrendGrainTabs() {
         trendGrainTabs.forEach(button => {
           const isActive = button.dataset.personTrendGrain === activeTrendGrain;
-          button.classList.toggle("active", isActive);
+          button.classList.toggle("is-active", isActive);
           button.setAttribute("aria-selected", String(isActive));
         });
       }
@@ -272,12 +272,12 @@
       function syncCadenceTabs() {
         cadenceTabs.forEach(button => {
           const isActive = button.dataset.personCadence === activeCadence;
-          button.classList.toggle("active", isActive);
+          button.classList.toggle("is-active", isActive);
           button.setAttribute("aria-selected", String(isActive));
         });
         cadencePanels.forEach(panel => {
           const isActive = panel.dataset.personCadencePanel === activeCadence;
-          panel.classList.toggle("hidden", !isActive);
+          panel.classList.toggle("is-hidden", !isActive);
           panel.toggleAttribute("hidden", !isActive);
         });
       }
@@ -294,7 +294,7 @@
             : t("person.show_org_comparison"),
         );
         if (orgComparisonLegend) {
-          orgComparisonLegend.classList.toggle("hidden", !activeShowOrgComparison);
+          orgComparisonLegend.classList.toggle("is-hidden", !activeShowOrgComparison);
         }
       }
 
@@ -362,12 +362,12 @@
       }
 
       function readoutCard(label, value) {
-        return `<article class="readout-card"><strong>${escapeHtml(label)}</strong><span>${escapeHtml(value)}</span></article>`;
+        return `<article class="report__readout-card"><strong>${escapeHtml(label)}</strong><span>${escapeHtml(value)}</span></article>`;
       }
 
       function renderSeriesChart({ element, rows, comparisonRows = [], metric, selectedIndex, onSelect }) {
         if (!rows.length) {
-          element.innerHTML = `<div class="small-note">${escapeHtml(t("common.no_period_data"))}</div>`;
+          element.innerHTML = `<div class="report__small-note">${escapeHtml(t("common.no_period_data"))}</div>`;
           return;
         }
         const width = 920;
@@ -389,7 +389,7 @@
           }))
           .filter(point => point.row && point.value !== null);
         if (!points.length && !comparisonPoints.length) {
-          element.innerHTML = `<div class="small-note">${escapeHtml(t("common.no_metric_data"))}</div>`;
+          element.innerHTML = `<div class="report__small-note">${escapeHtml(t("common.no_metric_data"))}</div>`;
           return;
         }
         const maxValue = Math.max(
@@ -429,14 +429,14 @@
           if (!row.is_partial) {
             return "";
           }
-          return `<rect class="chart-partial-band" x="${bandStart(index)}" y="${padding.top}" width="${Math.max(8, bandEnd(index) - bandStart(index))}" height="${plotHeight}"></rect>`;
+          return `<rect class="report__chart-partial-band" x="${bandStart(index)}" y="${padding.top}" width="${Math.max(8, bandEnd(index) - bandStart(index))}" height="${plotHeight}"></rect>`;
         }).join("");
         const ticks = [0, 0.25, 0.5, 0.75, 1].map(ratio => {
           const value = maxValue * ratio;
           const y = padding.top + plotHeight - plotHeight * ratio;
           return `
             <line x1="${padding.left}" x2="${width - padding.right}" y1="${y}" y2="${y}" stroke="${cssVar("--grid-stroke")}"></line>
-            <text x="${padding.left - 10}" y="${y + 4}" text-anchor="end" class="chart-axis">${formatMetricValue(value, metric)}</text>
+            <text x="${padding.left - 10}" y="${y + 4}" text-anchor="end" class="report__chart-axis">${formatMetricValue(value, metric)}</text>
           `;
         }).join("");
         const chartNodes = rows.map((row, index) => {
@@ -448,17 +448,17 @@
           const showLabel = index === 0 || index === rows.length - 1 || index % labelInterval === 0;
           const stateSuffix = row.is_partial ? `, ${t("common.open_period")}` : "";
           return `
-            <g class="chart-node ${row.is_partial ? "partial-period" : ""}" data-point-index="${index}" data-point-label="${escapeAttribute(row.period_key || "-")}" data-point-value="${escapeAttribute(formatMetricValue(value, metric))}" data-point-state="${escapeAttribute(periodStatusText(row))}" tabindex="0" role="button" aria-label="${escapeAttribute(`${row.period_key || "Period"} ${formatMetricValue(value, metric)}${stateSuffix}`)}">
+            <g class="report__chart-node ${row.is_partial ? "report__chart-node--partial" : ""}" data-point-index="${index}" data-point-label="${escapeAttribute(row.period_key || "-")}" data-point-value="${escapeAttribute(formatMetricValue(value, metric))}" data-point-state="${escapeAttribute(periodStatusText(row))}" tabindex="0" role="button" aria-label="${escapeAttribute(`${row.period_key || "Period"} ${formatMetricValue(value, metric)}${stateSuffix}`)}">
               <circle cx="${xFor(index)}" cy="${yFor(value)}" r="${isSelected ? 6 : 4}" fill="${cssVar("--accent")}" stroke="${isSelected ? cssVar("--text") : "transparent"}" stroke-width="${isSelected ? 2 : 0}">
                 <title>${escapeHtml(row.period_key || "-")}: ${escapeHtml(formatMetricValue(value, metric))}${row.is_partial ? ` (${escapeHtml(periodStatusText(row))})` : ""}</title>
               </circle>
             </g>
-            ${showLabel ? `<text x="${xFor(index)}" y="${height - 12}" text-anchor="middle" class="chart-axis">${escapeHtml(shortLabel(row.period_key || ""))}</text>` : ""}
+            ${showLabel ? `<text x="${xFor(index)}" y="${height - 12}" text-anchor="middle" class="report__chart-axis">${escapeHtml(shortLabel(row.period_key || ""))}</text>` : ""}
           `;
         }).join("");
         const comparisonNodes = comparisonPoints.map(point => `
-          <g class="chart-node org-comparison-node ${point.row.is_partial ? "partial-period" : ""}" data-point-index="${point.index}" data-point-label="${escapeAttribute(point.row.period_key || "-")}" data-point-series="${escapeAttribute(t("common.organization"))}" data-point-value="${escapeAttribute(formatMetricValue(point.value, metric))}" data-point-state="${escapeAttribute(periodStatusText(point.row))}" tabindex="0" role="button" aria-label="${escapeAttribute(`${t("common.organization")} ${point.row.period_key || "Period"} ${formatMetricValue(point.value, metric)}`)}">
-            <circle class="org-comparison-point" cx="${xFor(point.index)}" cy="${yFor(point.value)}" r="4" fill="currentColor">
+          <g class="report__chart-node person-report__org-comparison-node ${point.row.is_partial ? "report__chart-node--partial" : ""}" data-point-index="${point.index}" data-point-label="${escapeAttribute(point.row.period_key || "-")}" data-point-series="${escapeAttribute(t("common.organization"))}" data-point-value="${escapeAttribute(formatMetricValue(point.value, metric))}" data-point-state="${escapeAttribute(periodStatusText(point.row))}" tabindex="0" role="button" aria-label="${escapeAttribute(`${t("common.organization")} ${point.row.period_key || "Period"} ${formatMetricValue(point.value, metric)}`)}">
+            <circle class="person-report__org-comparison-point" cx="${xFor(point.index)}" cy="${yFor(point.value)}" r="4" fill="currentColor">
               <title>${escapeHtml(t("common.organization"))} ${escapeHtml(point.row.period_key || "-")}: ${escapeHtml(formatMetricValue(point.value, metric))}</title>
             </circle>
           </g>
@@ -475,7 +475,7 @@
             ${partialBands}
             ${averageLineY === null ? "" : `<line x1="${padding.left}" x2="${width - padding.right}" y1="${averageLineY}" y2="${averageLineY}" stroke="${cssVar("--avg-stroke")}" stroke-dasharray="5 5"></line>`}
             ${areaPath ? `<path d="${areaPath}" fill="url(#${escapeAttribute(fillId)})"></path>` : ""}
-            ${comparisonLinePath ? `<path class="org-comparison-line" d="${comparisonLinePath}" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-dasharray="7 5"></path>` : ""}
+            ${comparisonLinePath ? `<path class="person-report__org-comparison-line" d="${comparisonLinePath}" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-dasharray="7 5"></path>` : ""}
             ${linePath ? `<path d="${linePath}" fill="none" stroke="${cssVar("--accent")}" stroke-width="3" stroke-linecap="round"></path>` : ""}
             ${comparisonNodes}
             ${chartNodes}
@@ -503,12 +503,12 @@
       }
 
       function ensureChartTooltip(element) {
-        let tooltip = element.querySelector(".chart-tooltip");
+        let tooltip = element.querySelector(".report__chart-tooltip");
         if (tooltip) {
           return tooltip;
         }
         tooltip = document.createElement("div");
-        tooltip.className = "chart-tooltip hidden";
+        tooltip.className = "report__chart-tooltip is-hidden";
         tooltip.setAttribute("aria-hidden", "true");
         element.appendChild(tooltip);
         return tooltip;
@@ -519,9 +519,9 @@
           <strong>${escapeHtml(node.dataset.pointLabel || "-")}</strong>
           ${node.dataset.pointSeries ? `<span>${escapeHtml(node.dataset.pointSeries)}</span>` : ""}
           <span>${escapeHtml(metricLabel(metric))}: ${escapeHtml(node.dataset.pointValue || "-")}</span>
-          ${node.classList.contains("partial-period") ? `<span>${escapeHtml(node.dataset.pointState || "partial period")}</span>` : ""}
+          ${node.classList.contains("report__chart-node--partial") ? `<span>${escapeHtml(node.dataset.pointState || "partial period")}</span>` : ""}
         `;
-        tooltip.classList.remove("hidden");
+        tooltip.classList.remove("is-hidden");
         tooltip.setAttribute("aria-hidden", "false");
         const chartRect = chartElement.getBoundingClientRect();
         const nodeRect = node.getBoundingClientRect();
@@ -537,7 +537,7 @@
       }
 
       function hideChartTooltip(tooltip) {
-        tooltip.classList.add("hidden");
+        tooltip.classList.add("is-hidden");
         tooltip.setAttribute("aria-hidden", "true");
       }
 

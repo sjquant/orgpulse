@@ -109,7 +109,7 @@
       </article>
     </section>
 
-    <nav class="report__section-nav" aria-label="Report sections">
+    <nav class="report__section-nav" aria-label="{{ t("common.report_sections") }}">
       <a href="#trends">{{ t("common.trends") }}</a>
       <a href="#people">{{ t("common.people") }}</a>
       <a href="#leaderboards">{{ t("common.repositories") }}</a>
@@ -153,7 +153,7 @@
           </article>
           <article class="report__support-card">
             <strong>{{ t("dashboard.normalized_lens") }}</strong>
-            <span>{{ t("dashboard.normalized_lens_copy") }} {{ overview.average_active_authors_per_month | numfmt }} {{ t("metric.average_active_authors_per_month") }}, {{ t("dashboard.normalized_lens_suffix") }} {{ overview.pull_requests_per_active_author | numfmt }} {{ t("metric.prs") }} / {{ overview.changed_lines_per_active_author | numfmt }} {% if locale == "en" %}Lines / active author{% else %}{{ metric_text("changed_lines_per_active_author") }}{% endif %}.</span>
+            <span>{% if locale == "ko" %}월평균 활성 작성자는 {{ overview.average_active_authors_per_month | numfmt }}명이고, 활성 작성자 1인당 {{ overview.pull_requests_per_active_author | numfmt }} {{ t("metric.prs") }} / {{ overview.changed_lines_per_active_author | numfmt }} {{ t("metric.changed_lines") }}을 기록했습니다.{% else %}Active authors averaged {{ overview.average_active_authors_per_month | numfmt }} per month; each active author contributed {{ overview.pull_requests_per_active_author | numfmt }} {{ t("metric.prs") }} / {{ overview.changed_lines_per_active_author | numfmt }} changed lines.{% endif %}</span>
           </article>
           <article class="report__support-card">
             <strong>{{ t("dashboard.backlog") }}</strong>

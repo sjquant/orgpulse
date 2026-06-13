@@ -732,7 +732,10 @@ class TestManualDashboardPayload:
         assert 'data-people-metric="median_merge_hours"' in html
         assert 'id="people-ranking-list"' in html
         assert 'id="people-ranking-toggle"' in html
-        assert "Top 10 people shown first." in html
+        assert (
+            "The ranking starts with the top 10; expand it to review everyone else."
+            in html
+        )
         assert "peopleRankingChunkSize = 10" in html
         assert '"people-controls people-controls"' in html
         assert '"people-ranking profile-detail"' in html
@@ -967,7 +970,7 @@ class TestManualDashboardPayload:
         html = render_dashboard_html(prepared)
 
         # Then
-        assert '["Value", "value", true]' in html
+        assert '[i18n.locale === "ko" ? "값" : "Value", "value", true]' in html
         assert (
             'const numericClass = isNumeric || typeof value === "number" ? ` class="report__table-cell--numeric"` : "";'
             in html

@@ -1110,7 +1110,7 @@ class TestPersonCommand:
         )
         assert env_locale_result.exit_code == 0
         assert '<html lang="ko">' in env_locale_result.stdout
-        assert "개인 성과 추출" in env_locale_result.stdout
+        assert "개인 기여 요약" in env_locale_result.stdout
         assert "선택한 사람이 작성한 풀 리퀘스트 수입니다." in env_locale_result.stdout
         assert "머지됨 /" in env_locale_result.stdout
         assert "받은 리뷰 제출" in env_locale_result.stdout
@@ -1167,7 +1167,7 @@ class TestPersonCommand:
         )
         assert "margin-left: auto;" in html_result.stdout
         assert (
-            '<nav class="report__section-nav" aria-label="Report sections">'
+            '<nav class="report__section-nav" aria-label="Sections">'
             in html_result.stdout
         )
         assert '<a href="#charts">Charts</a>' in html_result.stdout

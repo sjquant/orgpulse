@@ -445,7 +445,7 @@
         </div>
         <div class="org-dashboard__profile-subgrid">
           <div>
-            <p class="report__section-kicker">Delivery footprint</p>
+            <p class="report__section-kicker">${i18n.locale === "ko" ? "작성 활동" : "Authored work"}</p>
             ${renderMiniTable(
               [
                 [t("common.repository"), "repository_full_name"],
@@ -456,10 +456,10 @@
             )}
           </div>
           <div>
-            <p class="report__section-kicker">Review footprint</p>
+            <p class="report__section-kicker">${i18n.locale === "ko" ? "리뷰 활동" : "Review work"}</p>
             ${renderMiniTable(
               [
-                [i18n.locale === "ko" ? "신호" : "Signal", "label"],
+                [i18n.locale === "ko" ? "구분" : "Type", "label"],
                 [i18n.locale === "ko" ? "수" : "Count", "value", true],
               ],
               [
@@ -471,11 +471,11 @@
             )}
           </div>
           <div>
-            <p class="report__section-kicker">Composition</p>
+            <p class="report__section-kicker">${i18n.locale === "ko" ? "작업 구성" : "Work mix"}</p>
             ${renderMiniTable(
               [
-                ["Metric", "label"],
-                ["Value", "value", true],
+                [i18n.locale === "ko" ? "항목" : "Measure", "label"],
+                [i18n.locale === "ko" ? "값" : "Value", "value", true],
               ],
               [
                 { label: metricLabel("repository_share"), value: formatMetric(summary.share_of_prs_pct, "%") },

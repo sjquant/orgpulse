@@ -43,7 +43,7 @@ def test_generates_korean_visual_testing_reports(
     )
     assert not (report_dir / "analysis-report.html").exists()
     assert '<html lang="ko">' in person_html
-    assert "개인 성과 추출" in person_html
+    assert "개인 기여 요약" in person_html
     assert "받은 리뷰 제출" in person_html
     assert "열린 월" in person_html or "닫힌 월" in person_html
     assert 'href="#methodology"' not in person_html

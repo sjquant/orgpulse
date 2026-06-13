@@ -48,6 +48,10 @@ def test_generates_korean_visual_testing_reports(
     assert "열린 월" in person_html or "닫힌 월" in person_html
     assert "metric-tooltip" in person_html
     assert "data-tooltip=" in person_html
+    assert ".person-report #repositories .table-wrap:has(.metric-tooltip:hover)" in (
+        person_html
+    )
+    assert ".person-report #repositories .table-wrap:focus-within" in person_html
     assert not re.search(r'class="tab-button[^"]*"[^>]*\sdata-tooltip=', person_html)
     assert ".metric-tooltip::before" not in person_html
     assert '<html lang="ko">' in dashboard_html

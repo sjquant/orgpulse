@@ -16,9 +16,23 @@
     }
 
     .person-report .repository-focus-grid {
+      position: relative;
+      z-index: 0;
       display: grid;
       grid-template-columns: repeat(3, minmax(0, 1fr));
       gap: 12px;
+    }
+
+    .person-report #repositories .table-wrap {
+      position: relative;
+      z-index: 1;
+    }
+
+    .person-report #repositories .table-wrap:has(.metric-tooltip:hover),
+    .person-report #repositories .table-wrap:has(.metric-tooltip:focus),
+    .person-report #repositories .table-wrap:focus-within {
+      z-index: 30;
+      overflow: visible;
     }
 
     .person-report .repository-focus-card {

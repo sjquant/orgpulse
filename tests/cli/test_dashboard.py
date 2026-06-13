@@ -117,16 +117,16 @@ class TestDashboardCommand:
         ko_payload = json.loads(ko_result.stdout)
         ko_html = Path(ko_payload["html_path"]).read_text(encoding="utf-8")
         assert '<html lang="ko">' in ko_html
-        assert "엔지니어링 생산성 리더보드" in ko_html
-        assert "24시간 안에 첫 리뷰를 받은 풀 리퀘스트 비율입니다." in ko_html
+        assert "엔지니어링 생산성 현황" in ko_html
+        assert "24시간 안에 첫 리뷰를 받은 PR 비율입니다." in ko_html
         assert "오래 열린 PR" in ko_html
         assert "24시간 이내" in ko_html
         assert "머지됨 /" in ko_html
-        assert "저장소 리더보드" in ko_html
+        assert "저장소별 현황" in ko_html
         assert "<summary>작성자 원장</summary>" not in ko_html
         assert "<summary>방법론</summary>" not in ko_html
         assert '<span class="report__meta-label">분포 절단값</span>' not in ko_html
-        assert "100퍼센타일" not in ko_html
+        assert "100백분위" not in ko_html
         assert not re.search(
             r'class="report__tab-button[^"]*"[^>]*\sdata-tooltip=', ko_html
         )

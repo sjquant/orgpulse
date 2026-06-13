@@ -1111,11 +1111,11 @@ class TestPersonCommand:
         assert env_locale_result.exit_code == 0
         assert '<html lang="ko">' in env_locale_result.stdout
         assert "개인 기여 요약" in env_locale_result.stdout
-        assert "선택한 사람이 작성한 풀 리퀘스트 수입니다." in env_locale_result.stdout
+        assert "선택한 사람이 작성한 PR 수입니다." in env_locale_result.stdout
         assert "머지됨 /" in env_locale_result.stdout
-        assert "받은 리뷰 제출" in env_locale_result.stdout
+        assert "받은 리뷰 수" in env_locale_result.stdout
         assert "중앙값 머지 시간" in env_locale_result.stdout
-        assert "100퍼센타일" in env_locale_result.stdout
+        assert "100번째 백분위" in env_locale_result.stdout
         assert "100percentile" not in override_locale_result.stdout
         assert "review submissions received" not in env_locale_result.stdout
         assert "PRs per month" not in env_locale_result.stdout

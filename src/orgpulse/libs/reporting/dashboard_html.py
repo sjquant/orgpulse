@@ -150,7 +150,10 @@ def render_dashboard_html(
         monthly_trends_older=prepared_payload.monthly_trends_older,
         methodology=prepared_payload.methodology,
         reference_summary=prepared_payload.reference_summary,
-        size_diagnostic=prepared_payload.size_diagnostic,
+        size_diagnostic=_build_size_diagnostic(
+            prepared_payload.size_buckets,
+            locale=resolved_locale,
+        ).model_dump(mode="json"),
         default_author=prepared_payload.default_author,
         author_details_json=Markup(prepared_payload.author_details_json),
     )
@@ -1344,20 +1347,17 @@ def _build_reference_summary(
 
 def _build_size_diagnostic(
     size_buckets: list[dict[str, Any]],
+    *,
+    locale: ReportLocale | str | None = None,
 ) -> DashboardSizeDiagnosticPayload:
+    resolved_locale = resolve_report_locale(locale)
     rows_with_latency = [
         row
         for row in size_buckets
         if row["pull_requests"] and row["median_first_review_hours"] is not None
     ]
     if not rows_with_latency:
-        return DashboardSizeDiagnosticPayload(
-            headline="No review-latency size signal available in this window.",
-            supporting=(
-                "This window does not contain enough reviewed PR size data "
-                "to compare latency by bucket."
-            ),
-        )
+        return _empty_size_diagnostic(resolved_locale)
     slowest_row = max(
         rows_with_latency, key=lambda row: row["median_first_review_hours"]
     )
@@ -1373,16 +1373,76 @@ def _build_size_diagnostic(
             float(slowest_row["median_first_review_hours"])
             - float(fastest_row["median_first_review_hours"])
         )
+    if resolved_locale is ReportLocale.KO:
+        return _korean_size_diagnostic(
+            slowest_row=slowest_row,
+            fastest_row=fastest_row,
+            gap=gap,
+        )
     return DashboardSizeDiagnosticPayload(
         headline=(
-            f"{slowest_row['bucket']} PRs waited the longest for first review at "
-            f"{_format_duration(slowest_row['median_first_review_hours'])} median."
+            f"{slowest_row['bucket']} PRs had the longest median time to first "
+            f"review: {format_duration(slowest_row['median_first_review_hours'], resolved_locale)}."
         ),
+        supporting=_english_size_diagnostic_supporting(
+            slowest_row=slowest_row,
+            fastest_row=fastest_row,
+            gap=gap,
+            locale=resolved_locale,
+        ),
+    )
+
+
+def _empty_size_diagnostic(locale: ReportLocale) -> DashboardSizeDiagnosticPayload:
+    if locale is ReportLocale.KO:
+        return DashboardSizeDiagnosticPayload(
+            headline="이 기간에는 변경 규모별 리뷰 소요 시간을 비교할 만큼 데이터가 충분하지 않습니다.",
+            supporting="변경 규모와 첫 리뷰 시간이 모두 있는 PR만 이 비교에 포함됩니다.",
+        )
+    return DashboardSizeDiagnosticPayload(
+        headline="There is not enough size data to compare review timing in this period.",
+        supporting="Only PRs with both a size bucket and first-review timing are included here.",
+    )
+
+
+def _korean_size_diagnostic(
+    *,
+    slowest_row: dict[str, Any],
+    fastest_row: dict[str, Any],
+    gap: float | None,
+) -> DashboardSizeDiagnosticPayload:
+    headline = (
+        f"첫 리뷰까지 가장 오래 걸린 구간은 {slowest_row['bucket']} 크기 PR이며 "
+        f"중앙값은 {format_duration(slowest_row['median_first_review_hours'], ReportLocale.KO)}입니다."
+    )
+    if slowest_row["bucket"] == fastest_row["bucket"] or gap == 0:
+        return DashboardSizeDiagnosticPayload(
+            headline=headline,
+            supporting="비교 가능한 다른 변경 규모와의 차이는 크지 않습니다.",
+        )
+    return DashboardSizeDiagnosticPayload(
+        headline=headline,
         supporting=(
-            "Compared with "
-            f"{fastest_row['bucket']} at {_format_duration(fastest_row['median_first_review_hours'])}, "
-            f"the gap is {_format_duration(gap) if gap is not None else '-'}."
+            f"{fastest_row['bucket']} 크기 PR의 중앙값 "
+            f"{format_duration(fastest_row['median_first_review_hours'], ReportLocale.KO)}보다 "
+            f"{format_duration(gap, ReportLocale.KO)} 더 걸렸습니다."
         ),
+    )
+
+
+def _english_size_diagnostic_supporting(
+    *,
+    slowest_row: dict[str, Any],
+    fastest_row: dict[str, Any],
+    gap: float | None,
+    locale: ReportLocale,
+) -> str:
+    if slowest_row["bucket"] == fastest_row["bucket"] or gap == 0:
+        return "There is little difference from the other comparable size buckets."
+    return (
+        f"That is {format_duration(gap, locale)} longer than "
+        f"{fastest_row['bucket']} PRs "
+        f"({format_duration(fastest_row['median_first_review_hours'], locale)})."
     )
 
 

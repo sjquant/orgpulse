@@ -901,9 +901,14 @@ class TestManualDashboardPayload:
         # When
         prepared = prepare_dashboard_payload(payload)
         html = render_dashboard_html(prepared)
+        ko_html = render_dashboard_html(prepared, locale="ko")
 
         # Then
-        assert "Latency and quality" in html
+        assert "Review speed and quality" in html
+        assert "첫 리뷰까지 가장 오래 걸린 구간은 S 크기 PR" in ko_html
+        assert "XS 크기 PR의 중앙값 1시간보다 11시간 더 걸렸습니다." in ko_html
+        assert "waited the longest for first review" not in ko_html
+        assert "Compared with" not in ko_html
         assert "within 24h" in html
         assert "report__chart-tooltip" in html
         assert "data-point-label=" in html

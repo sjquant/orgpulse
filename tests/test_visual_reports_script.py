@@ -46,6 +46,8 @@ def test_generates_korean_visual_testing_reports(
     assert "개인 성과 추출" in person_html
     assert "받은 리뷰 제출" in person_html
     assert "열린 월" in person_html or "닫힌 월" in person_html
+    assert 'href="#methodology"' not in person_html
+    assert 'id="methodology"' not in person_html
     assert "metric-tooltip" in person_html
     assert "data-tooltip=" in person_html
     assert ".person-report #repositories .table-wrap:has(.metric-tooltip:hover)" in (

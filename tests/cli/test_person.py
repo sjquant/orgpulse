@@ -1166,7 +1166,8 @@ class TestPersonCommand:
         assert '<a href="#charts">Charts</a>' in html_result.stdout
         assert '<a href="#cadences">Weekly / Monthly</a>' in html_result.stdout
         assert '<a href="#repositories">Repositories</a>' in html_result.stdout
-        assert '<a href="#methodology">Methodology</a>' in html_result.stdout
+        assert '<a href="#methodology">Methodology</a>' not in html_result.stdout
+        assert 'id="methodology"' not in html_result.stdout
         assert "<h3>Weekly report</h3>" in html_result.stdout
         assert "<h3>Monthly report</h3>" in html_result.stdout
         assert str(tmp_path) not in html_result.stdout

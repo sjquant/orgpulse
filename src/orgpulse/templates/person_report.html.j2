@@ -114,7 +114,6 @@
       <a href="#charts">{{ t("common.charts") }}</a>
       <a href="#cadences">{{ t("common.weekly") }} / {{ t("common.monthly") }}</a>
       <a href="#repositories">{{ t("common.repositories") }}</a>
-      <a href="#methodology">{{ t("common.methodology") }}</a>
     </nav>
 
     <div class="section-grid">
@@ -378,29 +377,6 @@
           </button>
         </div>
         {% endif %}
-      </section>
-
-      <section id="methodology" class="panel section-panel reference-panel">
-        <p class="section-kicker">{{ t("common.methodology") }}</p>
-        <h2>{{ t("common.methodology") }}</h2>
-        <div class="methodology-grid">
-          <article class="support-card">
-            <strong>{{ metric_text("authored_pull_request_count") }}</strong>
-            <span>Authored PRs are filtered by {{ result.time_anchor.value }} and shown in weekly and monthly period tables.</span>
-          </article>
-          <article class="support-card">
-            <strong>{{ metric_text("review_submissions_given") }}</strong>
-            <span>Reviews given exclude reviews on the person's own PRs and are grouped by review submission time.</span>
-          </article>
-          <article class="support-card">
-            <strong>{{ metric_text("median_approval_hours") }}</strong>
-            <span>Approval speed uses the final external approval on each authored PR.</span>
-          </article>
-          <article class="support-card">
-            <strong>{{ t("common.source_grain") }}</strong>
-            <span>Uses normalized orgpulse snapshots already present for the selected organization and anchor.</span>
-          </article>
-        </div>
       </section>
     </div>
   </div>

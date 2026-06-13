@@ -13,8 +13,8 @@
         monthly: Array.isArray(report.monthly_period_rows) ? report.monthly_period_rows : [],
       };
       const orgTrendSeries = {
-        weekly: Array.isArray(report.org_weekly_trend_rows) ? report.org_weekly_trend_rows : [],
-        monthly: Array.isArray(report.org_monthly_trend_rows) ? report.org_monthly_trend_rows : [],
+        weekly: Array.isArray(report.org_weekly_comparison_rows) ? report.org_weekly_comparison_rows : [],
+        monthly: Array.isArray(report.org_monthly_comparison_rows) ? report.org_monthly_comparison_rows : [],
       };
       const orgComparisonToggle = document.getElementById("org-comparison-toggle");
       const orgComparisonLegend = document.getElementById("org-comparison-legend");
@@ -358,7 +358,7 @@
           return "";
         }
         const value = row ? formatMetricValue(row[metric], metric) : "-";
-        return readoutCard(`${t("common.organization")} ${metricLabel(metric)}`, value);
+        return readoutCard(`${t("person.org_average_comparison")} ${metricLabel(metric)}`, value);
       }
 
       function readoutCard(label, value) {
@@ -457,9 +457,9 @@
           `;
         }).join("");
         const comparisonNodes = comparisonPoints.map(point => `
-          <g class="report__chart-node person-report__org-comparison-node ${point.row.is_partial ? "report__chart-node--partial" : ""}" data-point-index="${point.index}" data-point-label="${escapeAttribute(point.row.period_key || "-")}" data-point-series="${escapeAttribute(t("common.organization"))}" data-point-value="${escapeAttribute(formatMetricValue(point.value, metric))}" data-point-state="${escapeAttribute(periodStatusText(point.row))}" tabindex="0" role="button" aria-label="${escapeAttribute(`${t("common.organization")} ${point.row.period_key || "Period"} ${formatMetricValue(point.value, metric)}`)}">
+          <g class="report__chart-node person-report__org-comparison-node ${point.row.is_partial ? "report__chart-node--partial" : ""}" data-point-index="${point.index}" data-point-label="${escapeAttribute(point.row.period_key || "-")}" data-point-series="${escapeAttribute(t("person.org_average_comparison"))}" data-point-value="${escapeAttribute(formatMetricValue(point.value, metric))}" data-point-state="${escapeAttribute(periodStatusText(point.row))}" tabindex="0" role="button" aria-label="${escapeAttribute(`${t("person.org_average_comparison")} ${point.row.period_key || "Period"} ${formatMetricValue(point.value, metric)}`)}">
             <circle class="person-report__org-comparison-point" cx="${xFor(point.index)}" cy="${yFor(point.value)}" r="4" fill="currentColor">
-              <title>${escapeHtml(t("common.organization"))} ${escapeHtml(point.row.period_key || "-")}: ${escapeHtml(formatMetricValue(point.value, metric))}</title>
+              <title>${escapeHtml(t("person.org_average_comparison"))} ${escapeHtml(point.row.period_key || "-")}: ${escapeHtml(formatMetricValue(point.value, metric))}</title>
             </circle>
           </g>
         `).join("");

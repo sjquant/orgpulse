@@ -1,18 +1,23 @@
   <style>
     .org-dashboard__author-button {
       border: 1px solid var(--line-strong);
-      background: var(--panel-subtle);
+      background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.045), transparent),
+        var(--panel-raised);
       color: var(--text);
       border-radius: var(--radius-control);
-      padding: 8px 12px;
+      padding: 9px 13px;
       font: inherit;
       cursor: pointer;
+      box-shadow: var(--shadow-tight);
+      transition: background-color 140ms ease, border-color 140ms ease, transform 140ms ease;
     }
 
     .org-dashboard__author-button:hover,
     .org-dashboard__author-button--active {
       background: var(--active-fill);
       border-color: var(--accent);
+      transform: translateY(-1px);
     }
 
     .org-dashboard__author-button:focus-visible {
@@ -22,7 +27,7 @@
 
     .org-dashboard__detail-shell {
       display: grid;
-      gap: 14px;
+      gap: 16px;
     }
 
     .org-dashboard__people-grid {
@@ -31,7 +36,7 @@
       grid-template-areas:
         "people-controls people-controls"
         "people-ranking profile-detail";
-      gap: 16px;
+      gap: 20px;
       align-items: start;
     }
 
@@ -43,7 +48,7 @@
       grid-area: people-controls;
       display: grid;
       grid-template-columns: minmax(0, 1fr) auto;
-      gap: 16px;
+      gap: 18px;
       align-items: start;
     }
 
@@ -58,12 +63,12 @@
     .org-dashboard__people-ranking-shell {
       grid-area: people-ranking;
       display: grid;
-      gap: 12px;
+      gap: 14px;
     }
 
     .org-dashboard__person-list {
       display: grid;
-      gap: 10px;
+      gap: 12px;
     }
 
     .org-dashboard__person-card {
@@ -73,12 +78,16 @@
       gap: 8px;
       border: 1px solid var(--line);
       border-radius: var(--radius-control);
-      padding: 12px;
-      background: var(--panel-subtle);
+      padding: 14px;
+      background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.052), transparent 62%),
+        var(--panel-raised);
       color: var(--text);
       font: inherit;
       text-align: left;
       cursor: pointer;
+      box-shadow: var(--shadow-tight);
+      transition: border-color 140ms ease, background-color 140ms ease, transform 140ms ease;
     }
 
     .org-dashboard__person-card--reviewer-rank {
@@ -90,12 +99,14 @@
       border-color: var(--line-strong);
       border-left-color: var(--accent);
       background: var(--theme-toggle-hover);
+      transform: translateY(-1px);
     }
 
     .org-dashboard__person-card--reviewer-rank:hover {
       border-color: var(--line);
       border-left-color: transparent;
-      background: var(--panel-subtle);
+      background: var(--panel-raised);
+      transform: none;
     }
 
     .org-dashboard__person-card-header,
@@ -133,7 +144,7 @@
     .org-dashboard__person-profile {
       grid-area: profile-detail;
       display: grid;
-      gap: 14px;
+      gap: 16px;
       min-width: 0;
     }
 
@@ -159,9 +170,14 @@
     }
 
     .org-dashboard__profile-subgrid {
-      display: grid;
-      grid-template-columns: minmax(0, 1.35fr) minmax(0, 0.9fr) minmax(0, 0.75fr);
-      gap: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .org-dashboard__profile-subgrid > * {
+      min-width: 0;
+      max-width: 100%;
     }
 
     .org-dashboard__detail-tabs {
@@ -179,8 +195,11 @@
     .org-dashboard__detail-card {
       border: 1px solid var(--line);
       border-radius: var(--radius-control);
-      padding: 12px;
-      background: var(--panel-subtle);
+      padding: 14px;
+      background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.045), transparent),
+        var(--panel-raised);
+      box-shadow: var(--shadow-tight);
     }
 
     .org-dashboard__detail-card strong {
@@ -210,15 +229,16 @@
     }
 
     .org-dashboard__state-track {
-      height: 10px;
+      height: 11px;
       background: var(--track);
       border-radius: var(--radius-pill);
       overflow: hidden;
+      box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.2);
     }
 
     .org-dashboard__state-fill {
       height: 100%;
-      background: linear-gradient(90deg, var(--accent-3), var(--accent));
+      background: linear-gradient(90deg, var(--accent-3), var(--accent), var(--accent-2));
     }
 
     .report__small-note {
@@ -263,11 +283,14 @@
       min-width: 220px;
       max-width: 100%;
       border: 1px solid var(--line-strong);
-      background: var(--panel-subtle);
+      background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.045), transparent),
+        var(--panel-raised);
       color: var(--text);
       border-radius: var(--radius-control);
-      padding: 9px 12px;
+      padding: 10px 12px;
       font: inherit;
+      box-shadow: var(--shadow-tight);
     }
 
     .org-dashboard__search-input::placeholder {
@@ -287,17 +310,25 @@
       grid-template-columns: 1fr;
     }
 
+    .org-dashboard__reference-stack > * {
+      min-width: 0;
+      max-width: 100%;
+    }
+
     .org-dashboard__disclosure {
       border: 1px solid var(--line);
       border-radius: var(--radius-control);
-      background: var(--panel-subtle);
+      background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.05), transparent 62%),
+        var(--panel-raised);
       overflow: hidden;
+      box-shadow: var(--shadow-tight);
     }
 
     .org-dashboard__disclosure > summary {
       list-style: none;
       cursor: pointer;
-      padding: 14px 16px;
+      padding: 16px 18px;
       font-weight: 700;
       font-family: var(--font-display);
       border-bottom: 1px solid transparent;
@@ -312,7 +343,7 @@
     }
 
     .org-dashboard__disclosure > :not(summary) {
-      padding: 14px 16px 16px;
+      padding: 16px 18px 18px;
     }
 
     .org-dashboard__disclosure > .report__tab-strip--secondary {
@@ -326,7 +357,6 @@
     }
 
     @media (max-width: 1180px) {
-      .org-dashboard__profile-subgrid,
       .report__support-grid {
         grid-template-columns: 1fr;
       }

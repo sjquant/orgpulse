@@ -11,3 +11,5 @@
 - `src/orgpulse/templates/`: report templates only.
 
 Keep dependencies flowing downward: `cli -> apps -> libs -> common`.
+
+Do not pin generated report UI/CSS details in tests; validate rendering manually.

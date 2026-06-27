@@ -36,9 +36,8 @@
       gap: 10px;
       border: 1px solid var(--line);
       border-radius: var(--radius-control);
-      padding: 16px 18px;
-      background: var(--panel-card);
-      box-shadow: var(--shadow-card);
+      padding: 14px 16px;
+      background: var(--panel-raised);
     }
 
     .person-report .person-report__repository-focus-card strong {
@@ -97,9 +96,8 @@
       min-width: 0;
       border: 1px solid var(--line);
       border-radius: var(--radius-control);
-      padding: 18px;
-      background: var(--panel-card);
-      box-shadow: var(--shadow-card);
+      padding: 16px;
+      background: var(--panel-raised);
     }
 
     .person-report .person-report__chart-card h3 {
@@ -132,24 +130,18 @@
       min-height: 28px;
       border: 1px solid var(--line-strong);
       border-radius: var(--radius-pill);
-      background: var(--panel-card);
+      background: var(--panel-raised);
       color: var(--text);
       font: inherit;
       font-size: 0.82rem;
       line-height: 1;
       cursor: pointer;
-      transition: background-color 140ms ease, border-color 140ms ease, transform 140ms ease;
     }
 
     .person-report .person-report__comparison-switch[aria-checked="false"] {
       color: var(--muted);
       border-color: var(--line);
       background: transparent;
-    }
-
-    .person-report .person-report__comparison-switch:hover {
-      border-color: var(--accent-2);
-      transform: translateY(-1px);
     }
 
     .person-report .person-report__comparison-switch:focus-visible {

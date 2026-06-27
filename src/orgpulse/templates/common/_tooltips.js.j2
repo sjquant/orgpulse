@@ -1,0 +1,83 @@
+  <script>
+    (function () {
+      const targets = Array.from(document.querySelectorAll("[data-tooltip]:not([data-tooltip=''])"));
+      if (!targets.length) {
+        return;
+      }
+
+      const tooltip = document.createElement("div");
+      tooltip.className = "report__tooltip-portal";
+      tooltip.setAttribute("role", "tooltip");
+      document.body.appendChild(tooltip);
+
+      let activeTarget = null;
+
+      for (const target of targets) {
+        target.addEventListener("mouseenter", showTooltip);
+        target.addEventListener("mousemove", moveTooltip);
+        target.addEventListener("mouseleave", hideTooltip);
+        target.addEventListener("focus", showTooltip);
+        target.addEventListener("blur", hideTooltip);
+      }
+
+      window.addEventListener("resize", repositionTooltip);
+      window.addEventListener("scroll", repositionTooltip, true);
+
+      function showTooltip(event) {
+        const text = event.currentTarget.getAttribute("data-tooltip");
+        if (!text) {
+          return;
+        }
+        activeTarget = event.currentTarget;
+        tooltip.textContent = text;
+        tooltip.classList.add("report__tooltip-portal--visible");
+        positionTooltip(activeTarget, event);
+      }
+
+      function moveTooltip(event) {
+        if (!activeTarget) {
+          return;
+        }
+        positionTooltip(activeTarget, event);
+      }
+
+      function hideTooltip(event) {
+        if (event.currentTarget === activeTarget) {
+          activeTarget = null;
+        }
+        tooltip.classList.remove("report__tooltip-portal--visible");
+      }
+
+      function repositionTooltip() {
+        if (!activeTarget) {
+          return;
+        }
+        positionTooltip(activeTarget);
+      }
+
+      function positionTooltip(target, event) {
+        const targetRect = target.getBoundingClientRect();
+        const margin = 12;
+        const gap = 10;
+        const anchorX = event && typeof event.clientX === "number"
+          ? event.clientX
+          : targetRect.left + targetRect.width / 2;
+        const tooltipRect = tooltip.getBoundingClientRect();
+        const left = clamp(
+          anchorX - tooltipRect.width / 2,
+          margin,
+          window.innerWidth - tooltipRect.width - margin,
+        );
+        let top = targetRect.top - tooltipRect.height - gap;
+        if (top < margin) {
+          top = targetRect.bottom + gap;
+        }
+        tooltip.style.left = `${Math.round(left)}px`;
+        tooltip.style.top = `${Math.round(top)}px`;
+      }
+
+      function clamp(value, min, max) {
+        return Math.min(Math.max(value, min), max);
+      }
+    }());
+  </script>

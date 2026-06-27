@@ -412,17 +412,22 @@
 
     .report__metric-tooltip::after,
     .report__legend-chip[data-tooltip]:not([data-tooltip=""])::after {
-      display: none;
-      position: absolute;
-      left: 50%;
-      z-index: 10000;
-      opacity: 0;
-      pointer-events: none;
-      transition: opacity 120ms ease, transform 120ms ease;
-      content: attr(data-tooltip);
-      bottom: calc(100% + 8px);
-      width: max-content;
-      max-width: min(280px, 70vw);
+      content: none;
+    }
+
+    .report__metric-tooltip:hover,
+    .report__metric-tooltip:focus,
+    .report__legend-chip[data-tooltip]:not([data-tooltip=""]):hover,
+    .report__legend-chip[data-tooltip]:not([data-tooltip=""]):focus {
+      z-index: 10001;
+    }
+
+    .report__tooltip-portal {
+      position: fixed;
+      top: 0;
+      left: 0;
+      z-index: 2147483647;
+      max-width: min(280px, calc(100vw - 24px));
       padding: 8px 10px;
       border: 1px solid var(--line-strong);
       border-radius: 6px;
@@ -432,26 +437,15 @@
       font-size: 0.76rem;
       font-weight: 650;
       line-height: 1.35;
+      opacity: 0;
+      pointer-events: none;
       text-align: left;
-      text-transform: none;
+      transition: opacity 120ms ease;
       white-space: normal;
-      transform: translate(-50%, 4px);
     }
 
-    .report__metric-tooltip:hover::after,
-    .report__metric-tooltip:focus::after,
-    .report__legend-chip[data-tooltip]:not([data-tooltip=""]):hover::after,
-    .report__legend-chip[data-tooltip]:not([data-tooltip=""]):focus::after {
-      display: block;
+    .report__tooltip-portal--visible {
       opacity: 1;
-      transform: translate(-50%, 0);
-    }
-
-    .report__metric-tooltip:hover,
-    .report__metric-tooltip:focus,
-    .report__legend-chip[data-tooltip]:not([data-tooltip=""]):hover,
-    .report__legend-chip[data-tooltip]:not([data-tooltip=""]):focus {
-      z-index: 10001;
     }
 
     .report__metric-tooltip:focus-visible {
@@ -862,7 +856,9 @@
     }
 
     .report__table-wrap {
+      position: relative;
       width: 100%;
+      min-width: 0;
       max-width: 100%;
       overflow-x: auto;
       -webkit-overflow-scrolling: touch;

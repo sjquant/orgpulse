@@ -61,6 +61,18 @@ def test_generates_korean_visual_testing_reports(
         r'class="report__tab-button[^"]*"[^>]*\sdata-tooltip=', person_html
     )
     assert ".report__metric-tooltip::before" not in person_html
+    assert (
+        "grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr));"
+        in person_html
+    )
+    assert "--tooltip-bg: #e8edf7;" in person_html
+    assert "--tooltip-text: #070b12;" in person_html
+    assert "--tooltip-bg: #0f1b2d;" in person_html
+    assert "--tooltip-text: #f8fbff;" in person_html
+    assert "overflow-x: hidden;" in person_html
+    assert "color: var(--bg);" not in person_html
+    assert "@media (max-width: 420px)" in person_html
+    assert ".report__hero-meta {\n        grid-template-columns: 1fr;\n      }" in person_html
     legacy_classes = (
         "tab-button",
         "tab-strip",
@@ -91,6 +103,12 @@ def test_generates_korean_visual_testing_reports(
     assert "<summary>방법론</summary>" not in dashboard_html
     assert "report__metric-tooltip" in dashboard_html
     assert "data-tooltip=" in dashboard_html
+    assert (
+        "grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr));"
+        in dashboard_html
+    )
+    assert "overflow-x: hidden;" in dashboard_html
+    assert "color: var(--bg);" not in dashboard_html
     assert not re.search(
         r'class="report__tab-button[^"]*"[^>]*\sdata-tooltip=', dashboard_html
     )

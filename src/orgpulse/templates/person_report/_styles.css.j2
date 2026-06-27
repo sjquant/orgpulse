@@ -4,15 +4,11 @@
     }
 
     .person-report .report__summary-strip {
-      grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(min(240px, 100%), 1fr));
     }
 
     .person-report .report__section-panel {
       margin-bottom: 16px;
-    }
-
-    .person-report .report__stats-grid {
-      grid-template-columns: repeat(4, minmax(0, 1fr));
     }
 
     .person-report .person-report__repository-focus-grid {
@@ -229,7 +225,6 @@
     }
 
     @media (max-width: 1180px) {
-      .person-report .report__stats-grid,
       .person-report .person-report__repository-focus-grid,
       .person-report .person-report__metric-split,
       .person-report .person-report__chart-toolbar,

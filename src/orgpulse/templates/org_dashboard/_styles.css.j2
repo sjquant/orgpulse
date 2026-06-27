@@ -170,9 +170,14 @@
     }
 
     .org-dashboard__profile-subgrid {
-      display: grid;
-      grid-template-columns: minmax(0, 1.35fr) minmax(0, 0.9fr) minmax(0, 0.75fr);
+      display: flex;
+      flex-direction: column;
       gap: 16px;
+    }
+
+    .org-dashboard__profile-subgrid > * {
+      min-width: 0;
+      max-width: 100%;
     }
 
     .org-dashboard__detail-tabs {
@@ -352,7 +357,6 @@
     }
 
     @media (max-width: 1180px) {
-      .org-dashboard__profile-subgrid,
       .report__support-grid {
         grid-template-columns: 1fr;
       }

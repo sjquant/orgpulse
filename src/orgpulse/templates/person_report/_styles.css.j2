@@ -1,6 +1,6 @@
   <style>
     .person-report .report__hero-panel {
-      margin-bottom: 16px;
+      margin-bottom: 20px;
     }
 
     .person-report .report__summary-strip {
@@ -16,7 +16,7 @@
       z-index: 0;
       display: grid;
       grid-template-columns: repeat(3, minmax(0, 1fr));
-      gap: 12px;
+      gap: 14px;
     }
 
     .person-report #repositories .report__table-wrap {
@@ -36,8 +36,11 @@
       gap: 10px;
       border: 1px solid var(--line);
       border-radius: var(--radius-control);
-      padding: 14px 16px;
-      background: var(--panel-raised);
+      padding: 16px 18px;
+      background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.05), transparent 62%),
+        var(--panel-raised);
+      box-shadow: var(--shadow-tight);
     }
 
     .person-report .person-report__repository-focus-card strong {
@@ -56,7 +59,7 @@
       justify-content: space-between;
       gap: 14px;
       align-items: start;
-      margin-bottom: 12px;
+      margin-bottom: 14px;
     }
 
     .person-report .person-report__table-heading > div {
@@ -75,18 +78,18 @@
     .person-report .person-report__metric-split {
       display: grid;
       grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 16px;
+      gap: 18px;
     }
 
     .person-report .person-report__chart-grid {
       display: grid;
       grid-template-columns: minmax(0, 1fr);
-      gap: 14px;
+      gap: 16px;
     }
 
     .person-report .person-report__chart-panel {
       display: grid;
-      gap: 16px;
+      gap: 18px;
     }
 
     .person-report .person-report__chart-card {
@@ -96,8 +99,11 @@
       min-width: 0;
       border: 1px solid var(--line);
       border-radius: var(--radius-control);
-      padding: 16px;
-      background: var(--panel-raised);
+      padding: 18px;
+      background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.052), transparent 62%),
+        var(--panel-raised);
+      box-shadow: var(--shadow-tight);
     }
 
     .person-report .person-report__chart-card h3 {
@@ -130,7 +136,9 @@
       min-height: 28px;
       border: 1px solid var(--line-strong);
       border-radius: var(--radius-pill);
-      background: var(--panel-raised);
+      background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.045), transparent),
+        var(--panel-raised);
       color: var(--text);
       font: inherit;
       font-size: 0.82rem;

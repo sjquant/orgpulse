@@ -1,18 +1,20 @@
   <style>
     .org-dashboard__author-button {
       border: 1px solid var(--line-strong);
-      background: var(--panel-subtle);
+      background: var(--panel-card);
       color: var(--text);
       border-radius: var(--radius-control);
       padding: 8px 12px;
       font: inherit;
       cursor: pointer;
+      transition: background-color 140ms ease, border-color 140ms ease, transform 140ms ease;
     }
 
     .org-dashboard__author-button:hover,
     .org-dashboard__author-button--active {
       background: var(--active-fill);
       border-color: var(--accent);
+      transform: translateY(-1px);
     }
 
     .org-dashboard__author-button:focus-visible {
@@ -22,7 +24,7 @@
 
     .org-dashboard__detail-shell {
       display: grid;
-      gap: 14px;
+      gap: 16px;
     }
 
     .org-dashboard__people-grid {
@@ -31,7 +33,7 @@
       grid-template-areas:
         "people-controls people-controls"
         "people-ranking profile-detail";
-      gap: 16px;
+      gap: 18px;
       align-items: start;
     }
 
@@ -58,7 +60,7 @@
     .org-dashboard__people-ranking-shell {
       grid-area: people-ranking;
       display: grid;
-      gap: 12px;
+      gap: 14px;
     }
 
     .org-dashboard__person-list {
@@ -73,12 +75,14 @@
       gap: 8px;
       border: 1px solid var(--line);
       border-radius: var(--radius-control);
-      padding: 12px;
-      background: var(--panel-subtle);
+      padding: 14px;
+      background: var(--panel-card);
       color: var(--text);
       font: inherit;
       text-align: left;
       cursor: pointer;
+      box-shadow: var(--shadow-card);
+      transition: background-color 140ms ease, border-color 140ms ease, transform 140ms ease, box-shadow 140ms ease;
     }
 
     .org-dashboard__person-card--reviewer-rank {
@@ -90,12 +94,16 @@
       border-color: var(--line-strong);
       border-left-color: var(--accent);
       background: var(--theme-toggle-hover);
+      box-shadow: var(--shadow-focus);
+      transform: translateY(-1px);
     }
 
     .org-dashboard__person-card--reviewer-rank:hover {
       border-color: var(--line);
       border-left-color: transparent;
-      background: var(--panel-subtle);
+      background: var(--panel-card);
+      box-shadow: var(--shadow-card);
+      transform: none;
     }
 
     .org-dashboard__person-card-header,
@@ -115,6 +123,7 @@
 
     .org-dashboard__person-card strong {
       font-size: 1rem;
+      font-family: var(--font-display);
     }
 
     .org-dashboard__person-card small,
@@ -179,8 +188,9 @@
     .org-dashboard__detail-card {
       border: 1px solid var(--line);
       border-radius: var(--radius-control);
-      padding: 12px;
-      background: var(--panel-subtle);
+      padding: 14px;
+      background: var(--panel-card);
+      box-shadow: var(--shadow-card);
     }
 
     .org-dashboard__detail-card strong {
@@ -193,8 +203,9 @@
     }
 
     .org-dashboard__detail-card span {
-      font-size: 1.1rem;
+      font-size: 1.18rem;
       font-weight: 700;
+      font-family: var(--font-display);
     }
 
     .org-dashboard__state-list {
@@ -263,7 +274,7 @@
       min-width: 220px;
       max-width: 100%;
       border: 1px solid var(--line-strong);
-      background: var(--panel-subtle);
+      background: var(--panel-card);
       color: var(--text);
       border-radius: var(--radius-control);
       padding: 9px 12px;
@@ -290,8 +301,9 @@
     .org-dashboard__disclosure {
       border: 1px solid var(--line);
       border-radius: var(--radius-control);
-      background: var(--panel-subtle);
+      background: var(--panel-card);
       overflow: hidden;
+      box-shadow: var(--shadow-card);
     }
 
     .org-dashboard__disclosure > summary {
@@ -305,6 +317,7 @@
 
     .org-dashboard__disclosure[open] > summary {
       border-bottom-color: var(--line);
+      background: color-mix(in srgb, var(--active-fill) 42%, transparent);
     }
 
     .org-dashboard__disclosure > summary::-webkit-details-marker {

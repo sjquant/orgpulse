@@ -554,9 +554,12 @@
         element.innerHTML = `<div class="report__small-note">${formatCell(t("common.no_view_data"))}</div>`;
         return;
       }
-      const width = 920;
-      const height = 320;
-      const padding = { top: 20, right: 18, bottom: 42, left: 56 };
+      const compactChart = element.getBoundingClientRect().width < 560;
+      const width = compactChart ? 560 : 920;
+      const height = compactChart ? 420 : 320;
+      const padding = compactChart
+        ? { top: 24, right: 18, bottom: 54, left: 54 }
+        : { top: 20, right: 18, bottom: 42, left: 56 };
       const plotWidth = width - padding.left - padding.right;
       const plotHeight = height - padding.top - padding.bottom;
       const metricValues = rows.map((row) => toNumeric(row[metric]));

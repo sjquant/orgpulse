@@ -1,14 +1,10 @@
 [project]
 name = "orgpulse"
 version = "0.1.0"
-description = "GitHub organization metrics snapshots and rollups."
+description = "Pull request metrics for chosen people and groups in a GitHub organization."
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
-  "Jinja2>=3.1,<4",
-  "pydantic>=2.11,<3",
-  "pydantic-settings>=2.11,<3",
-  "PyGithub>=2.6,<3",
   "rich>=15.0,<16",
   "typer>=0.21,<1",
 ]

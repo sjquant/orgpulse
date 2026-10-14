@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>orgpulse</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/app.css">
+</head>
+<body>
+  <main class="page">
+    <header class="masthead">
+      <h1 id="org">orgpulse</h1>
+      <p id="synced" class="muted"></p>
+    </header>
+
+    <form class="controls" id="controls" onsubmit="return false">
+      <div class="controls__row">
+        <select id="scope" aria-label="Scope"></select>
+        <div class="segmented" id="grain" role="group"></div>
+        <div class="segmented" id="stat" role="group"></div>
+        <select id="count" aria-label="Range"></select>
+      </div>
+      <div class="chips" id="people-chips"></div>
+    </form>
+
+    <p id="error" class="error" hidden></p>
+
+    <section class="kpis" id="kpis" aria-live="polite"></section>
+    <section id="trends"></section>
+    <section id="ai" hidden></section>
+    <section id="people"></section>
+    <footer class="muted" id="definitions"></footer>
+  </main>
+  <div class="tooltip" id="tooltip" role="status" hidden></div>
+  <script src="/app.js"></script>
+</body>
+</html>

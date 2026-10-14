@@ -41,12 +41,9 @@ query($owner: String!, $name: String!, $after: String) {
       pageInfo { hasNextPage endCursor }
       nodes {
         number
-        title
-        url
         createdAt
         updatedAt
         mergedAt
-        closedAt
         isDraft
         additions
         deletions
@@ -195,13 +192,9 @@ def _pull_request(repository: str, node: dict[str, Any]) -> PullRequest | None:
     return PullRequest(
         repository=repository,
         number=node["number"],
-        title=node["title"],
-        url=node["url"],
         author=login,
         created_at=created_at,
-        updated_at=_datetime(node["updatedAt"]),
         merged_at=_optional_datetime(node["mergedAt"]),
-        closed_at=_optional_datetime(node["closedAt"]),
         ready_at=ready_at,
         first_commit_at=(
             _datetime(commits["nodes"][0]["commit"]["authoredDate"])

@@ -25,13 +25,9 @@ def merged_pr(
     fields: dict[str, Any] = {
         "repository": "acme/api",
         "number": number,
-        "title": f"PR {number}",
-        "url": f"https://github.com/acme/api/pull/{number}",
         "author": author,
         "created_at": created,
-        "updated_at": merged,
         "merged_at": merged,
-        "closed_at": merged,
         "ready_at": created,
         "first_commit_at": created - timedelta(hours=1),
         "first_review_at": created + timedelta(hours=1),

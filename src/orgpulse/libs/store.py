@@ -13,13 +13,9 @@ SCHEMA = """
 CREATE TABLE IF NOT EXISTS pull_requests (
     repository TEXT NOT NULL,
     number INTEGER NOT NULL,
-    title TEXT NOT NULL,
-    url TEXT NOT NULL,
     author TEXT NOT NULL,
     created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL,
     merged_at TEXT,
-    closed_at TEXT,
     ready_at TEXT,
     first_commit_at TEXT,
     first_review_at TEXT,

@@ -59,12 +59,9 @@ def pr_node(
 ):
     return {
         "number": number,
-        "title": f"PR {number}",
-        "url": f"https://github.com/acme/api/pull/{number}",
         "createdAt": created,
         "updatedAt": updated,
         "mergedAt": merged,
-        "closedAt": merged,
         "isDraft": draft,
         "additions": 5,
         "deletions": 3,

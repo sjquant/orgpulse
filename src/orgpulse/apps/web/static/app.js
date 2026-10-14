@@ -5,29 +5,24 @@ const I18N = {
     never: "Not synced yet — run `orgpulse sync`.",
     synced: (at) => `Synced ${at}`,
     everyone: "Everyone",
-    custom: "Custom",
+    custom: "Selected people",
     group: (name) => `Group: ${name}`,
     grain: { week: "Week", month: "Month" },
     stat: { median: "Median", p90: "p90" },
     last: (n, grain) => `Last ${n} ${grain === "week" ? "weeks" : "months"}`,
     perPeriod: { week: "per week", month: "per month" },
-    kpi: {
-      merged_per_person: (g) => `Merged PRs / person ${g}`,
-      size: "PR size (lines)",
-      commits: "Commits / PR",
-      lead_time: "Open → merge",
-      cycle_time: "First commit → merge",
-      review_wait: "Wait for first review",
-    },
     previous: "prev",
     unreviewed: (p) => `${p}% merged without review`,
+    active: (n) => `${n} active`,
     chart: {
       throughput: "PRs per active person",
       merged: "Merged",
       opened: "Opened",
       size: "PR size (changed lines)",
       commits: "Commits per PR",
-      lead_time: "Open → merge",
+      lead_time: "Time to merge",
+      from_open: "From open",
+      from_first_commit: "From first commit",
       review_wait: "Wait for first review",
     },
     partial: "in progress",
@@ -39,32 +34,24 @@ const I18N = {
       rate: (g) => `/${g === "week" ? "wk" : "mo"}`,
       size: "Size",
       commits: "Commits",
-      lead_time: "Open→merge",
+      lead_time: "To merge",
       review_wait: "Review wait",
     },
     ai: "AI adoption",
     aiNote: (days, n, excluded) =>
-      `${days} days before each person's adoption date vs. the most recent ${days} days. ` +
+      `Medians from the ${days} days before each person's adoption date vs. the most recent ${days} days. ` +
       `${n} people compared` +
       (excluded.length ? `; excluded (no merged PRs in one window): ${excluded.join(", ")}.` : "."),
+    mergedPerWeek: "Merged PRs per person per week",
     before: "Before",
     after: "Recent",
     change: "Change",
     adoptedOn: "Adopted",
-    aiMetrics: {
-      merged_per_person: "Merged PRs / person / week",
-      size_median: "PR size (median lines)",
-      commits_median: "Commits / PR (median)",
-      lead_time_median: "Open → merge (median)",
-      review_wait_median: "Wait for first review (median)",
-    },
     noData: "No pull requests in this range.",
     definitions: [
       ["Active person", "Someone who opened or merged at least one PR in the period. Per-person rates divide by active people."],
-      ["Size", "Added + deleted lines of merged PRs."],
-      ["Open → merge", "Time from PR creation to merge."],
-      ["First commit → merge", "Time from the PR's first authored commit to merge."],
-      ["Wait for first review", "Time from ready-for-review to the first review by someone other than the author. Bots are ignored."],
+      ["Time to merge", "From PR creation, or from the PR's first authored commit, to merge."],
+      ["Wait for first review", "From ready-for-review to the first review by someone other than the author. Bots are ignored."],
       ["Buckets", "Merged-PR metrics use the merge date; opened counts use the creation date. Dashed segments are periods still in progress."],
     ],
   },
@@ -72,29 +59,24 @@ const I18N = {
     never: "아직 동기화하지 않았습니다 — `orgpulse sync`를 실행하세요.",
     synced: (at) => `${at} 동기화`,
     everyone: "전체",
-    custom: "직접 선택",
+    custom: "선택한 사람",
     group: (name) => `그룹: ${name}`,
     grain: { week: "주", month: "월" },
     stat: { median: "중앙값", p90: "p90" },
     last: (n, grain) => `최근 ${n}${grain === "week" ? "주" : "개월"}`,
     perPeriod: { week: "주당", month: "월당" },
-    kpi: {
-      merged_per_person: (g) => `1인 ${g} 머지 PR`,
-      size: "PR 크기 (라인)",
-      commits: "PR당 커밋",
-      lead_time: "오픈 → 머지",
-      cycle_time: "첫 커밋 → 머지",
-      review_wait: "첫 리뷰 대기",
-    },
     previous: "이전",
     unreviewed: (p) => `리뷰 없이 머지 ${p}%`,
+    active: (n) => `활성 ${n}명`,
     chart: {
       throughput: "활성 인원 1인당 PR",
       merged: "머지",
       opened: "오픈",
       size: "PR 크기 (변경 라인)",
       commits: "PR당 커밋",
-      lead_time: "오픈 → 머지",
+      lead_time: "머지까지 걸린 시간",
+      from_open: "오픈부터",
+      from_first_commit: "첫 커밋부터",
       review_wait: "첫 리뷰 대기",
     },
     partial: "진행 중",
@@ -106,31 +88,23 @@ const I18N = {
       rate: (g) => (g === "week" ? "/주" : "/월"),
       size: "크기",
       commits: "커밋",
-      lead_time: "오픈→머지",
+      lead_time: "머지까지",
       review_wait: "리뷰 대기",
     },
     ai: "AI 도입 효과",
     aiNote: (days, n, excluded) =>
-      `사람별 도입일 이전 ${days}일과 최근 ${days}일을 비교합니다. ${n}명 비교` +
+      `사람별 도입일 이전 ${days}일과 최근 ${days}일의 중앙값을 비교합니다. ${n}명 비교` +
       (excluded.length ? `, 제외(한쪽 구간에 머지 PR 없음): ${excluded.join(", ")}.` : "."),
+    mergedPerWeek: "1인 주당 머지 PR",
     before: "도입 전",
     after: "최근",
     change: "변화",
     adoptedOn: "도입일",
-    aiMetrics: {
-      merged_per_person: "1인 주당 머지 PR",
-      size_median: "PR 크기 (중앙값 라인)",
-      commits_median: "PR당 커밋 (중앙값)",
-      lead_time_median: "오픈 → 머지 (중앙값)",
-      review_wait_median: "첫 리뷰 대기 (중앙값)",
-    },
     noData: "이 기간에 PR이 없습니다.",
     definitions: [
       ["활성 인원", "해당 기간에 PR을 하나 이상 열거나 머지한 사람. 1인당 지표는 활성 인원으로 나눕니다."],
-      ["크기", "머지된 PR의 추가 + 삭제 라인 수."],
-      ["오픈 → 머지", "PR 생성부터 머지까지 걸린 시간."],
-      ["첫 커밋 → 머지", "PR의 첫 커밋 작성 시각부터 머지까지 걸린 시간."],
-      ["첫 리뷰 대기", "리뷰 가능 상태가 된 뒤 작성자가 아닌 사람이 처음 리뷰하기까지 걸린 시간. 봇은 제외합니다."],
+      ["머지까지 걸린 시간", "PR 생성 시각 또는 PR의 첫 커밋 작성 시각부터 머지까지."],
+      ["첫 리뷰 대기", "리뷰 가능 상태가 된 뒤 작성자가 아닌 사람이 처음 리뷰하기까지. 봇은 제외합니다."],
       ["집계 기준", "머지 지표는 머지일, 오픈 수는 생성일 기준입니다. 점선 구간은 아직 진행 중인 기간입니다."],
     ],
   },
@@ -262,13 +236,13 @@ function renderControls() {
   scope.replaceChildren(
     h("option", { value: "all" }, t.everyone),
     ...Object.keys(meta.groups).map((name) => h("option", { value: `group:${name}` }, t.group(name))),
-    h("option", { value: "custom" }, t.custom),
+    // "custom" is a state reached by clicking people, shown here only as a label.
+    state.scope === "custom" ? h("option", { value: "custom" }, t.custom) : null,
   );
   scope.value = state.scope;
   scope.onchange = () => {
     const value = scope.value;
     if (value === "all") setScope("all", []);
-    else if (value === "custom") setScope("custom", state.people.size ? state.people : meta.people.slice(0, 1));
     else setScope(value, meta.groups[value.slice(6)]);
   };
 
@@ -281,6 +255,7 @@ function renderControls() {
   segmented($("stat"), t.stat, state.stat, (stat) => {
     state.stat = stat;
     renderControls();
+    history.replaceState(null, "", `?${query()}`);
     render();
   });
 
@@ -305,7 +280,7 @@ function renderControls() {
         {
           type: "button",
           class: "chip",
-          "aria-pressed": String(state.scope === "all" || selected.has(login.toLowerCase())),
+          "aria-pressed": String(selected.has(login.toLowerCase())),
           onclick: () => togglePerson(login),
         },
         login,
@@ -338,7 +313,6 @@ function segmented(container, labels, current, onSelect) {
 // ---- report --------------------------------------------------------------
 
 function render() {
-  renderKpis();
   renderTrends();
   renderAi();
   renderPeople();
@@ -346,36 +320,6 @@ function render() {
 
 function statKey(base) {
   return `${base}_${state.stat}`;
-}
-
-function renderKpis() {
-  const { current, previous } = report.summary;
-  const tiles = [
-    [t.kpi.merged_per_person(t.perPeriod[state.grain]), "merged_per_person", (v) => fmtNumber(v)],
-    [t.kpi.size, statKey("size"), fmtInt],
-    [t.kpi.commits, statKey("commits"), (v) => fmtNumber(v)],
-    [t.kpi.lead_time, statKey("lead_time"), fmtHours],
-    [t.kpi.cycle_time, "cycle_time_median", fmtHours],
-    [t.kpi.review_wait, statKey("review_wait"), fmtHours],
-  ];
-  $("kpis").replaceChildren(
-    ...tiles.map(([label, key, format]) =>
-      h(
-        "div",
-        { class: "kpi" },
-        h("div", { class: "kpi__label" }, label),
-        h("div", { class: "kpi__value" }, format(current[key])),
-        h(
-          "div",
-          { class: "kpi__sub" },
-          `${t.previous} ${format(previous[key])} ${fmtChange(current[key], previous[key])}`,
-        ),
-        key.startsWith("review_wait") && current.unreviewed_share !== null
-          ? h("div", { class: "kpi__sub" }, t.unreviewed(fmtNumber(current.unreviewed_share, 0)))
-          : null,
-      ),
-    ),
-  );
 }
 
 function renderTrends() {
@@ -397,23 +341,48 @@ function renderTrends() {
     },
     { title: t.chart.size, note: stat, format: fmtInt, series: [{ key: statKey("size"), name: stat, color: "var(--series-1)" }] },
     { title: t.chart.commits, note: stat, format: (v) => fmtNumber(v), series: [{ key: statKey("commits"), name: stat, color: "var(--series-1)" }] },
-    { title: t.chart.lead_time, note: stat, format: fmtHours, series: [{ key: statKey("lead_time"), name: stat, color: "var(--series-1)" }] },
-    { title: t.chart.review_wait, note: stat, format: fmtHours, series: [{ key: statKey("review_wait"), name: stat, color: "var(--series-1)" }] },
+    {
+      title: t.chart.lead_time,
+      note: stat,
+      format: fmtHours,
+      series: [
+        { key: statKey("lead_time"), name: t.chart.from_open, color: "var(--series-1)" },
+        { key: statKey("cycle_time"), name: t.chart.from_first_commit, color: "var(--series-2)" },
+      ],
+    },
+    {
+      title: t.chart.review_wait,
+      note: stat,
+      format: fmtHours,
+      series: [{ key: statKey("review_wait"), name: stat, color: "var(--series-1)" }],
+      extra: (summary) =>
+        summary.unreviewed_share === null ? null : t.unreviewed(fmtNumber(summary.unreviewed_share, 0)),
+    },
   ];
   $("trends").replaceChildren(...charts.map((chart) => chartCard(chart, periods)));
 }
 
 function chartCard(chart, periods) {
+  const { current, previous } = report.summary;
+  const keyed = chart.series.length > 1;
+  const extra = chart.extra?.(current);
   const card = h(
     "div",
     { class: "chart" },
+    h("div", { class: "chart__head" }, h("h2", {}, chart.title), h("p", { class: "muted" }, chart.note)),
     h(
       "div",
-      { class: "chart__head" },
-      h("h2", {}, chart.title),
-      chart.series.length > 1
-        ? h("div", { class: "legend" }, ...chart.series.map((s) => h("span", { style: `--key:${s.color}` }, s.name)))
-        : h("p", { class: "muted" }, chart.note),
+      { class: "chart__summary" },
+      ...chart.series.map((s) =>
+        h(
+          "span",
+          { class: keyed ? "summary keyed" : "summary", style: `--key:${s.color}` },
+          keyed ? h("span", { class: "summary__name" }, s.name) : null,
+          h("strong", {}, chart.format(current[s.key])),
+          h("span", { class: "muted" }, `${t.previous} ${chart.format(previous[s.key])} ${fmtChange(current[s.key], previous[s.key])}`),
+        ),
+      ),
+      extra ? h("span", { class: "muted" }, extra) : null,
     ),
   );
   const host = h("div");
@@ -445,7 +414,7 @@ function lineChart(host, chart, periods) {
     }
   });
 
-  const adoptedOn = meta.ai?.adopted_on;
+  const adoptedOn = report.ai?.adopted_on;
   const markerIndex = adoptedOn ? periods.findIndex((p) => p.start <= adoptedOn && adoptedOn <= p.end) : -1;
   if (markerIndex >= 0) {
     root.append(svg("line", { class: "marker", x1: x(markerIndex), x2: x(markerIndex), y1: pad.top, y2: pad.top + plotHeight }));
@@ -516,7 +485,11 @@ function showTooltip(event, period, chart) {
     ...chart.series.map((s) =>
       h("div", { class: "row" }, h("i", { style: `--key:${s.color}` }), h("b", {}, chart.format(period[s.key])), h("span", {}, s.name)),
     ),
-    h("div", { class: "row" }, h("span", {}, `${t.chart.merged} ${period.merged} · ${t.chart.opened} ${period.opened}`)),
+    h(
+      "div",
+      { class: "row" },
+      h("span", {}, `${t.chart.merged} ${period.merged} · ${t.chart.opened} ${period.opened} · ${t.active(period.authors)}`),
+    ),
   );
   tooltip.hidden = false;
   const left = Math.min(event.clientX + 12, window.innerWidth - tooltip.offsetWidth - 8);
@@ -530,37 +503,35 @@ function renderAi() {
   section.hidden = !ai;
   if (!ai) return;
   const rows = [
-    ["merged_per_person", (v) => fmtNumber(v)],
-    ["size_median", fmtInt],
-    ["commits_median", (v) => fmtNumber(v)],
-    ["lead_time_median", fmtHours],
-    ["review_wait_median", fmtHours],
+    [t.mergedPerWeek, "merged_per_person", (v) => fmtNumber(v)],
+    [t.chart.size, "size_median", fmtInt],
+    [t.chart.commits, "commits_median", (v) => fmtNumber(v)],
+    [t.chart.lead_time, "lead_time_median", fmtHours],
+    [t.chart.review_wait, "review_wait_median", fmtHours],
   ];
+  const perPersonDates = ai.people.some((row) => row.adopted_on !== ai.adopted_on);
   section.replaceChildren(
     h("h2", {}, t.ai),
     h("p", { class: "section-note muted" }, t.aiNote(ai.window_days, ai.people.length, ai.excluded)),
     table(
       ["", t.before, t.after, t.change],
-      rows.map(([key, format]) => [
-        t.aiMetrics[key],
-        format(ai.before[key]),
-        format(ai.after[key]),
-        fmtChange(ai.after[key], ai.before[key]),
-      ]),
+      rows.map(([label, key, format]) => [label, format(ai.before[key]), format(ai.after[key]), fmtChange(ai.after[key], ai.before[key])]),
     ),
     ai.people.length
       ? h(
           "div",
           { style: "margin-top:8px" },
           table(
-            [t.columns.login, t.adoptedOn, t.aiMetrics.merged_per_person, t.columns.size, t.columns.lead_time],
-            ai.people.map((row) => [
-              personButton(row.login),
-              row.adopted_on,
-              `${fmtNumber(row.before.merged_per_person)} → ${fmtNumber(row.after.merged_per_person)}`,
-              `${fmtInt(row.before.size_median)} → ${fmtInt(row.after.size_median)}`,
-              `${fmtHours(row.before.lead_time_median)} → ${fmtHours(row.after.lead_time_median)}`,
-            ]),
+            [t.columns.login, perPersonDates ? t.adoptedOn : null, t.columns.rate("week"), t.columns.size, t.columns.lead_time].filter(Boolean),
+            ai.people.map((row) =>
+              [
+                personButton(row.login),
+                perPersonDates ? row.adopted_on : null,
+                `${fmtNumber(row.before.merged_per_person)} → ${fmtNumber(row.after.merged_per_person)}`,
+                `${fmtInt(row.before.size_median)} → ${fmtInt(row.after.size_median)}`,
+                `${fmtHours(row.before.lead_time_median)} → ${fmtHours(row.after.lead_time_median)}`,
+              ].filter((cell) => cell !== null),
+            ),
           ),
         )
       : null,
@@ -568,12 +539,11 @@ function renderAi() {
 }
 
 function renderPeople() {
-  const rate = t.columns.rate(state.grain);
   $("people").replaceChildren(
     h("h2", {}, t.people),
     report.people.length
       ? table(
-          [t.columns.login, t.columns.merged, rate, t.columns.size, t.columns.commits, t.columns.lead_time, t.columns.review_wait],
+          [t.columns.login, t.columns.merged, t.columns.rate(state.grain), t.columns.size, t.columns.commits, t.columns.lead_time, t.columns.review_wait],
           report.people.map((row) => [
             personButton(row.login),
             fmtInt(row.merged),

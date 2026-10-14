@@ -83,18 +83,9 @@ def meta(config: Config) -> dict[str, Any]:
     return {
         "org": config.org,
         "locale": config.locale,
-        "today": _today(config).isoformat(),
         "synced_at": synced_at.isoformat() if synced_at else None,
         "people": authors,
         "groups": {name: list(members) for name, members in config.groups.items()},
-        "ai": (
-            {
-                "adopted_on": config.ai.adopted_on.isoformat(),
-                "window_days": config.ai.window_days,
-            }
-            if config.ai
-            else None
-        ),
     }
 
 

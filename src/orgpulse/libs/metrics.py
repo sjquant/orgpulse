@@ -285,6 +285,7 @@ def _stats(
         "lead_time_median": _percentile(lead_times, 0.5),
         "lead_time_p90": _percentile(lead_times, 0.9),
         "cycle_time_median": _percentile(cycle_times, 0.5),
+        "cycle_time_p90": _percentile(cycle_times, 0.9),
         "review_wait_median": _percentile(review_waits, 0.5),
         "review_wait_p90": _percentile(review_waits, 0.9),
         "unreviewed_share": _ratio(100 * (len(merged) - len(reviewed)), len(merged)),

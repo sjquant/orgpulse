@@ -10,13 +10,9 @@ class PullRequest:
 
     repository: str
     number: int
-    title: str
-    url: str
     author: str
     created_at: datetime
-    updated_at: datetime
     merged_at: datetime | None
-    closed_at: datetime | None
     ready_at: datetime | None
     first_commit_at: datetime | None
     first_review_at: datetime | None

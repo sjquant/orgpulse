@@ -11,20 +11,7 @@ from orgpulse.common.errors import ConfigError
 
 DEFAULT_CONFIG_PATH = Path("orgpulse.toml")
 DEFAULT_SYNC_DAYS = 365
-DEFAULT_AI_WINDOW_DAYS = 90
 LOCALES = ("en", "ko")
-
-
-@dataclass(frozen=True)
-class AiConfig:
-    """When AI tooling was adopted, globally and per person."""
-
-    adopted_on: date
-    window_days: int = DEFAULT_AI_WINDOW_DAYS
-    adopted_on_by_person: dict[str, date] = field(default_factory=dict)
-
-    def adopted_on_for(self, login: str) -> date:
-        return self.adopted_on_by_person.get(login.lower(), self.adopted_on)
 
 
 @dataclass(frozen=True)
@@ -39,7 +26,30 @@ class Config:
     repos: tuple[str, ...] = ()
     exclude_repos: tuple[str, ...] = ()
     groups: dict[str, tuple[str, ...]] = field(default_factory=dict)
-    ai: AiConfig | None = None
+
+    @property
+    def people(self) -> tuple[str, ...] | None:
+        """Everyone in any group, in config order; None when no groups are set."""
+
+        if not self.groups:
+            return None
+        seen: dict[str, str] = {}
+        for members in self.groups.values():
+            for login in members:
+                seen.setdefault(login.lower(), login)
+        return tuple(seen.values())
+
+    def team_of(self, login: str) -> str | None:
+        """The first group listing `login`, matched case-insensitively."""
+
+        return next(
+            (
+                name
+                for name, members in self.groups.items()
+                if login.lower() in (member.lower() for member in members)
+            ),
+            None,
+        )
 
     def includes_repository(self, full_name: str) -> bool:
         name = _repo_name(full_name)
@@ -84,21 +94,6 @@ def _parse_config(raw: dict[str, Any], *, base_dir: Path) -> Config:
         groups={
             name: tuple(str(login) for login in members)
             for name, members in groups.items()
-        },
-        ai=_ai_config(raw["ai"]) if "ai" in raw else None,
-    )
-
-
-def _ai_config(raw: dict[str, Any]) -> AiConfig:
-    window_days = int(raw.get("window_days", DEFAULT_AI_WINDOW_DAYS))
-    if window_days < 7:
-        raise ValueError("`ai.window_days` must be at least 7")
-    return AiConfig(
-        adopted_on=_date(raw["adopted_on"]),
-        window_days=window_days,
-        adopted_on_by_person={
-            login.lower(): _date(value)
-            for login, value in raw.get("people", {}).items()
         },
     )
 

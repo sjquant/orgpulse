@@ -25,15 +25,15 @@ def merged_pr(
     fields: dict[str, Any] = {
         "repository": "acme/api",
         "number": number,
+        "title": f"Change {number}",
+        "url": f"https://github.com/acme/api/pull/{number}",
         "author": author,
         "created_at": created,
         "merged_at": merged,
         "ready_at": created,
-        "first_commit_at": created - timedelta(hours=1),
         "first_review_at": created + timedelta(hours=1),
         "additions": 10,
         "deletions": 0,
-        "commits": 1,
     }
     fields.update(overrides)
     return PullRequest(**fields)

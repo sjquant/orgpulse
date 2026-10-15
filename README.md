@@ -1,13 +1,12 @@
 # orgpulse
 
 Pull request metrics for the people and groups you care about in a GitHub
-organization: how many PRs each person ships, how big they are, how many commits
-they carry, how long they take to merge and to get a first review, and how all
-of that changed after the team adopted AI tooling.
+organization: how many PRs each person merges, how big they are, how long they
+take to merge, and how long they wait for a first review.
 
 `orgpulse sync` pulls pull requests into a local SQLite file. `orgpulse serve`
-runs a local web page where you pick a group or individual people, switch
-between weekly and monthly trends, and compare against the previous range.
+runs a local dashboard where you pick a group or a person, compare the range
+with the one before it, and see how each person compares with their team.
 
 ## Setup
 
@@ -29,17 +28,11 @@ locale = "en"               # report language: "en" or "ko"
 # repos = ["api", "web"]    # only these repositories
 # exclude_repos = ["sandbox"]
 
+# The sidebar lists these groups and their members. A person is compared with
+# the first group that lists them. Without groups, everyone who merged a PR is listed.
 [groups]
 backend = ["alice", "bob"]
 frontend = ["carol", "dave"]
-
-# Optional: compare each person's window before adoption with the latest window.
-[ai]
-adopted_on = 2025-06-01
-window_days = 90
-
-[ai.people]                 # per-person adoption dates override `adopted_on`
-carol = 2025-09-01
 ```
 
 ## Usage
@@ -54,19 +47,20 @@ and bot reviews are ignored. Moving `since` earlier backfills on the next sync.
 
 ## Metrics
 
-All metrics are per period (week or month), never cumulative. Distributions are
-shown as median or p90.
+Four metrics, per week or month, never cumulative. Click a metric to chart it.
 
 | Metric | Definition |
 |---|---|
-| Merged / opened PRs per person | PRs merged (by merge date) or opened (by creation date), divided by people active in the period |
-| PR size | Added + deleted lines of merged PRs |
-| Commits per PR | Commits on merged PRs |
-| Open → merge | PR creation to merge |
-| First commit → merge | First authored commit on the PR to merge |
-| Wait for first review | Ready-for-review to the first review by someone other than the author |
-| Merged without review | Share of merged PRs with no review from someone else |
-| AI adoption | Each person's `window_days` before their adoption date vs. the latest `window_days`; people without merged PRs in both windows are excluded |
+| Merged PRs / person | Merged PRs ÷ people in scope ÷ elapsed periods, by merge date |
+| Time to merge | Median time from opening a PR to merging it |
+| PR size | Median lines added plus deleted per merged PR |
+| First review | Median time from ready-for-review to the first review by someone other than the author |
+
+- A group or everyone: each period is drawn against the same period of the previous
+  range, and the team table shows every member next to the team value.
+- A person: each period is drawn against their team, and their recent PRs are listed.
+- An orange dot marks a person's median above 1.5× the team's, or a PR above the
+  team's 90th percentile. Periods before `since` show no data rather than zeros.
 
 ## Development
 

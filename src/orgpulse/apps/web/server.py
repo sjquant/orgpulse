@@ -11,7 +11,7 @@ from urllib.parse import parse_qs, urlsplit
 
 from orgpulse.common.config import Config
 from orgpulse.common.models import PullRequest
-from orgpulse.libs.metrics import Grain, build_report
+from orgpulse.libs.metrics import Grain, group_report, person_report
 from orgpulse.libs.store import Store
 
 STATIC_DIR = Path(__file__).parent / "static"
@@ -21,10 +21,10 @@ STATIC_FILES = {
     "/app.css": ("app.css", "text/css; charset=utf-8"),
     "/favicon.svg": ("favicon.svg", "image/svg+xml"),
 }
-MAX_PERIODS = 260
+MAX_PERIODS = 52
 
 
-class BadRequest(ValueError):
+class _BadRequest(ValueError):
     """Raised when report query parameters are invalid."""
 
 
@@ -40,11 +40,11 @@ def make_server(config: Config, host: str, port: int) -> ThreadingHTTPServer:
                     HTTPStatus.OK, (STATIC_DIR / filename).read_bytes(), content_type
                 )
             elif url.path == "/api/meta":
-                self._send_json(HTTPStatus.OK, meta(config))
+                self._send_json(HTTPStatus.OK, _meta(config))
             elif url.path == "/api/report":
                 try:
-                    payload = report(config, parse_qs(url.query))
-                except BadRequest as exc:
+                    payload = _report(config, parse_qs(url.query))
+                except _BadRequest as exc:
                     self._send_json(HTTPStatus.BAD_REQUEST, {"error": str(exc)})
                     return
                 self._send_json(HTTPStatus.OK, payload)
@@ -69,65 +69,80 @@ def make_server(config: Config, host: str, port: int) -> ThreadingHTTPServer:
     return ThreadingHTTPServer((host, port), Handler)
 
 
-def meta(config: Config) -> dict[str, Any]:
-    """Describe who and what can be selected in the report UI."""
+def _meta(config: Config) -> dict[str, Any]:
+    """Describe the groups and people the report UI can show."""
 
     with Store(config.database) as store:
         pull_requests = _pull_requests(config, store)
         synced_at = store.last_synced_at()
-    merged_counts = Counter(pr.author for pr in pull_requests if pr.merged_at)
-    authors = sorted(
-        {pr.author for pr in pull_requests},
-        key=lambda login: (-merged_counts[login], login.lower()),
-    )
+    people = config.people
+    if people is None:
+        merged_counts = Counter(pr.author for pr in pull_requests if pr.merged_at)
+        people = tuple(
+            sorted(
+                merged_counts, key=lambda login: (-merged_counts[login], login.lower())
+            )
+        )
     return {
         "org": config.org,
         "locale": config.locale,
         "synced_at": synced_at.isoformat() if synced_at else None,
-        "people": authors,
-        "groups": {name: list(members) for name, members in config.groups.items()},
+        "groups": [
+            {"name": name, "members": list(members)}
+            for name, members in config.groups.items()
+        ],
+        "people": list(people),
     }
 
 
-def report(config: Config, query: dict[str, list[str]]) -> dict[str, Any]:
-    """Build the report for the people, grain, and range named in the query."""
+def _report(config: Config, query: dict[str, list[str]]) -> dict[str, Any]:
+    """Build the group, person, or everyone report named in the query."""
 
-    with Store(config.database) as store:
-        pull_requests = _pull_requests(config, store)
     try:
         grain = Grain(_param(query, "grain", Grain.WEEK.value))
-        count = int(_param(query, "count", "13"))
+        count = int(_param(query, "count", "12"))
         until = date.fromisoformat(_param(query, "until", _today(config).isoformat()))
     except ValueError as exc:
-        raise BadRequest(str(exc)) from exc
+        raise _BadRequest(str(exc)) from exc
     if not 1 <= count <= MAX_PERIODS:
-        raise BadRequest(f"count must be between 1 and {MAX_PERIODS}")
-    return build_report(
-        pull_requests,
-        people=_people(config, query),
-        grain=grain,
-        count=count,
-        until=until,
-        timezone=config.timezone,
-        ai=config.ai,
-    )
+        raise _BadRequest(f"count must be between 1 and {MAX_PERIODS}")
+    group = query.get("group", [None])[0]
+    if group is not None and group not in config.groups:
+        raise _BadRequest(f"unknown group: {group}")
+    window = {
+        "grain": grain,
+        "count": count,
+        "until": until,
+        "since": config.since,
+        "timezone": config.timezone,
+    }
+    with Store(config.database) as store:
+        pull_requests = _pull_requests(config, store)
+    if person := query.get("person", [""])[0]:
+        team = config.team_of(person)
+        return {
+            "scope": {"kind": "person", "name": person, "team": team},
+            **person_report(
+                pull_requests,
+                login=person,
+                team=config.groups[team] if team else config.people,
+                **window,
+            ),
+        }
+    return {
+        "scope": {"kind": "group" if group else "everyone", "name": group},
+        **group_report(
+            pull_requests,
+            people=config.groups[group] if group else config.people,
+            **window,
+        ),
+    }
 
 
 def _pull_requests(config: Config, store: Store) -> list[PullRequest]:
     return [
         pr for pr in store.pull_requests() if config.includes_repository(pr.repository)
     ]
-
-
-def _people(config: Config, query: dict[str, list[str]]) -> list[str] | None:
-    if "group" in query:
-        group = _param(query, "group", "")
-        if group not in config.groups:
-            raise BadRequest(f"unknown group: {group}")
-        return list(config.groups[group])
-    if "people" in query:
-        return [login for login in _param(query, "people", "").split(",") if login]
-    return None
 
 
 def _param(query: dict[str, list[str]], name: str, default: str) -> str:

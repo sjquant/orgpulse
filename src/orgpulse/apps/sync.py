@@ -31,8 +31,9 @@ def sync(
         for repository in iter_repositories(request, config.org):
             if not config.includes_repository(repository.full_name):
                 continue
+            # Repositories arrive most recently pushed first.
             if repository.pushed_at is None or repository.pushed_at < floor:
-                continue
+                break
             synced_at = store.synced_at(repository.full_name, since=config.since)
             updated_since[repository.full_name] = (
                 synced_at - SYNC_OVERLAP if synced_at else floor
@@ -47,7 +48,8 @@ def sync(
                 if pull_request.created_at >= floor
             ]
 
-        with ThreadPoolExecutor(max_workers=FETCH_WORKERS) as executor:
+        executor = ThreadPoolExecutor(max_workers=FETCH_WORKERS)
+        try:
             futures = {executor.submit(fetch, name): name for name in updated_since}
             for future in as_completed(futures):
                 full_name = futures[future]
@@ -57,4 +59,7 @@ def sync(
                 )
                 saved += len(pull_requests)
                 on_repository(full_name, len(pull_requests))
+        finally:
+            # On failure or Ctrl+C, drop queued repositories instead of fetching them.
+            executor.shutdown(cancel_futures=True)
     return saved

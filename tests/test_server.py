@@ -48,7 +48,7 @@ def _get(url):
 
 
 def test_report_for_a_group_only_counts_its_members(base_url):
-    """Requesting a configured group returns metrics for its members only."""
+    """Requesting a configured group returns metrics and rows for its members only."""
 
     # When
     status, body = _get(
@@ -58,30 +58,47 @@ def test_report_for_a_group_only_counts_its_members(base_url):
     # Then
     report = json.loads(body)
     assert status == 200
+    assert report["scope"] == {"kind": "group", "name": "backend"}
     assert report["summary"]["current"]["merged"] == 3
     assert [row["login"] for row in report["people"]] == ["bob", "alice"]
 
 
-def test_meta_lists_people_by_merged_count_and_groups(base_url):
-    """The meta endpoint lists authors with the most merged PRs first, along with
-    configured groups and the report locale."""
+def test_person_report_compares_with_their_group(base_url):
+    """Requesting a person returns their PRs set against the first group listing them."""
+
+    # When
+    _, body = _get(f"{base_url}/api/report?person=bob&count=1&until=2026-06-07")
+
+    # Then
+    report = json.loads(body)
+    assert report["scope"] == {"kind": "person", "name": "bob", "team": "backend"}
+    assert report["summary"]["current"]["merged"] == 2
+    assert report["summary"]["team"]["merged"] == 3
+    assert [pr["number"] for pr in report["recent"]] == [3, 2]
+
+
+def test_meta_lists_grouped_people_and_groups(base_url):
+    """With groups configured, the selectable people are the group members, not
+    every author in the organization."""
 
     # When
     _, body = _get(f"{base_url}/api/meta")
 
     # Then
     meta = json.loads(body)
-    assert meta["people"] == ["bob", "alice", "carol"]
-    assert meta["groups"] == {"backend": ["alice", "bob"]}
-    assert meta["locale"] == "ko"
+    assert meta["people"] == ["alice", "bob"]
+    assert meta["groups"] == [{"name": "backend", "members": ["alice", "bob"]}]
 
 
-def test_invalid_report_query_is_a_bad_request(base_url):
-    """An unknown group or malformed grain is rejected with HTTP 400 and a message."""
+@pytest.mark.parametrize(
+    "query", ["group=frontend", "grain=year", "count=0", "count=53", "until=soon"]
+)
+def test_invalid_report_query_is_a_bad_request(base_url, query):
+    """An unknown group, grain, out-of-range count, or malformed date is rejected
+    with HTTP 400 and a message."""
 
     # When / Then
-    for query in ("group=frontend", "grain=year"):
-        with pytest.raises(urllib.error.HTTPError) as error:
-            _get(f"{base_url}/api/report?{query}")
-        assert error.value.code == 400
-        assert json.loads(error.value.read())["error"]
+    with pytest.raises(urllib.error.HTTPError) as error:
+        _get(f"{base_url}/api/report?{query}")
+    assert error.value.code == 400
+    assert json.loads(error.value.read())["error"]

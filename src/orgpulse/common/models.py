@@ -10,15 +10,15 @@ class PullRequest:
 
     repository: str
     number: int
+    title: str
+    url: str
     author: str
     created_at: datetime
     merged_at: datetime | None
     ready_at: datetime | None
-    first_commit_at: datetime | None
     first_review_at: datetime | None
     additions: int
     deletions: int
-    commits: int
 
     @property
     def changed_lines(self) -> int:

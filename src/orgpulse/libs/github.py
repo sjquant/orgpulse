@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import http.client
 import json
 import os
 import subprocess
@@ -41,6 +42,8 @@ query($owner: String!, $name: String!, $after: String) {
       pageInfo { hasNextPage endCursor }
       nodes {
         number
+        title
+        url
         createdAt
         updatedAt
         mergedAt
@@ -48,7 +51,6 @@ query($owner: String!, $name: String!, $after: String) {
         additions
         deletions
         author { __typename login }
-        commits(first: 1) { totalCount nodes { commit { authoredDate } } }
         reviews(first: 30) { nodes { submittedAt author { __typename login } } }
         timelineItems(first: 1, itemTypes: [READY_FOR_REVIEW_EVENT]) {
           nodes { ... on ReadyForReviewEvent { createdAt } }
@@ -109,9 +111,10 @@ def graphql_requester(token: str) -> GraphQLRequest:
                     raise GitHubError(
                         f"GitHub returned HTTP {exc.code}: {detail}"
                     ) from exc
-            except urllib.error.URLError as exc:
+            # Timeouts, dropped connections, and truncated JSON are all worth a retry.
+            except (OSError, http.client.HTTPException, ValueError) as exc:
                 if attempt == MAX_ATTEMPTS:
-                    raise GitHubError(f"GitHub request failed: {exc.reason}") from exc
+                    raise GitHubError(f"GitHub request failed: {exc}") from exc
             time.sleep(RETRY_BACKOFF_SECONDS * attempt)
         if payload.get("errors"):
             messages = "; ".join(
@@ -180,7 +183,6 @@ def _pull_request(repository: str, node: dict[str, Any]) -> PullRequest | None:
         ready_at = (
             _datetime(ready_events[0]["createdAt"]) if ready_events else created_at
         )
-    commits = node["commits"]
     review_times = [
         _datetime(review["submittedAt"])
         for review in node["reviews"]["nodes"]
@@ -192,19 +194,15 @@ def _pull_request(repository: str, node: dict[str, Any]) -> PullRequest | None:
     return PullRequest(
         repository=repository,
         number=node["number"],
+        title=node["title"],
+        url=node["url"],
         author=login,
         created_at=created_at,
         merged_at=_optional_datetime(node["mergedAt"]),
         ready_at=ready_at,
-        first_commit_at=(
-            _datetime(commits["nodes"][0]["commit"]["authoredDate"])
-            if commits["nodes"]
-            else None
-        ),
         first_review_at=min(review_times, default=None),
         additions=node["additions"],
         deletions=node["deletions"],
-        commits=commits["totalCount"],
     )
 
 

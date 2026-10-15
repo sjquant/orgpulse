@@ -59,17 +59,15 @@ def pr_node(
 ):
     return {
         "number": number,
+        "title": f"Change {number}",
+        "url": f"https://github.com/acme/api/pull/{number}",
         "createdAt": created,
         "updatedAt": updated,
         "mergedAt": merged,
         "isDraft": draft,
         "additions": 5,
         "deletions": 3,
-        "author": {"__typename": author_type, "login": author},
-        "commits": {
-            "totalCount": 2,
-            "nodes": [{"commit": {"authoredDate": "2026-05-31T00:00:00Z"}}],
-        },
+        "author": {"__typename": author_type, "login": author} if author else None,
         "reviews": {
             "nodes": [
                 {"submittedAt": at, "author": {"__typename": kind, "login": login}}
@@ -103,8 +101,8 @@ def _recent(minutes_ago=0):
 
 def test_sync_stores_human_pull_requests_with_review_timing(tmp_path):
     """Sync skips bot PRs, PRs created before `since`, excluded repos, and repos not
-    pushed since `since`; first review ignores self and bot reviews, and ready time
-    follows draft state."""
+    pushed since `since`; first review ignores self and bot reviews, ready time
+    follows draft state, and a deleted author is stored as "ghost"."""
 
     # Given
     config = _config(tmp_path)
@@ -129,6 +127,7 @@ def test_sync_stores_human_pull_requests_with_review_timing(tmp_path):
                     pr_node(2, author="dependabot", author_type="Bot"),
                     pr_node(3, draft=True),
                     pr_node(4, ready="2026-06-01T03:00:00Z"),
+                    pr_node(6, author=None),
                 ],
                 [
                     pr_node(
@@ -146,19 +145,20 @@ def test_sync_stores_human_pull_requests_with_review_timing(tmp_path):
 
     # Then
     stored = _stored(config)
-    assert saved == 3
-    assert sorted(stored) == [1, 3, 4]
+    assert saved == 4
+    assert sorted(stored) == [1, 3, 4, 6]
     assert stored[1].first_review_at == utc("2026-06-01T05:00:00")
     assert stored[1].changed_lines == 8
-    assert stored[1].commits == 2
+    assert stored[1].title == "Change 1"
+    assert stored[6].author == "ghost"
     assert stored[3].ready_at is None
     assert stored[4].ready_at == utc("2026-06-01T03:00:00")
     assert {name for name, _ in github.calls} == {"acme/api"}
 
 
 def test_resync_stops_at_previously_synced_updates(tmp_path):
-    """A second sync reads pull requests newest-update first and stops once it
-    reaches updates older than the previous sync, keeping earlier rows."""
+    """A second sync reads pull requests newest-update first, rereads updates from
+    shortly before the previous sync, and stops at older updates, keeping earlier rows."""
 
     # Given: a first sync stored PR 1
     config = _config(tmp_path)
@@ -170,6 +170,7 @@ def test_resync_stops_at_previously_synced_updates(tmp_path):
             "acme/api": [
                 [
                     pr_node(2, updated=_recent()),
+                    pr_node(3, updated=_recent(minutes_ago=5)),
                     pr_node(1, updated=_recent(minutes_ago=60)),
                 ],
                 [pr_node(9)],
@@ -182,7 +183,7 @@ def test_resync_stops_at_previously_synced_updates(tmp_path):
 
     # Then
     assert github.calls == [("acme/api", 0)]
-    assert sorted(_stored(config)) == [1, 2]
+    assert sorted(_stored(config)) == [1, 2, 3]
 
 
 def test_moving_since_earlier_refetches_full_history(tmp_path):

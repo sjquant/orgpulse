@@ -6,31 +6,41 @@
   <title>orgpulse</title>
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/app.css">
+  <script>
+    try {
+      const theme = localStorage.getItem("orgpulse-theme");
+      if (theme) document.documentElement.dataset.theme = theme;
+    } catch {}
+  </script>
 </head>
 <body>
-  <main class="page">
-    <header class="masthead">
-      <h1 id="org">orgpulse</h1>
-      <p id="synced" class="muted"></p>
-    </header>
-
-    <form class="controls" id="controls" onsubmit="return false">
-      <div class="controls__row">
-        <select id="scope" aria-label="Scope"></select>
-        <div class="segmented" id="grain" role="group"></div>
-        <div class="segmented" id="stat" role="group"></div>
-        <select id="count" aria-label="Range"></select>
+  <div class="app" id="app">
+    <nav class="card sidebar" aria-label="Scope">
+      <div class="brand">
+        <strong>orgpulse</strong>
+        <span id="org" class="muted"></span>
       </div>
-    </form>
-    <div class="chips" id="people-chips" role="group" aria-label="People"></div>
+      <div id="nav"></div>
+      <p id="synced" class="synced muted"></p>
+    </nav>
 
-    <p id="error" class="error" hidden></p>
+    <main class="card main">
+      <header class="head">
+        <div class="head__title" id="title"></div>
+        <div class="head__controls">
+          <select id="count" aria-label="Range"></select>
+          <div class="segmented" id="grain" role="group"></div>
+          <button type="button" class="icon-button" id="theme" aria-label="Toggle theme"></button>
+        </div>
+      </header>
+      <p id="error" class="error" hidden></p>
+      <div class="kpis" id="kpis"></div>
+      <section class="card inner chart" id="chart"></section>
+      <section class="card inner" id="detail"></section>
+    </main>
 
-    <section id="trends" aria-live="polite"></section>
-    <section id="ai" hidden></section>
-    <section id="people"></section>
-    <footer class="muted" id="definitions"></footer>
-  </main>
+    <aside class="card panel" id="panel" hidden></aside>
+  </div>
   <div class="tooltip" id="tooltip" role="status" hidden></div>
   <script src="/app.js"></script>
 </body>

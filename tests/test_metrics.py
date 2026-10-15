@@ -1,144 +1,155 @@
-from datetime import date, timezone
+from dataclasses import replace
+from datetime import date, timedelta, timezone
+from typing import Any
+from zoneinfo import ZoneInfo
 
-from orgpulse.common.config import AiConfig
-from orgpulse.libs.metrics import Grain, build_report
+from orgpulse.libs.metrics import Grain, group_report, person_report
 from tests.factories import merged_pr
 
 
-def _report(pull_requests, **overrides):
-    options = {
-        "people": None,
+def test_group_throughput_is_per_person_per_elapsed_period():
+    """Weekly throughput divides merged PRs by the group's size and by how much of
+    each week has elapsed, buckets by local merge date, and lines each week up with
+    the matching week of the previous range."""
+
+    # Given: a Wednesday report date in Seoul, so the last week is 3/7 elapsed
+    pull_requests = [
+        merged_pr("alice", "2026-06-01T12:00:00", number=1),
+        # Sunday 16:00 UTC is Monday 01:00 in Seoul.
+        merged_pr("bob", "2026-06-07T16:00:00", number=2),
+        merged_pr("alice", "2026-06-09T03:00:00", number=3),
+        merged_pr("carol", "2026-06-02T12:00:00", number=4),
+        merged_pr("alice", "2026-05-27T12:00:00", number=5),
+    ]
+
+    # When
+    report = group_report(
+        pull_requests,
+        **_window(
+            people=["alice", "bob"],
+            until=date(2026, 6, 10),
+            timezone=ZoneInfo("Asia/Seoul"),
+        ),
+    )
+
+    # Then
+    periods = report["periods"]
+    assert [p["start"] for p in periods] == ["2026-06-01", "2026-06-08"]
+    assert [p["partial"] for p in periods] == [False, True]
+    assert [p["current"]["merged_per_person"] for p in periods] == [0.5, 2.33]
+    assert [p["previous"]["merged"] for p in periods] == [0, 1]
+    assert report["summary"]["current"]["merged_per_person"] == 1.05
+    assert report["summary"]["previous"]["merged_per_person"] == 0.25
+    assert [(row["login"], row["merged_per_person"]) for row in report["people"]] == [
+        ("alice", 1.4),
+        ("bob", 0.7),
+    ]
+
+
+def test_months_before_since_have_no_data():
+    """Months that end before `since` report no data instead of zeros, and the
+    previous-range comparison is withheld when it reaches before `since`."""
+
+    # Given
+    pull_requests = [
+        merged_pr("alice", "2026-02-10T12:00:00", number=1),
+        merged_pr("alice", "2026-03-05T12:00:00", number=2),
+    ]
+
+    # When
+    report = group_report(
+        pull_requests,
+        **_window(
+            people=["alice"],
+            grain=Grain.MONTH,
+            count=3,
+            until=date(2026, 3, 15),
+            since=date(2026, 2, 1),
+        ),
+    )
+
+    # Then
+    periods = report["periods"]
+    assert [p["start"] for p in periods] == ["2026-01-01", "2026-02-01", "2026-03-01"]
+    assert periods[0]["current"] is None
+    assert [p["current"]["merged"] for p in periods[1:]] == [1, 1]
+    assert report["summary"]["current"]["merged_per_person"] == 1.35
+    assert report["summary"]["previous"] is None
+
+
+def test_medians_skip_unmerged_prs_and_measure_review_wait_from_ready():
+    """Size and time to merge are medians over merged PRs; review wait starts when
+    a PR became ready for review and skips PRs merged without a review."""
+
+    # Given
+    reviewed = merged_pr("alice", "2026-06-10T12:00:00", number=1, hours_open=1)
+    readied_late = merged_pr(
+        "alice", "2026-06-10T12:00:00", number=2, hours_open=3, additions=30
+    )
+    readied_late = replace(
+        readied_late,
+        ready_at=readied_late.created_at + timedelta(hours=2),
+        first_review_at=readied_late.created_at + timedelta(hours=2.5),
+    )
+    unreviewed = merged_pr(
+        "alice",
+        "2026-06-10T12:00:00",
+        number=3,
+        hours_open=5,
+        additions=50,
+        first_review_at=None,
+    )
+    still_open = replace(reviewed, number=4, merged_at=None)
+
+    # When
+    current = group_report(
+        [reviewed, readied_late, unreviewed, still_open], **_window(people=None)
+    )["summary"]["current"]
+
+    # Then
+    assert current["merged"] == 3
+    assert (current["size"], current["lead_time"]) == (30, 3)
+    assert current["review_wait"] == 0.75
+
+
+def test_person_is_compared_with_their_team():
+    """A person's view carries their team's values, lists their newest PRs first,
+    and flags PRs past the team's 90th percentile; the group view flags a person
+    whose median is over 1.5x the team's."""
+
+    # Given: bob's newest PR is ten times the team's usual size
+    pull_requests = [
+        *(
+            merged_pr("alice", f"2026-06-0{day}T12:00:00", number=day)
+            for day in (2, 3, 4, 5)
+        ),
+        merged_pr("bob", "2026-06-08T12:00:00", number=10),
+        merged_pr("bob", "2026-06-09T12:00:00", number=11, additions=100),
+    ]
+
+    # When
+    person = person_report(pull_requests, **_window(login="Bob", team=["alice", "bob"]))
+    group = group_report(pull_requests, **_window(people=["alice", "bob"]))
+
+    # Then
+    assert person["summary"]["current"]["size"] == 55
+    assert person["summary"]["team"]["size"] == 10
+    assert [(pr["number"], pr["flags"]) for pr in person["recent"]] == [
+        (11, ["size"]),
+        (10, []),
+    ]
+    assert {row["login"]: row["flags"] for row in group["people"]} == {
+        "alice": [],
+        "bob": ["size"],
+    }
+
+
+def _window(**overrides: Any) -> dict[str, Any]:
+    return {
         "grain": Grain.WEEK,
         "count": 2,
         "until": date(2026, 6, 14),
+        "since": date(2026, 1, 1),
         "timezone": timezone.utc,
-        "ai": None,
+        **overrides,
     }
-    options.update(overrides)
-    return build_report(pull_requests, **options)
-
-
-def test_weekly_throughput_is_per_active_person():
-    """Weekly rows bucket merged PRs by merge week and divide by the people active
-    that week; the summary compares the range with the same-length range before it."""
-
-    # Given
-    pull_requests = [
-        merged_pr("alice", "2026-06-02T12:00:00", number=1),
-        merged_pr("alice", "2026-06-02T13:00:00", number=2),
-        merged_pr("bob", "2026-06-03T12:00:00", number=3),
-        merged_pr("alice", "2026-06-09T12:00:00", number=4),
-        merged_pr("carol", "2026-05-20T12:00:00", number=5),
-    ]
-
-    # When
-    report = _report(pull_requests)
-
-    # Then
-    assert [p["key"] for p in report["periods"]] == ["2026-W23", "2026-W24"]
-    assert [
-        (p["merged"], p["authors"], p["merged_per_person"]) for p in report["periods"]
-    ] == [
-        (3, 2, 1.5),
-        (1, 1, 1.0),
-    ]
-    assert report["summary"]["current"]["merged_per_person"] == 1.33
-    assert report["summary"]["previous"]["merged"] == 1
-    assert [
-        (row["login"], row["merged"], row["merged_per_person"])
-        for row in report["people"]
-    ] == [
-        ("alice", 3, 1.5),
-        ("bob", 1, 0.5),
-    ]
-
-
-def test_selected_people_match_case_insensitively_and_idle_people_are_listed():
-    """Selecting people limits every metric to their PRs, matches logins
-    case-insensitively, and still lists a selected person with no PRs."""
-
-    # Given
-    pull_requests = [
-        merged_pr("Alice", "2026-06-02T12:00:00", number=1),
-        merged_pr("bob", "2026-06-03T12:00:00", number=2),
-    ]
-
-    # When
-    report = _report(pull_requests, people=["alice", "dave"])
-
-    # Then
-    assert report["summary"]["current"]["merged"] == 1
-    assert [(row["login"], row["merged"]) for row in report["people"]] == [
-        ("Alice", 1),
-        ("dave", 0),
-    ]
-
-
-def test_size_time_and_review_distributions():
-    """Size, lead time, cycle time, and review wait are reported as median and p90,
-    and PRs merged without a review are counted as an unreviewed share."""
-
-    # Given
-    pull_requests = [
-        merged_pr("alice", "2026-06-10T12:00:00", number=1, hours_open=1, additions=10),
-        merged_pr("alice", "2026-06-10T12:00:00", number=2, hours_open=2, additions=20),
-        merged_pr("alice", "2026-06-10T12:00:00", number=3, hours_open=3, additions=30),
-        merged_pr("alice", "2026-06-10T12:00:00", number=4, hours_open=4, additions=40),
-        merged_pr(
-            "alice",
-            "2026-06-10T12:00:00",
-            number=5,
-            hours_open=10,
-            additions=100,
-            first_review_at=None,
-        ),
-    ]
-
-    # When
-    current = _report(pull_requests)["summary"]["current"]
-
-    # Then
-    assert (current["size_median"], current["size_p90"]) == (30, 76)
-    assert (current["lead_time_median"], current["lead_time_p90"]) == (3, 7.6)
-    assert current["cycle_time_median"] == 4
-    assert current["review_wait_median"] == 1
-    assert current["unreviewed_share"] == 20
-
-
-def test_ai_comparison_uses_each_persons_adoption_date():
-    """Each person's window before their adoption date is compared with the most
-    recent window, and people missing PRs in either window are excluded."""
-
-    # Given
-    ai = AiConfig(
-        adopted_on=date(2026, 3, 1),
-        window_days=28,
-        adopted_on_by_person={"bob": date(2026, 4, 1)},
-    )
-    pull_requests = [
-        merged_pr("alice", "2026-02-10T12:00:00", number=1),
-        merged_pr("alice", "2026-02-11T12:00:00", number=2),
-        merged_pr("bob", "2026-03-10T12:00:00", number=3),
-        merged_pr("bob", "2026-03-11T12:00:00", number=4),
-        *(
-            merged_pr("alice", f"2026-06-0{day}T12:00:00", number=10 + day)
-            for day in range(1, 5)
-        ),
-        *(
-            merged_pr("bob", f"2026-06-0{day}T12:00:00", number=20 + day)
-            for day in range(1, 5)
-        ),
-        merged_pr("carol", "2026-06-05T12:00:00", number=30),
-    ]
-
-    # When
-    comparison = _report(pull_requests, ai=ai)["ai"]
-
-    # Then
-    assert comparison["before"]["merged_per_person"] == 0.5
-    assert comparison["after"]["merged_per_person"] == 1.0
-    assert [(row["login"], row["adopted_on"]) for row in comparison["people"]] == [
-        ("alice", "2026-03-01"),
-        ("bob", "2026-04-01"),
-    ]
-    assert comparison["excluded"] == ["carol"]

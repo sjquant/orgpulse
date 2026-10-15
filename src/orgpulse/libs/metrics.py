@@ -1,17 +1,22 @@
 from __future__ import annotations
 
 import math
-from collections import defaultdict
-from collections.abc import Collection
+from bisect import bisect_left, bisect_right
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, tzinfo
 from enum import StrEnum
 from typing import Any
 
-from orgpulse.common.config import AiConfig
 from orgpulse.common.models import PullRequest
 
 DAYS_PER_WEEK = 7
+PANEL_RECENT_LIMIT = 3
+PERSON_RECENT_LIMIT = 10
+# A person's median, or a single PR, this far past the team is flagged.
+OUTLIER_FACTOR = 1.5
+# Metrics where a higher value is worse; throughput is never flagged.
+FLAGGED_METRICS = ("size", "lead_time", "review_wait")
 
 
 class Grain(StrEnum):
@@ -23,16 +28,14 @@ class Grain(StrEnum):
             return day - timedelta(days=day.weekday())
         return day.replace(day=1)
 
-    def key(self, start: date) -> str:
+    def next_start(self, start: date) -> date:
         if self is Grain.WEEK:
-            year, week, _ = start.isocalendar()
-            return f"{year}-W{week:02d}"
-        return start.strftime("%Y-%m")
+            return start + timedelta(days=DAYS_PER_WEEK)
+        return (start.replace(day=28) + timedelta(days=4)).replace(day=1)
 
 
 @dataclass(frozen=True)
-class Period:
-    key: str
+class _Period:
     start: date
     end: date
     # Elapsed share of the period as of the report date; 1.0 once it has ended.
@@ -40,265 +43,288 @@ class Period:
 
 
 @dataclass(frozen=True)
-class _Dated:
+class _Merged:
     pull_request: PullRequest
     login: str
-    created_on: date
-    merged_on: date | None
+    merged_on: date
+    size: int
+    lead_time: float
+    review_wait: float | None
 
 
-def build_report(
+class _Items:
+    """Merged PRs sorted by local merge date for fast range lookups."""
+
+    def __init__(self, items: list[_Merged]) -> None:
+        self.items = sorted(items, key=lambda item: item.merged_on)
+        self._days = [item.merged_on for item in self.items]
+
+    def between(self, start: date, end: date) -> list[_Merged]:
+        return self.items[
+            bisect_left(self._days, start) : bisect_right(self._days, end)
+        ]
+
+
+def group_report(
     pull_requests: list[PullRequest],
     *,
-    people: Collection[str] | None,
+    people: Sequence[str] | None,
     grain: Grain,
     count: int,
     until: date,
+    since: date,
     timezone: tzinfo,
-    ai: AiConfig | None,
 ) -> dict[str, Any]:
-    """Compute per-period trends, range summaries, per-person rows, and AI impact.
+    """Trend, previous-range comparison, and per-person rows for a set of people.
 
-    `people=None` selects every author. Merged-PR metrics are bucketed by merge
-    date and opened counts by creation date, both in `timezone`.
+    `people=None` means everyone who merged a PR in the range.
     """
 
-    wanted = {login.lower() for login in people} if people is not None else None
-    selected = [
-        _Dated(
-            pull_request=pull_request,
-            login=pull_request.author.lower(),
-            created_on=_local_date(pull_request.created_at, timezone),
-            merged_on=(
-                _local_date(pull_request.merged_at, timezone)
-                if pull_request.merged_at
-                else None
-            ),
-        )
-        for pull_request in pull_requests
-        if wanted is None or pull_request.author.lower() in wanted
-    ]
+    merged = _merged(pull_requests, timezone)
     periods = _periods(grain, count, until)
     previous = _periods(grain, count, periods[0].start - timedelta(days=1))
+    logins = _logins(people, merged, periods)
+    team = _Items([item for item in merged if item.login in logins])
+    headcount = len(logins)
+    current = _summary(team, periods, headcount, since)
+    thresholds = _p90s(team.between(periods[0].start, periods[-1].end))
+    rows = []
+    for login, name in logins.items():
+        own = _Items([item for item in team.items if item.login == login])
+        stats = _summary(own, periods, 1, since)
+        rows.append(
+            {
+                "login": name,
+                **(stats or _empty()),
+                "flags": _flags(stats, current, OUTLIER_FACTOR),
+                "recent": _recent(own, periods, thresholds, PANEL_RECENT_LIMIT),
+            }
+        )
+    rows.sort(key=lambda row: (-row["merged"], row["login"].lower()))
+    return {
+        "headcount": headcount,
+        "periods": [
+            {
+                **_period_json(period),
+                "current": _summary(team, [period], headcount, since),
+                "previous": _summary(team, [earlier], headcount, since),
+            }
+            for period, earlier in zip(periods, previous, strict=True)
+        ],
+        "summary": {
+            "current": current,
+            "previous": _comparable(team, previous, headcount, since),
+        },
+        "people": rows,
+    }
+
+
+def person_report(
+    pull_requests: list[PullRequest],
+    *,
+    login: str,
+    team: Sequence[str] | None,
+    grain: Grain,
+    count: int,
+    until: date,
+    since: date,
+    timezone: tzinfo,
+) -> dict[str, Any]:
+    """One person's trend and recent PRs, each set against their team."""
+
+    merged = _merged(pull_requests, timezone)
+    periods = _periods(grain, count, until)
+    previous = _periods(grain, count, periods[0].start - timedelta(days=1))
+    team_logins = _logins(team, merged, periods)
+    team_items = _Items([item for item in merged if item.login in team_logins])
+    own = _Items([item for item in merged if item.login == login.lower()])
+    team_size = len(team_logins)
+    thresholds = _p90s(team_items.between(periods[0].start, periods[-1].end))
     return {
         "periods": [
             {
-                "key": period.key,
-                "start": period.start.isoformat(),
-                "end": period.end.isoformat(),
-                "partial": period.coverage < 1,
-                **_range_stats(selected, [period]),
+                **_period_json(period),
+                "current": _summary(own, [period], 1, since),
+                "team": _summary(team_items, [period], team_size, since),
             }
             for period in periods
         ],
         "summary": {
-            "current": _range_stats(selected, periods),
-            "previous": _range_stats(selected, previous),
+            "current": _summary(own, periods, 1, since),
+            "previous": _comparable(own, previous, 1, since),
+            "team": _summary(team_items, periods, team_size, since),
         },
-        "people": _people_rows(selected, periods, people),
-        "ai": _ai_comparison(selected, ai, until) if ai is not None else None,
+        "recent": _recent(own, periods, thresholds, PERSON_RECENT_LIMIT),
     }
 
 
-def _local_date(value: datetime, timezone: tzinfo) -> date:
-    return value.astimezone(timezone).date()
+def _merged(pull_requests: list[PullRequest], timezone: tzinfo) -> list[_Merged]:
+    items = []
+    for pr in pull_requests:
+        if pr.merged_at is None:
+            continue
+        items.append(
+            _Merged(
+                pull_request=pr,
+                login=pr.author.lower(),
+                merged_on=pr.merged_at.astimezone(timezone).date(),
+                size=pr.changed_lines,
+                lead_time=_hours(pr.created_at, pr.merged_at),
+                review_wait=(
+                    _hours(pr.ready_at, pr.first_review_at)
+                    if pr.ready_at and pr.first_review_at
+                    else None
+                ),
+            )
+        )
+    return items
 
 
-def _periods(grain: Grain, count: int, until: date) -> list[Period]:
+def _periods(grain: Grain, count: int, until: date) -> list[_Period]:
     starts = [grain.start_of(until)]
     while len(starts) < count:
         starts.append(grain.start_of(starts[-1] - timedelta(days=1)))
     periods = []
     for start in reversed(starts):
-        end = _next_start(grain, start) - timedelta(days=1)
+        end = grain.next_start(start) - timedelta(days=1)
         length = (end - start).days + 1
         elapsed = (min(until, end) - start).days + 1
-        periods.append(
-            Period(
-                key=grain.key(start), start=start, end=end, coverage=elapsed / length
-            )
-        )
+        periods.append(_Period(start=start, end=end, coverage=elapsed / length))
     return periods
 
 
-def _next_start(grain: Grain, start: date) -> date:
-    if grain is Grain.WEEK:
-        return start + timedelta(days=DAYS_PER_WEEK)
-    return (start.replace(day=28) + timedelta(days=4)).replace(day=1)
+def _logins(
+    people: Sequence[str] | None, merged: list[_Merged], periods: list[_Period]
+) -> dict[str, str]:
+    """Map lowercased logins in scope to their display spelling."""
 
-
-def _range_stats(selected: list[_Dated], periods: list[Period]) -> dict[str, Any]:
-    merged: list[PullRequest] = []
-    opened = 0
-    authors: set[str] = set()
-    person_periods = 0.0
-    for period in periods:
-        period_merged = [
-            item
-            for item in selected
-            if _within(item.merged_on, period.start, period.end)
-        ]
-        period_opened = [
-            item
-            for item in selected
-            if _within(item.created_on, period.start, period.end)
-        ]
-        period_authors = {item.login for item in period_merged + period_opened}
-        merged.extend(item.pull_request for item in period_merged)
-        opened += len(period_opened)
-        authors |= period_authors
-        person_periods += len(period_authors) * period.coverage
-    return _stats(
-        merged, opened=opened, authors=len(authors), person_periods=person_periods
-    )
-
-
-def _people_rows(
-    selected: list[_Dated],
-    periods: list[Period],
-    people: Collection[str] | None,
-) -> list[dict[str, Any]]:
+    if people is not None:
+        return {login.lower(): login for login in people}
     start, end = periods[0].start, periods[-1].end
-    elapsed_periods = sum(period.coverage for period in periods)
-    by_login: dict[str, list[_Dated]] = defaultdict(list)
-    names: dict[str, str] = {login.lower(): login for login in people or ()}
-    for item in selected:
-        by_login[item.login].append(item)
-        names[item.login] = item.pull_request.author
+    return {
+        item.login: item.pull_request.author
+        for item in merged
+        if start <= item.merged_on <= end
+    }
+
+
+def _summary(
+    items: _Items, periods: list[_Period], headcount: int, since: date
+) -> dict[str, Any] | None:
+    """Throughput and medians over the periods synced data covers; None if none."""
+
+    covered = [period for period in periods if period.end >= since]
+    if not covered:
+        return None
+    merged = [
+        item for period in covered for item in items.between(period.start, period.end)
+    ]
+    person_periods = headcount * sum(period.coverage for period in covered)
+    return {
+        "merged": len(merged),
+        "merged_per_person": (
+            round(len(merged) / person_periods, 2) if person_periods else None
+        ),
+        "size": _percentile([item.size for item in merged], 0.5),
+        "lead_time": _percentile([item.lead_time for item in merged], 0.5),
+        "review_wait": _percentile(_review_waits(merged), 0.5),
+    }
+
+
+def _comparable(
+    items: _Items, periods: list[_Period], headcount: int, since: date
+) -> dict[str, Any] | None:
+    # A range reaching before `since` would compare against unsynced history.
+    if periods[0].start < since:
+        return None
+    return _summary(items, periods, headcount, since)
+
+
+def _empty() -> dict[str, Any]:
+    return {
+        "merged": 0,
+        "merged_per_person": None,
+        "size": None,
+        "lead_time": None,
+        "review_wait": None,
+    }
+
+
+def _flags(
+    stats: dict[str, Any] | None, baseline: dict[str, Any] | None, factor: float
+) -> list[str]:
+    if stats is None or baseline is None:
+        return []
+    return [
+        metric
+        for metric in FLAGGED_METRICS
+        if baseline[metric] and _exceeds(stats[metric], baseline[metric] * factor)
+    ]
+
+
+def _p90s(items: list[_Merged]) -> dict[str, float | None]:
+    return {
+        "size": _percentile([item.size for item in items], 0.9),
+        "lead_time": _percentile([item.lead_time for item in items], 0.9),
+        "review_wait": _percentile(_review_waits(items), 0.9),
+    }
+
+
+def _recent(
+    items: _Items,
+    periods: list[_Period],
+    thresholds: dict[str, float | None],
+    limit: int,
+) -> list[dict[str, Any]]:
+    """The latest merged PRs, flagging values past the team's 90th percentile."""
+
+    latest = items.between(periods[0].start, periods[-1].end)[::-1][:limit]
     rows = []
-    for login, name in names.items():
-        items = by_login.get(login, [])
-        merged = [
-            item.pull_request for item in items if _within(item.merged_on, start, end)
-        ]
-        opened = sum(_within(item.created_on, start, end) for item in items)
-        if people is None and not merged and not opened:
-            continue
+    for item in latest:
+        pr = item.pull_request
+        values = {
+            "size": item.size,
+            "lead_time": round(item.lead_time, 2),
+            "review_wait": (
+                round(item.review_wait, 2) if item.review_wait is not None else None
+            ),
+        }
         rows.append(
             {
-                "login": name,
-                **_stats(
-                    merged, opened=opened, authors=1, person_periods=elapsed_periods
-                ),
+                "title": pr.title,
+                "url": pr.url,
+                "repository": pr.repository,
+                "number": pr.number,
+                "merged_on": item.merged_on.isoformat(),
+                **values,
+                "flags": [
+                    metric
+                    for metric in FLAGGED_METRICS
+                    if _exceeds(values[metric], thresholds[metric])
+                ],
             }
         )
-    return sorted(rows, key=lambda row: (-row["merged"], row["login"].lower()))
+    return rows
 
 
-def _ai_comparison(
-    selected: list[_Dated],
-    ai: AiConfig,
-    until: date,
-) -> dict[str, Any]:
-    """Compare each person's window before adoption with their most recent window.
+def _exceeds(value: float | None, limit: float | None) -> bool:
+    return value is not None and limit is not None and value > limit
 
-    People without merged PRs in both windows are excluded, so joiners and
-    leavers do not skew the comparison.
-    """
 
-    window = timedelta(days=ai.window_days)
-    by_login: dict[str, list[_Dated]] = defaultdict(list)
-    for item in selected:
-        by_login[item.login].append(item)
-    pooled: dict[str, list[Any]] = {"before": [], "after": []}
-    weeks = {"before": 0.0, "after": 0.0}
-    rows = []
-    excluded = []
-    for login, items in sorted(by_login.items()):
-        name = items[0].pull_request.author
-        adopted_on = ai.adopted_on_for(login)
-        after_start = max(adopted_on, until - window + timedelta(days=1))
-        windows = {
-            "before": (adopted_on - window, adopted_on - timedelta(days=1)),
-            "after": (after_start, until),
-        }
-        merged = {
-            side: [item for item in items if _within(item.merged_on, *bounds)]
-            for side, bounds in windows.items()
-        }
-        if after_start > until or not merged["before"] or not merged["after"]:
-            excluded.append(name)
-            continue
-        row: dict[str, Any] = {"login": name, "adopted_on": adopted_on.isoformat()}
-        for side, (start, end) in windows.items():
-            side_weeks = ((end - start).days + 1) / DAYS_PER_WEEK
-            opened = [item for item in items if _within(item.created_on, start, end)]
-            row[side] = _stats(
-                [item.pull_request for item in merged[side]],
-                opened=len(opened),
-                authors=1,
-                person_periods=side_weeks,
-            )
-            pooled[side].append((merged[side], opened))
-            weeks[side] += side_weeks
-        rows.append(row)
+def _period_json(period: _Period) -> dict[str, Any]:
     return {
-        "adopted_on": ai.adopted_on.isoformat(),
-        "window_days": ai.window_days,
-        "people": rows,
-        "excluded": excluded,
-        **{
-            side: _stats(
-                [item.pull_request for merged, _ in pooled[side] for item in merged],
-                opened=sum(len(opened) for _, opened in pooled[side]),
-                authors=len(rows),
-                person_periods=weeks[side],
-            )
-            for side in ("before", "after")
-        },
+        "start": period.start.isoformat(),
+        "end": period.end.isoformat(),
+        "partial": period.coverage < 1,
     }
 
 
-def _within(day: date | None, start: date, end: date) -> bool:
-    return day is not None and start <= day <= end
+def _review_waits(items: list[_Merged]) -> list[float]:
+    return [item.review_wait for item in items if item.review_wait is not None]
 
 
-def _stats(
-    merged: list[PullRequest],
-    *,
-    opened: int,
-    authors: int,
-    person_periods: float,
-) -> dict[str, Any]:
-    """Summarize merged pull requests; durations are in hours."""
-
-    sizes = [pull_request.changed_lines for pull_request in merged]
-    commits = [pull_request.commits for pull_request in merged]
-    lead_times = [_hours(pr.created_at, pr.merged_at) for pr in merged]
-    cycle_times = [
-        _hours(pr.first_commit_at, pr.merged_at) for pr in merged if pr.first_commit_at
-    ]
-    reviewed = [pr for pr in merged if pr.first_review_at is not None]
-    review_waits = [
-        _hours(pr.ready_at or pr.created_at, pr.first_review_at) for pr in reviewed
-    ]
-    return {
-        "authors": authors,
-        "merged": len(merged),
-        "opened": opened,
-        "merged_per_person": _ratio(len(merged), person_periods) or 0.0,
-        "opened_per_person": _ratio(opened, person_periods) or 0.0,
-        "size_median": _percentile(sizes, 0.5),
-        "size_p90": _percentile(sizes, 0.9),
-        "commits_median": _percentile(commits, 0.5),
-        "commits_p90": _percentile(commits, 0.9),
-        "lead_time_median": _percentile(lead_times, 0.5),
-        "lead_time_p90": _percentile(lead_times, 0.9),
-        "cycle_time_median": _percentile(cycle_times, 0.5),
-        "cycle_time_p90": _percentile(cycle_times, 0.9),
-        "review_wait_median": _percentile(review_waits, 0.5),
-        "review_wait_p90": _percentile(review_waits, 0.9),
-        "unreviewed_share": _ratio(100 * (len(merged) - len(reviewed)), len(merged)),
-    }
-
-
-def _hours(start: datetime | None, end: datetime | None) -> float:
-    assert start is not None and end is not None
+def _hours(start: datetime, end: datetime) -> float:
     return max(0.0, (end - start).total_seconds() / 3600)
-
-
-def _ratio(numerator: float, denominator: float) -> float | None:
-    return round(numerator / denominator, 2) if denominator else None
 
 
 def _percentile(values: list[float] | list[int], quantile: float) -> float | None:

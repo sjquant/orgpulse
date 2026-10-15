@@ -1,11 +1,6 @@
 .venv/
 __pycache__/
 .pytest_cache/
-.coverage
 *.pyc
-!tests/output/
-!tests/output/**
-**/__pycache__/
-**/*.pyc
 *.db
 orgpulse.toml

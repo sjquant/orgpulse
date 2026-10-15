@@ -47,7 +47,6 @@ query($owner: String!, $name: String!, $after: String) {
         createdAt
         updatedAt
         mergedAt
-        isDraft
         additions
         deletions
         author { __typename login }
@@ -129,20 +128,16 @@ def graphql_requester(token: str) -> GraphQLRequest:
 def iter_repositories(request: GraphQLRequest, org: str) -> Iterator[Repository]:
     """Yield every repository in the organization, most recently pushed first."""
 
-    after = None
-    while True:
-        data = request(REPOSITORIES_QUERY, {"org": org, "after": after})
+    def connection(data: dict[str, Any]) -> dict[str, Any]:
         if data["organization"] is None:
             raise GitHubError(f"Organization '{org}' is not accessible.")
-        connection = data["organization"]["repositories"]
-        for node in connection["nodes"]:
-            yield Repository(
-                full_name=node["nameWithOwner"],
-                pushed_at=_optional_datetime(node["pushedAt"]),
-            )
-        if not connection["pageInfo"]["hasNextPage"]:
-            return
-        after = connection["pageInfo"]["endCursor"]
+        return data["organization"]["repositories"]
+
+    for node in _nodes(request, REPOSITORIES_QUERY, {"org": org}, connection):
+        yield Repository(
+            full_name=node["nameWithOwner"],
+            pushed_at=_optional_datetime(node["pushedAt"]),
+        )
 
 
 def iter_pull_requests(
@@ -151,40 +146,50 @@ def iter_pull_requests(
     *,
     updated_since: datetime,
 ) -> Iterator[PullRequest]:
-    """Yield human-authored pull requests updated at or after `updated_since`."""
+    """Yield merged, human-authored pull requests updated at or after `updated_since`."""
 
     owner, name = repository.split("/", 1)
+    for node in _nodes(
+        request,
+        PULL_REQUESTS_QUERY,
+        {"owner": owner, "name": name},
+        lambda data: data["repository"]["pullRequests"],
+    ):
+        if datetime.fromisoformat(node["updatedAt"]) < updated_since:
+            return
+        pull_request = _pull_request(repository, node)
+        if pull_request is not None:
+            yield pull_request
+
+
+def _nodes(
+    request: GraphQLRequest,
+    query: str,
+    variables: dict[str, Any],
+    connection: Callable[[dict[str, Any]], dict[str, Any]],
+) -> Iterator[dict[str, Any]]:
+    """Yield the nodes of a paginated connection, fetching pages as needed."""
+
     after = None
     while True:
-        data = request(
-            PULL_REQUESTS_QUERY, {"owner": owner, "name": name, "after": after}
-        )
-        connection = data["repository"]["pullRequests"]
-        for node in connection["nodes"]:
-            if _datetime(node["updatedAt"]) < updated_since:
-                return
-            pull_request = _pull_request(repository, node)
-            if pull_request is not None:
-                yield pull_request
-        if not connection["pageInfo"]["hasNextPage"]:
+        page = connection(request(query, {**variables, "after": after}))
+        yield from page["nodes"]
+        if not page["pageInfo"]["hasNextPage"]:
             return
-        after = connection["pageInfo"]["endCursor"]
+        after = page["pageInfo"]["endCursor"]
 
 
 def _pull_request(repository: str, node: dict[str, Any]) -> PullRequest | None:
     author = node["author"]
-    if author is not None and author["__typename"] == "Bot":
+    if node["mergedAt"] is None or (
+        author is not None and author["__typename"] == "Bot"
+    ):
         return None
     login = author["login"] if author is not None else "ghost"
-    created_at = _datetime(node["createdAt"])
+    created_at = datetime.fromisoformat(node["createdAt"])
     ready_events = node["timelineItems"]["nodes"]
-    ready_at = None
-    if not node["isDraft"]:
-        ready_at = (
-            _datetime(ready_events[0]["createdAt"]) if ready_events else created_at
-        )
     review_times = [
-        _datetime(review["submittedAt"])
+        datetime.fromisoformat(review["submittedAt"])
         for review in node["reviews"]["nodes"]
         if review["submittedAt"] is not None
         and review["author"] is not None
@@ -198,17 +203,17 @@ def _pull_request(repository: str, node: dict[str, Any]) -> PullRequest | None:
         url=node["url"],
         author=login,
         created_at=created_at,
-        merged_at=_optional_datetime(node["mergedAt"]),
-        ready_at=ready_at,
+        ready_at=(
+            datetime.fromisoformat(ready_events[0]["createdAt"])
+            if ready_events
+            else created_at
+        ),
         first_review_at=min(review_times, default=None),
+        merged_at=datetime.fromisoformat(node["mergedAt"]),
         additions=node["additions"],
         deletions=node["deletions"],
     )
 
 
 def _optional_datetime(value: str | None) -> datetime | None:
-    return _datetime(value) if value else None
-
-
-def _datetime(value: str) -> datetime:
-    return datetime.fromisoformat(value)
+    return datetime.fromisoformat(value) if value else None

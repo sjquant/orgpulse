@@ -17,9 +17,9 @@ CREATE TABLE IF NOT EXISTS pull_requests (
     url TEXT NOT NULL,
     author TEXT NOT NULL,
     created_at TEXT NOT NULL,
-    merged_at TEXT,
-    ready_at TEXT,
+    ready_at TEXT NOT NULL,
     first_review_at TEXT,
+    merged_at TEXT NOT NULL,
     additions INTEGER NOT NULL,
     deletions INTEGER NOT NULL,
     PRIMARY KEY (repository, number)
@@ -89,6 +89,14 @@ class Store:
                 "INSERT OR REPLACE INTO repositories VALUES (?, ?, ?)",
                 (full_name, since.isoformat(), synced_at.isoformat()),
             )
+
+    def merged_counts(self) -> list[tuple[str, str, int]]:
+        """Merged PR counts per (author, repository)."""
+
+        return self._connection.execute(
+            "SELECT author, repository, COUNT(*) FROM pull_requests "
+            "GROUP BY author, repository"
+        ).fetchall()
 
     def pull_requests(self) -> list[PullRequest]:
         rows = self._connection.execute(

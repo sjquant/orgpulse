@@ -4,10 +4,7 @@ version = "0.1.0"
 description = "Pull request metrics for chosen people and groups in a GitHub organization."
 readme = "README.md"
 requires-python = ">=3.11"
-dependencies = [
-  "rich>=15.0,<16",
-  "typer>=0.21,<1",
-]
+dependencies = []
 
 [project.scripts]
 orgpulse = "orgpulse.cli:main"
@@ -15,9 +12,6 @@ orgpulse = "orgpulse.cli:main"
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
-
-[tool.uv]
-package = true
 
 [tool.ruff]
 target-version = "py311"
@@ -36,7 +30,6 @@ include = ["src", "tests"]
 [dependency-groups]
 dev = [
   "pytest>=9.0,<10",
-  "pytest-cov>=7.0,<8",
   "ruff>=0.15.11",
   "ty>=0.0.31",
 ]

@@ -27,10 +27,14 @@ class Config:
     exclude_repos: tuple[str, ...] = ()
     groups: dict[str, tuple[str, ...]] = field(default_factory=dict)
 
-    @property
-    def people(self) -> tuple[str, ...] | None:
-        """Everyone in any group, in config order; None when no groups are set."""
+    def members(self, group: str | None) -> tuple[str, ...] | None:
+        """A group's members, or everyone in any group when `group` is None.
 
+        None means no groups are configured, so everyone with merged PRs counts.
+        """
+
+        if group is not None:
+            return self.groups[group]
         if not self.groups:
             return None
         seen: dict[str, str] = {}

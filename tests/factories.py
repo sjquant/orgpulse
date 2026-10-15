@@ -1,13 +1,29 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from dataclasses import replace
+from datetime import date, datetime, timedelta, timezone
+from pathlib import Path
 from typing import Any
 
+from orgpulse.common.config import Config
 from orgpulse.common.models import PullRequest
 
 
 def utc(value: str) -> datetime:
     return datetime.fromisoformat(value).replace(tzinfo=timezone.utc)
+
+
+def make_config(tmp_path: Path, **overrides: Any) -> Config:
+    """A UTC config syncing from 2026-01-01 into a database under `tmp_path`."""
+
+    base = Config(
+        org="acme",
+        database=tmp_path / "orgpulse.db",
+        since=date(2026, 1, 1),
+        timezone=timezone.utc,
+        locale="en",
+    )
+    return replace(base, **overrides)
 
 
 def merged_pr(

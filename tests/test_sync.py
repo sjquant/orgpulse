@@ -1,10 +1,8 @@
-from dataclasses import replace
 from datetime import date, datetime, timedelta, timezone
 
 from orgpulse.apps.sync import sync
-from orgpulse.common.config import Config
 from orgpulse.libs.store import Store
-from tests.factories import utc
+from tests.factories import make_config, utc
 
 
 class FakeGitHub:
@@ -52,8 +50,7 @@ def pr_node(
     author_type="User",
     created="2026-06-01T00:00:00Z",
     updated="2026-06-02T00:00:00Z",
-    merged=None,
-    draft=False,
+    merged="2026-06-02T00:00:00Z",
     ready=None,
     reviews=(),
 ):
@@ -64,7 +61,6 @@ def pr_node(
         "createdAt": created,
         "updatedAt": updated,
         "mergedAt": merged,
-        "isDraft": draft,
         "additions": 5,
         "deletions": 3,
         "author": {"__typename": author_type, "login": author} if author else None,
@@ -78,18 +74,6 @@ def pr_node(
     }
 
 
-def _config(tmp_path, **overrides):
-    config = Config(
-        org="acme",
-        database=tmp_path / "orgpulse.db",
-        since=date(2026, 1, 1),
-        timezone=timezone.utc,
-        locale="en",
-        exclude_repos=("legacy",),
-    )
-    return replace(config, **overrides)
-
-
 def _stored(config):
     with Store(config.database) as store:
         return {pr.number: pr for pr in store.pull_requests()}
@@ -100,12 +84,12 @@ def _recent(minutes_ago=0):
 
 
 def test_sync_stores_human_pull_requests_with_review_timing(tmp_path):
-    """Sync skips bot PRs, PRs created before `since`, excluded repos, and repos not
-    pushed since `since`; first review ignores self and bot reviews, ready time
-    follows draft state, and a deleted author is stored as "ghost"."""
+    """Sync keeps merged human PRs created since `since` in included, recently pushed
+    repos; first review ignores self and bot reviews, ready time follows the
+    ready-for-review event, and a deleted author is stored as "ghost"."""
 
     # Given
-    config = _config(tmp_path)
+    config = make_config(tmp_path, exclude_repos=("legacy",))
     github = FakeGitHub(
         repositories=[
             ("acme/api", "2026-06-02T00:00:00Z"),
@@ -117,7 +101,6 @@ def test_sync_stores_human_pull_requests_with_review_timing(tmp_path):
                 [
                     pr_node(
                         1,
-                        merged="2026-06-02T00:00:00Z",
                         reviews=[
                             ("alice", "User", "2026-06-01T01:00:00Z"),
                             ("copilot", "Bot", "2026-06-01T02:00:00Z"),
@@ -125,7 +108,7 @@ def test_sync_stores_human_pull_requests_with_review_timing(tmp_path):
                         ],
                     ),
                     pr_node(2, author="dependabot", author_type="Bot"),
-                    pr_node(3, draft=True),
+                    pr_node(3, merged=None),
                     pr_node(4, ready="2026-06-01T03:00:00Z"),
                     pr_node(6, author=None),
                 ],
@@ -145,13 +128,11 @@ def test_sync_stores_human_pull_requests_with_review_timing(tmp_path):
 
     # Then
     stored = _stored(config)
-    assert saved == 4
-    assert sorted(stored) == [1, 3, 4, 6]
+    assert saved == 3
+    assert sorted(stored) == [1, 4, 6]
     assert stored[1].first_review_at == utc("2026-06-01T05:00:00")
-    assert stored[1].changed_lines == 8
     assert stored[1].title == "Change 1"
     assert stored[6].author == "ghost"
-    assert stored[3].ready_at is None
     assert stored[4].ready_at == utc("2026-06-01T03:00:00")
     assert {name for name, _ in github.calls} == {"acme/api"}
 
@@ -161,7 +142,7 @@ def test_resync_stops_at_previously_synced_updates(tmp_path):
     shortly before the previous sync, and stops at older updates, keeping earlier rows."""
 
     # Given: a first sync stored PR 1
-    config = _config(tmp_path)
+    config = make_config(tmp_path)
     repositories = [("acme/api", _recent())]
     sync(config, FakeGitHub(repositories, {"acme/api": [[pr_node(1)]]}))
     github = FakeGitHub(
@@ -191,14 +172,14 @@ def test_moving_since_earlier_refetches_full_history(tmp_path):
     point so older pull requests are backfilled."""
 
     # Given: a first sync covered history from 2026-01-01
-    config = _config(tmp_path)
+    config = make_config(tmp_path)
     repositories = [("acme/api", _recent())]
     sync(config, FakeGitHub(repositories, {"acme/api": [[pr_node(1)]]}))
     older = pr_node(7, created="2025-06-01T00:00:00Z", updated="2025-06-02T00:00:00Z")
 
     # When
     sync(
-        _config(tmp_path, since=date(2025, 1, 1)),
+        make_config(tmp_path, since=date(2025, 1, 1)),
         FakeGitHub(repositories, {"acme/api": [[pr_node(1)], [older]]}),
     )
 

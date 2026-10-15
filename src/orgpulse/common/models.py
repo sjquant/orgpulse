@@ -6,7 +6,7 @@ from datetime import datetime
 
 @dataclass(frozen=True)
 class PullRequest:
-    """One pull request with the timestamps and size every metric reads."""
+    """One merged pull request with the timestamps and size every metric reads."""
 
     repository: str
     number: int
@@ -14,9 +14,9 @@ class PullRequest:
     url: str
     author: str
     created_at: datetime
-    merged_at: datetime | None
-    ready_at: datetime | None
+    ready_at: datetime
     first_review_at: datetime | None
+    merged_at: datetime
     additions: int
     deletions: int
 

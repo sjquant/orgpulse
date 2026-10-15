@@ -21,7 +21,7 @@ def sync(
     *,
     on_repository: Callable[[str, int], None] = lambda full_name, count: None,
 ) -> int:
-    """Fetch pull requests changed since the last sync and return how many were saved."""
+    """Fetch merged pull requests changed since the last sync; return how many were saved."""
 
     started_at = datetime.now(timezone.utc)
     floor = datetime.combine(config.since, time.min, config.timezone)

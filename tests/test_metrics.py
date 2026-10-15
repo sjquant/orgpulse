@@ -37,9 +37,9 @@ def test_group_throughput_is_per_person_per_elapsed_period():
     assert [p["start"] for p in periods] == ["2026-06-01", "2026-06-08"]
     assert [p["partial"] for p in periods] == [False, True]
     assert [p["current"]["merged_per_person"] for p in periods] == [0.5, 2.33]
-    assert [p["previous"]["merged"] for p in periods] == [0, 1]
+    assert [p["compare"]["merged"] for p in periods] == [0, 1]
     assert report["summary"]["current"]["merged_per_person"] == 1.05
-    assert report["summary"]["previous"]["merged_per_person"] == 0.25
+    assert report["summary"]["compare"]["merged_per_person"] == 0.25
     assert [(row["login"], row["merged_per_person"]) for row in report["people"]] == [
         ("alice", 1.4),
         ("bob", 0.7),
@@ -74,10 +74,10 @@ def test_months_before_since_have_no_data():
     assert periods[0]["current"] is None
     assert [p["current"]["merged"] for p in periods[1:]] == [1, 1]
     assert report["summary"]["current"]["merged_per_person"] == 1.35
-    assert report["summary"]["previous"] is None
+    assert report["summary"]["compare"] is None
 
 
-def test_medians_skip_unmerged_prs_and_measure_review_wait_from_ready():
+def test_review_wait_starts_when_ready_and_skips_unreviewed_prs():
     """Size and time to merge are medians over merged PRs; review wait starts when
     a PR became ready for review and skips PRs merged without a review."""
 
@@ -99,11 +99,10 @@ def test_medians_skip_unmerged_prs_and_measure_review_wait_from_ready():
         additions=50,
         first_review_at=None,
     )
-    still_open = replace(reviewed, number=4, merged_at=None)
 
     # When
     current = group_report(
-        [reviewed, readied_late, unreviewed, still_open], **_window(people=None)
+        [reviewed, readied_late, unreviewed], **_window(people=None)
     )["summary"]["current"]
 
     # Then
@@ -133,7 +132,7 @@ def test_person_is_compared_with_their_team():
 
     # Then
     assert person["summary"]["current"]["size"] == 55
-    assert person["summary"]["team"]["size"] == 10
+    assert person["summary"]["compare"]["size"] == 10
     assert [(pr["number"], pr["flags"]) for pr in person["recent"]] == [
         (11, ["size"]),
         (10, []),

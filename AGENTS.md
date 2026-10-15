@@ -1,6 +1,6 @@
 # orgpulse
 
-`orgpulse` syncs GitHub organization pull requests into a local SQLite database and serves a local web report of per-person and per-group PR metrics.
+`orgpulse` syncs merged GitHub organization pull requests into a local SQLite database and serves a local web report of per-person and per-group PR metrics.
 
 ## Structure
 

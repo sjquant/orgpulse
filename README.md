@@ -38,12 +38,13 @@ frontend = ["carol", "dave"]
 ## Usage
 
 ```bash
-uv run orgpulse sync             # first run fetches history since `since`; later runs fetch only changes
-uv run orgpulse serve --open     # http://127.0.0.1:8765
+uv run orgpulse sync     # first run fetches history since `since`; later runs fetch only changes
+uv run orgpulse serve    # http://127.0.0.1:8765 (--port to change)
 ```
 
-Both commands take `--config <path>` (or `ORGPULSE_CONFIG`). Bot-authored PRs
-and bot reviews are ignored. Moving `since` earlier backfills on the next sync.
+Pass `--config <path>` before the command to use another config file. Only merged
+PRs are stored; bot-authored PRs and bot reviews are ignored. Moving `since` earlier
+backfills on the next sync.
 
 ## Metrics
 

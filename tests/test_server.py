@@ -2,26 +2,18 @@ import json
 import threading
 import urllib.error
 import urllib.request
-from datetime import date, datetime, timezone
+from datetime import datetime, timezone
 
 import pytest
 
 from orgpulse.apps.web.server import make_server
-from orgpulse.common.config import Config
 from orgpulse.libs.store import Store
-from tests.factories import merged_pr
+from tests.factories import make_config, merged_pr
 
 
 @pytest.fixture
 def base_url(tmp_path):
-    config = Config(
-        org="acme",
-        database=tmp_path / "orgpulse.db",
-        since=date(2026, 1, 1),
-        timezone=timezone.utc,
-        locale="ko",
-        groups={"backend": ("alice", "bob")},
-    )
+    config = make_config(tmp_path, groups={"backend": ("alice", "bob")})
     with Store(config.database) as store:
         store.save(
             "acme/api",
@@ -73,7 +65,7 @@ def test_person_report_compares_with_their_group(base_url):
     report = json.loads(body)
     assert report["scope"] == {"kind": "person", "name": "bob", "team": "backend"}
     assert report["summary"]["current"]["merged"] == 2
-    assert report["summary"]["team"]["merged"] == 3
+    assert report["summary"]["compare"]["merged"] == 3
     assert [pr["number"] for pr in report["recent"]] == [3, 2]
 
 
@@ -87,15 +79,13 @@ def test_meta_lists_grouped_people_and_groups(base_url):
     # Then
     meta = json.loads(body)
     assert meta["people"] == ["alice", "bob"]
-    assert meta["groups"] == [{"name": "backend", "members": ["alice", "bob"]}]
+    assert meta["groups"] == ["backend"]
 
 
-@pytest.mark.parametrize(
-    "query", ["group=frontend", "grain=year", "count=0", "count=53", "until=soon"]
-)
+@pytest.mark.parametrize("query", ["group=frontend", "grain=year", "count=53"])
 def test_invalid_report_query_is_a_bad_request(base_url, query):
-    """An unknown group, grain, out-of-range count, or malformed date is rejected
-    with HTTP 400 and a message."""
+    """An unknown group, unknown grain, or out-of-range count is rejected with
+    HTTP 400 and a message."""
 
     # When / Then
     with pytest.raises(urllib.error.HTTPError) as error:

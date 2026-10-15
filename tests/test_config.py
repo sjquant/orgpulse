@@ -30,7 +30,8 @@ platform = ["Bob", "carol"]
     assert config.database == tmp_path / "orgpulse.db"
     assert not config.includes_repository("acme/legacy")
     assert config.includes_repository("acme/api")
-    assert config.people == ("alice", "bob", "carol")
+    assert config.members(None) == ("alice", "bob", "carol")
+    assert config.members("platform") == ("Bob", "carol")
     assert config.team_of("BOB") == "backend"
     assert config.team_of("dave") is None
 

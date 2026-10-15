@@ -6,12 +6,6 @@
   <title>orgpulse</title>
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/app.css">
-  <script>
-    try {
-      const theme = localStorage.getItem("orgpulse-theme");
-      if (theme) document.documentElement.dataset.theme = theme;
-    } catch {}
-  </script>
 </head>
 <body>
   <div class="app" id="app">
@@ -30,7 +24,6 @@
         <div class="head__controls">
           <select id="count" aria-label="Range"></select>
           <div class="segmented" id="grain" role="group"></div>
-          <button type="button" class="icon-button" id="theme" aria-label="Toggle theme"></button>
         </div>
       </header>
       <p id="error" class="error" hidden></p>

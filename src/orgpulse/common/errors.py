@@ -1,18 +1,10 @@
 class OrgpulseError(RuntimeError):
-    """Base error for orgpulse-specific failures."""
+    """Base error for user-facing orgpulse failures."""
 
 
-class AuthResolutionError(OrgpulseError):
-    """Raised when GitHub credentials cannot be resolved or authenticated."""
+class ConfigError(OrgpulseError):
+    """Raised when the orgpulse config file is missing or invalid."""
 
 
-class GitHubApiError(OrgpulseError):
-    """Raised when GitHub returns a non-auth API failure."""
-
-
-class OrgTargetingError(OrgpulseError):
-    """Raised when the target organization is invalid or inaccessible."""
-
-
-class AnalysisInputError(OrgpulseError):
-    """Raised when local analysis inputs are missing or incompatible."""
+class GitHubError(OrgpulseError):
+    """Raised when GitHub credentials or API calls fail."""

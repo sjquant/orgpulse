@@ -1,86 +1,125 @@
 from __future__ import annotations
 
-from datetime import date
-from functools import cache
+import tomllib
+from dataclasses import dataclass, field
+from datetime import date, datetime, timedelta, tzinfo
 from pathlib import Path
+from typing import Any
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from pydantic import AliasChoices, Field, SecretStr
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from orgpulse.common.errors import ConfigError
 
-from orgpulse.common.models import (
-    OrgSlug,
-    PeriodGrain,
-    ReportLocale,
-    RunConfig,
-    RunMode,
-    TimeAnchor,
-)
+DEFAULT_CONFIG_PATH = Path("orgpulse.toml")
+DEFAULT_SYNC_DAYS = 365
+LOCALES = ("en", "ko")
 
 
-class AppSettings(BaseSettings):
-    """Represent environment-backed defaults for orgpulse commands."""
+@dataclass(frozen=True)
+class Config:
+    """Settings loaded from orgpulse.toml."""
 
-    model_config = SettingsConfigDict(
-        env_prefix="ORGPULSE_",
-        extra="ignore",
-        frozen=True,
+    org: str
+    database: Path
+    since: date
+    timezone: tzinfo
+    locale: str
+    repos: tuple[str, ...] = ()
+    exclude_repos: tuple[str, ...] = ()
+    groups: dict[str, tuple[str, ...]] = field(default_factory=dict)
+
+    def members(self, group: str | None) -> tuple[str, ...] | None:
+        """A group's members, or everyone in any group when `group` is None.
+
+        None means no groups are configured, so everyone with merged PRs counts.
+        """
+
+        if group is not None:
+            return self.groups[group]
+        if not self.groups:
+            return None
+        seen: dict[str, str] = {}
+        for members in self.groups.values():
+            for login in members:
+                seen.setdefault(login.lower(), login)
+        return tuple(seen.values())
+
+    def team_of(self, login: str) -> str | None:
+        """The first group listing `login`, matched case-insensitively."""
+
+        return next(
+            (
+                name
+                for name, members in self.groups.items()
+                if login.lower() in (member.lower() for member in members)
+            ),
+            None,
+        )
+
+    def includes_repository(self, full_name: str) -> bool:
+        name = _repo_name(full_name)
+        if self.repos and name not in self.repos:
+            return False
+        return name not in self.exclude_repos
+
+
+def load_config(path: Path) -> Config:
+    """Read and validate an orgpulse.toml file."""
+
+    try:
+        raw = tomllib.loads(path.read_text())
+    except FileNotFoundError as exc:
+        raise ConfigError(
+            f"Config file not found: {path}. See README.md for an example."
+        ) from exc
+    except tomllib.TOMLDecodeError as exc:
+        raise ConfigError(f"Invalid TOML in {path}: {exc}") from exc
+    try:
+        return _parse_config(raw, base_dir=path.parent)
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ConfigError(f"Invalid config in {path}: {exc}") from exc
+
+
+def _parse_config(raw: dict[str, Any], *, base_dir: Path) -> Config:
+    org = raw.get("org")
+    if not isinstance(org, str) or not org.strip():
+        raise ValueError("`org` is required")
+    locale = raw.get("locale", "en")
+    if locale not in LOCALES:
+        raise ValueError(f"`locale` must be one of {', '.join(LOCALES)}")
+    groups = raw.get("groups", {})
+    return Config(
+        org=org.strip(),
+        database=base_dir / raw.get("database", "orgpulse.db"),
+        since=_date(raw.get("since", date.today() - timedelta(days=DEFAULT_SYNC_DAYS))),
+        timezone=_timezone(raw.get("timezone")),
+        locale=locale,
+        repos=tuple(_repo_name(repo) for repo in raw.get("repos", [])),
+        exclude_repos=tuple(_repo_name(repo) for repo in raw.get("exclude_repos", [])),
+        groups={
+            name: tuple(str(login) for login in members)
+            for name, members in groups.items()
+        },
     )
 
-    as_of: date = Field(default_factory=date.today)
-    org: OrgSlug | None = None
-    github_token: SecretStr | None = Field(
-        default=None,
-        exclude=True,
-        repr=False,
-        validation_alias=AliasChoices("GH_TOKEN"),
-    )
-    period: PeriodGrain = PeriodGrain.MONTH
-    time_anchor: TimeAnchor = TimeAnchor.CREATED_AT
-    mode: RunMode = RunMode.INCREMENTAL
-    output_dir: Path = Field(default_factory=lambda: Path("output"))
-    locale: str = ReportLocale.EN.value
+
+def _date(value: object) -> date:
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    return date.fromisoformat(str(value))
 
 
-@cache
-def get_settings() -> AppSettings:
-    """Return cached application settings resolved from the environment."""
-    return AppSettings()
+def _timezone(value: object) -> tzinfo:
+    if value is None:
+        local = datetime.now().astimezone().tzinfo
+        assert local is not None
+        return local
+    try:
+        return ZoneInfo(str(value))
+    except ZoneInfoNotFoundError as exc:
+        raise ValueError(f"unknown timezone {value!r}") from exc
 
 
-def build_run_config(
-    *,
-    org: str | None = None,
-    as_of: date | str | None = None,
-    period: PeriodGrain | None = None,
-    mode: RunMode | None = None,
-    time_anchor: TimeAnchor | None = None,
-    include_repos: list[str] | None = None,
-    exclude_repos: list[str] | None = None,
-    output_dir: Path | None = None,
-    backfill_start: str | None = None,
-    backfill_end: str | None = None,
-) -> RunConfig:
-    """Build a validated run configuration from CLI inputs and defaults."""
-
-    settings = get_settings()
-    payload: dict[str, object] = {
-        "org": settings.org if org is None else org,
-        "github_token": settings.github_token,
-        "as_of": settings.as_of if as_of is None else as_of,
-        "period": settings.period if period is None else period,
-        "time_anchor": settings.time_anchor if time_anchor is None else time_anchor,
-        "mode": settings.mode if mode is None else mode,
-        "output_dir": settings.output_dir if output_dir is None else output_dir,
-    }
-    if include_repos is not None:
-        payload["include_repos"] = include_repos
-    if exclude_repos is not None:
-        payload["exclude_repos"] = exclude_repos
-    if backfill_start is not None:
-        payload["backfill_start"] = backfill_start
-    if backfill_end is not None:
-        payload["backfill_end"] = backfill_end
-    return RunConfig.model_validate(payload)
-
-
-__all__ = ["AppSettings", "build_run_config", "get_settings"]
+def _repo_name(value: str) -> str:
+    return value.rsplit("/", 1)[-1].lower()

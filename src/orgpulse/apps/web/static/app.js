@@ -2,13 +2,19 @@
 
 const I18N = {
   en: {
-    never: "Not synced yet. Run `orgpulse sync`.",
+    never: "Not synced yet.",
+    sync: "Sync now", syncing: "Syncing…", syncDone: "Sync complete",
+    syncProgress: (repos, prs) => `${repos} repositories · ${prs} PRs processed`,
+    syncConnectionError: "Cannot check sync status. Reconnecting…",
     synced: (at) => `Synced ${at}`,
     groups: "Groups",
     people: "People",
     everyone: "Everyone",
     grain: { week: "Week", month: "Month" },
     last: (span) => `Last ${span}`,
+    custom: "Custom range…", from: "Start date", until: "End date", apply: "Apply",
+    invalidRange: "Start date must be on or before end date.",
+    customComparison: (from, until) => `${from} – ${until} · Compared with the preceding equal-length range`,
     vsPrevious: (span) => `Compared with the previous ${span}`,
     vsTeam: (team) => `Compared with ${team}`,
     metric: {
@@ -18,6 +24,9 @@ const I18N = {
       review_wait: "First review",
     },
     personMerged: "Merged PRs",
+    averageMerged: { week: "Average PRs / week", month: "Average PRs / month" },
+    averagePerPerson: { week: "Average PRs / person / week", month: "Average PRs / person / month" },
+    partialCounts: "The current week or month shows PRs merged so far, without extrapolation.",
     columnMerged: { week: "Merged/wk", month: "Merged/mo" },
     definition: {
       merged_per_person: "Merged PRs ÷ people ÷ periods, counted by merge date.",
@@ -42,13 +51,19 @@ const I18N = {
     flagTitle: "Above 1.5× the team median for a person, or the team's 90th percentile for a PR",
   },
   ko: {
-    never: "아직 동기화하지 않았습니다. `orgpulse sync`를 실행하세요.",
+    never: "아직 동기화하지 않았습니다.",
+    sync: "지금 동기화", syncing: "동기화 중…", syncDone: "동기화 완료",
+    syncProgress: (repos, prs) => `${repos}개 저장소 · ${prs}개 PR 처리`,
+    syncConnectionError: "동기화 상태를 확인할 수 없습니다. 다시 연결 중…",
     synced: (at) => `${at} 동기화`,
     groups: "그룹",
     people: "사람",
     everyone: "전체",
     grain: { week: "주", month: "월" },
     last: (span) => `최근 ${span}`,
+    custom: "사용자 지정…", from: "시작일", until: "종료일", apply: "적용",
+    invalidRange: "시작일은 종료일보다 늦을 수 없습니다.",
+    customComparison: (from, until) => `${from} – ${until} · 직전 같은 길이 기간 대비`,
     vsPrevious: (span) => `이전 ${span} 대비`,
     vsTeam: (team) => `${team} 대비`,
     metric: {
@@ -58,6 +73,9 @@ const I18N = {
       review_wait: "첫 리뷰까지",
     },
     personMerged: "머지 PR",
+    averageMerged: { week: "주평균 머지 PR", month: "월평균 머지 PR" },
+    averagePerPerson: { week: "인당 주평균 머지 PR", month: "인당 월평균 머지 PR" },
+    partialCounts: "진행 중인 주·월은 현재까지 실제 병합된 누적값입니다.",
     columnMerged: { week: "머지/주", month: "머지/월" },
     definition: {
       merged_per_person: "머지된 PR 수 ÷ 인원 ÷ 기간. 머지일 기준입니다.",
@@ -85,13 +103,15 @@ const I18N = {
 
 const METRICS = ["merged_per_person", "lead_time", "size", "review_wait"];
 const PR_METRICS = METRICS.slice(1);
-const RANGES = { week: [4, 12, 26, 52], month: [3, 6, 12] };
+const RANGES = { week: [4, 12, 26, 52, 104, 156], month: [3, 6, 12, 24, 36] };
 const DEFAULT_COUNT = { week: 12, month: 6 };
 
-const state = { group: null, person: null, grain: "week", count: 12, metric: "merged_per_person", focus: null };
+const state = { group: null, person: null, grain: "week", count: 12, metric: "merged_per_person", focus: null, custom: false, from: "", until: "" };
 let meta = null;
 let report = null;
 let t = I18N.en;
+let syncStatus = null;
+let syncTimer;
 
 const $ = (id) => document.getElementById(id);
 const present = (children) => children.filter((child) => child !== null && child !== undefined && child !== false);
@@ -155,8 +175,11 @@ function span(count = state.count) {
   return fmtUnit(count, state.grain, 0, "long");
 }
 
-function metricLabel(metric) {
-  return metric === "merged_per_person" && report.scope.kind === "person" ? t.personMerged : t.metric[metric];
+function metricLabel(metric, summary = false) {
+  if (metric !== "merged_per_person") return t.metric[metric];
+  const person = report.scope.kind === "person";
+  if (summary) return (person ? t.averageMerged : t.averagePerPerson)[state.grain];
+  return person ? t.personMerged : t.metric[metric];
 }
 
 function columnLabel(metric) {
@@ -169,14 +192,60 @@ function initials(login) {
 
 function dateLabel(iso) {
   const day = new Date(`${iso}T00:00:00`);
-  if (state.grain === "month") return day.toLocaleDateString(meta.locale, { month: "short" });
-  return day.toLocaleDateString(meta.locale, { month: "short", day: "numeric" });
+  const year = report.periods[0].start.slice(0, 4) !== report.periods.at(-1).start.slice(0, 4) ? "numeric" : undefined;
+  if (state.grain === "month") return day.toLocaleDateString(meta.locale, { year, month: "short" });
+  return day.toLocaleDateString(meta.locale, { year, month: "short", day: "numeric" });
+}
+
+function avatar(login, large = false) {
+  const url = meta.avatars?.[login.toLowerCase()];
+  return h("span", { class: `avatar${large ? " large" : ""}` }, initials(login),
+    url ? h("img", { src: url, alt: "", loading: "lazy", decoding: "async", referrerpolicy: "no-referrer", onerror: (event) => event.target.remove() }) : null);
+}
+
+function renderSync() {
+  $("synced").textContent = meta.synced_at ? t.synced(new Date(meta.synced_at).toLocaleString(meta.locale, { dateStyle: "medium", timeStyle: "short" })) : t.never;
+  $("sync").disabled = !syncStatus?.available || syncStatus.state === "running";
+  $("sync").textContent = syncStatus?.state === "running" ? t.syncing : t.sync;
+  const progress = syncStatus?.repositories ? t.syncProgress(syncStatus.repositories, syncStatus.processed_prs) : "";
+  $("sync-status").textContent = syncStatus?.state === "error" ? syncStatus.error : [syncStatus?.state === "success" ? t.syncDone : "", progress].filter(Boolean).join(" · ");
+  $("sync-status").classList.toggle("error", syncStatus?.state === "error");
+}
+
+async function pollSync(refresh = false) {
+  clearTimeout(syncTimer);
+  const wasRunning = syncStatus?.state === "running";
+  try {
+    syncStatus = await getJSON("/api/sync");
+    renderSync();
+    if (syncStatus.state === "running") syncTimer = setTimeout(pollSync, 1500);
+    else if (wasRunning || refresh) {
+      meta = await getJSON("/api/meta");
+      renderSync();
+      await load();
+    }
+  } catch (error) {
+    $("sync-status").textContent = t.syncConnectionError;
+    syncTimer = setTimeout(pollSync, 3000);
+  }
+}
+
+async function startSync() {
+  $("sync").disabled = true;
+  try {
+    syncStatus = await getJSON("/api/sync", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+    renderSync();
+    await pollSync(true);
+  } catch (error) {
+    $("sync-status").textContent = error.message;
+    await pollSync();
+  }
 }
 
 // ---- state & data ------------------------------------------------------
 
-async function getJSON(url) {
-  const response = await fetch(url);
+async function getJSON(url, options = {}) {
+  const response = await fetch(url, options);
   const payload = await response.json();
   if (!response.ok) throw new Error(payload.error || response.statusText);
   return payload;
@@ -192,9 +261,15 @@ function readUrl() {
   if (params.get("grain") === "month") state.grain = "month";
   const count = Number(params.get("count"));
   state.count = RANGES[state.grain].includes(count) ? count : DEFAULT_COUNT[state.grain];
+  if (params.has("from") && params.has("until")) {
+    state.custom = true;
+    state.from = params.get("from");
+    state.until = params.get("until");
+  }
   if (METRICS.includes(params.get("metric"))) state.metric = params.get("metric");
   if (params.get("person")) state.person = params.get("person");
   else if (meta.groups.includes(params.get("group"))) state.group = params.get("group");
+  else if (meta.groups.length === 1) state.group = meta.groups[0];
 }
 
 function syncUrl() {
@@ -202,7 +277,10 @@ function syncUrl() {
   if (state.person) params.set("person", state.person);
   else if (state.group) params.set("group", state.group);
   params.set("grain", state.grain);
-  params.set("count", state.count);
+  if (state.custom) {
+    params.set("from", state.from);
+    params.set("until", state.until);
+  } else params.set("count", state.count);
   params.set("metric", state.metric);
   history.replaceState(null, "", `?${params}`);
   return params;
@@ -243,7 +321,7 @@ function render() {
 
 function renderNav() {
   const people = meta.people.map((login) =>
-    navItem(login, state.person?.toLowerCase() === login.toLowerCase(), () => select({ person: login }), h("span", { class: "avatar" }, initials(login))),
+    navItem(login, state.person?.toLowerCase() === login.toLowerCase(), () => select({ person: login }), avatar(login)),
   );
   fill(
     $("nav"),
@@ -251,7 +329,7 @@ function renderNav() {
       "div",
       { class: "nav-group" },
       h("div", { class: "nav-label" }, t.groups),
-      navItem(t.everyone, !state.group && !state.person, () => select({})),
+      meta.groups.length !== 1 ? navItem(t.everyone, !state.group && !state.person, () => select({})) : null,
       ...meta.groups.map((name) => navItem(name, state.group === name, () => select({ group: name }))),
     ),
     people.length ? h("div", { class: "nav-group" }, h("div", { class: "nav-label" }, t.people), ...people) : null,
@@ -267,20 +345,43 @@ function renderTitle() {
   if (kind === "person") {
     fill(
       $("title"),
-      h("span", { class: "avatar large" }, initials(name)),
+      avatar(name, true),
       h("div", {}, h("h1", {}, name), h("p", {}, t.vsTeam(team || t.everyone))),
     );
   } else {
-    fill($("title"), h("div", {}, h("h1", {}, name || t.everyone), h("p", {}, t.vsPrevious(span()))));
+    fill($("title"), h("div", {}, h("h1", {}, name || t.everyone), h("p", {}, state.custom ? t.customComparison(state.from, state.until) : t.vsPrevious(span()))));
   }
 }
 
 function renderControls() {
   const count = $("count");
-  fill(count, ...RANGES[state.grain].map((n) => h("option", { value: n }, t.last(span(n)))));
-  count.value = String(state.count);
+  fill(count, ...RANGES[state.grain].map((n) => h("option", { value: n }, t.last(span(n)))), h("option", { value: "custom" }, t.custom));
+  count.value = state.custom ? "custom" : String(state.count);
   count.onchange = () => {
-    state.count = Number(count.value);
+    state.custom = count.value === "custom";
+    if (state.custom) {
+      state.from ||= report.periods[0].start;
+      state.until ||= meta.today;
+      renderControls();
+    } else {
+      state.count = Number(count.value);
+      load();
+    }
+  };
+  $("custom-range").hidden = !state.custom;
+  $("from-label").textContent = t.from;
+  $("until-label").textContent = t.until;
+  $("apply-range").textContent = t.apply;
+  $("from").value = state.from;
+  $("until").value = state.until;
+  $("from").max = $("until").max = meta.today;
+  $("custom-range").onsubmit = (event) => {
+    event.preventDefault();
+    if (!$("custom-range").reportValidity()) return;
+    const from = $("from").value, until = $("until").value;
+    if (from > until) { showError(t.invalidRange); return; }
+    state.from = from;
+    state.until = until;
     load();
   };
   fill(
@@ -328,7 +429,7 @@ function renderKpis() {
             renderChart();
           },
         },
-        h("span", { class: "kpi__label" }, metricLabel(metric)),
+        h("span", { class: "kpi__label" }, metricLabel(metric, true)),
         h("span", { class: "kpi__value" }, format(metric, value), unit(metric) ? h("small", {}, unit(metric)) : null),
         person ? h("span", { class: "kpi__note" }, t.teamValue(withUnit(metric, other))) : delta(metric, value, other),
       );
@@ -368,6 +469,7 @@ function renderChart() {
       h("div", { class: "legend" }, ...series.map((s) => h("span", {}, h("i", { class: s.dashed ? "dashed" : null, style: `--key:${s.color}` }), s.name))),
     ),
     empty ? h("p", { class: "empty" }, t.noData) : host,
+    metric === "merged_per_person" && periods.some((period) => period.partial) ? h("p", { class: "muted" }, t.partialCounts) : null,
   );
   if (!empty) requestAnimationFrame(() => lineChart(host, metric, series, periods));
 }
@@ -526,7 +628,7 @@ function renderDetail() {
           onclick: () => focusPerson(row.login),
           onkeydown: (event) => event.key === "Enter" && focusPerson(row.login),
         },
-        h("td", {}, h("span", { class: "person" }, h("span", { class: "avatar" }, initials(row.login)), row.login)),
+        h("td", {}, h("span", { class: "person" }, avatar(row.login), row.login)),
         ...METRICS.map((metric) => valueCell(metric, row)),
       ),
     ),
@@ -581,7 +683,7 @@ function renderPanel() {
     h(
       "div",
       { class: "panel__who" },
-      h("span", { class: "avatar large" }, initials(row.login)),
+      avatar(row.login, true),
       h("div", {}, h("h2", {}, row.login), report.scope.name ? h("p", { class: "muted" }, report.scope.name) : null),
     ),
     h(
@@ -632,9 +734,11 @@ async function init() {
   document.documentElement.lang = meta.locale;
   document.title = `${meta.org} · orgpulse`;
   $("org").textContent = meta.org;
-  $("synced").textContent = meta.synced_at ? t.synced(new Date(meta.synced_at).toLocaleString(meta.locale, { dateStyle: "medium", timeStyle: "short" })) : t.never;
+  renderSync();
+  $("sync").onclick = startSync;
   readUrl();
   await load();
+  await pollSync();
   let resizeTimer;
   window.addEventListener("resize", () => {
     clearTimeout(resizeTimer);

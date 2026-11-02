@@ -8,7 +8,7 @@ from orgpulse.apps.sync import sync
 from orgpulse.apps.web.server import make_server
 from orgpulse.common.config import DEFAULT_CONFIG_PATH, Config, load_config
 from orgpulse.common.errors import OrgpulseError
-from orgpulse.libs.github import graphql_requester, resolve_token
+from orgpulse.libs.github import avatar_urls, graphql_requester, resolve_token
 
 
 def main() -> int:
@@ -45,7 +45,19 @@ def main() -> int:
 
 
 def _serve(config: Config, port: int) -> None:
-    server = make_server(config, "127.0.0.1", port)
+    server = make_server(
+        config,
+        "127.0.0.1",
+        port,
+        sync_runner=lambda progress: sync(
+            config,
+            graphql_requester(resolve_token()),
+            on_repository=progress,
+        ),
+        avatar_loader=lambda people: avatar_urls(
+            graphql_requester(resolve_token()), people
+        ),
+    )
     print(
         f"Serving {config.org} at http://127.0.0.1:{server.server_port} (Ctrl+C to stop)"
     )

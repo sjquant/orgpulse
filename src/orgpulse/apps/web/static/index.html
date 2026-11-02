@@ -15,7 +15,11 @@
         <span id="org" class="muted"></span>
       </div>
       <div id="nav"></div>
-      <p id="synced" class="synced muted"></p>
+      <div class="sync-controls">
+        <p id="synced" class="synced muted"></p>
+        <button id="sync" type="button" disabled></button>
+        <p id="sync-status" class="muted" role="status" aria-live="polite"></p>
+      </div>
     </nav>
 
     <main class="card main">
@@ -26,6 +30,11 @@
           <div class="segmented" id="grain" role="group"></div>
         </div>
       </header>
+      <form id="custom-range" class="date-range" hidden>
+        <label><span id="from-label"></span><input id="from" type="date" required></label>
+        <label><span id="until-label"></span><input id="until" type="date" required></label>
+        <button id="apply-range" type="submit"></button>
+      </form>
       <p id="error" class="error" hidden></p>
       <div class="kpis" id="kpis"></div>
       <section class="card inner chart" id="chart"></section>

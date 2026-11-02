@@ -9,7 +9,8 @@ from tests.factories import merged_pr
 
 def test_group_throughput_is_per_person_per_elapsed_period():
     """Weekly throughput divides merged PRs by the group's size and by how much of
-    each week has elapsed, buckets by local merge date, and lines each week up with
+    each week has elapsed for range averages, uses actual counts in chart buckets,
+    buckets by local merge date, and lines each week up with
     the matching week of the previous range."""
 
     # Given: a Wednesday report date in Seoul, so the last week is 3/7 elapsed
@@ -36,7 +37,7 @@ def test_group_throughput_is_per_person_per_elapsed_period():
     periods = report["periods"]
     assert [p["start"] for p in periods] == ["2026-06-01", "2026-06-08"]
     assert [p["partial"] for p in periods] == [False, True]
-    assert [p["current"]["merged_per_person"] for p in periods] == [0.5, 2.33]
+    assert [p["current"]["merged_per_person"] for p in periods] == [0.5, 1.0]
     assert [p["compare"]["merged"] for p in periods] == [0, 1]
     assert report["summary"]["current"]["merged_per_person"] == 1.05
     assert report["summary"]["compare"]["merged_per_person"] == 0.25
@@ -152,3 +153,66 @@ def _window(**overrides: Any) -> dict[str, Any]:
         "timezone": timezone.utc,
         **overrides,
     }
+
+
+def test_custom_dates_include_only_local_boundary_days_and_compare_equal_days():
+    # June 2 16:00 UTC is June 3 in Seoul; June 9 15:00 UTC is June 10.
+    prs = [
+        merged_pr("alice", stamp, number=i)
+        for i, stamp in enumerate(
+            [
+                "2026-05-27T12:00:00",
+                "2026-06-02T12:00:00",
+                "2026-06-02T16:00:00",
+                "2026-06-09T14:59:00",
+                "2026-06-09T15:00:00",
+            ],
+            1,
+        )
+    ]
+    window = _window(
+        start=date(2026, 6, 3), until=date(2026, 6, 9), timezone=ZoneInfo("Asia/Seoul")
+    )
+    group = group_report(prs, people=["alice"], **window)
+    assert group["summary"]["current"]["merged"] == 2
+    assert group["summary"]["current"]["merged_per_person"] == 2
+    assert group["summary"]["compare"]["merged"] == 2
+    assert [p["current"]["merged"] for p in group["periods"]] == [1, 1]
+    person = person_report(prs, login="alice", team=["alice"], **window)
+    assert [pr["number"] for pr in person["recent"]] == [4, 3]
+
+
+def test_custom_month_range_uses_fractional_calendar_months():
+    prs = [merged_pr("alice", "2026-04-20T12:00:00")]
+    report = group_report(
+        prs,
+        **_window(
+            people=["alice"],
+            grain=Grain.MONTH,
+            start=date(2026, 4, 15),
+            until=date(2026, 5, 10),
+        ),
+    )
+    assert report["summary"]["current"]["merged_per_person"] == round(
+        1 / (16 / 30 + 10 / 31), 2
+    )
+    assert [p["start"] for p in report["periods"]] == ["2026-04-15", "2026-05-01"]
+
+
+def test_report_until_excludes_later_merges_in_the_same_bucket():
+    prs = [merged_pr("alice", "2026-06-11T12:00:00")]
+    report = group_report(prs, **_window(people=["alice"], until=date(2026, 6, 10)))
+    assert report["summary"]["current"]["merged"] == 0
+
+
+def test_in_progress_month_chart_does_not_extrapolate_counts():
+    prs = [merged_pr("alice", "2026-11-02T12:00:00", number=i) for i in range(6)]
+    window = _window(grain=Grain.MONTH, count=1, until=date(2026, 11, 3))
+    group = group_report(prs, people=["alice", "bob"], **window)
+    assert group["periods"][0]["current"]["merged"] == 6
+    assert group["periods"][0]["current"]["merged_per_person"] == 3
+    person = person_report(prs, login="alice", team=["alice", "bob"], **window)
+    assert person["periods"][0]["current"]["merged_per_person"] == 6
+    assert person["periods"][0]["compare"]["merged_per_person"] == 3
+    # Range-level averages remain elapsed-period rates, labelled as averages in UI.
+    assert person["summary"]["current"]["merged_per_person"] == 60

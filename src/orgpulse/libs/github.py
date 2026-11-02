@@ -217,3 +217,23 @@ def _pull_request(repository: str, node: dict[str, Any]) -> PullRequest | None:
 
 def _optional_datetime(value: str | None) -> datetime | None:
     return datetime.fromisoformat(value) if value else None
+
+
+def avatar_urls(request: GraphQLRequest, logins: tuple[str, ...]) -> dict[str, str]:
+    """Read public profile image URLs in batches; credentials stay server-side."""
+    avatars = {}
+    for start in range(0, len(logins), 50):
+        batch = logins[start : start + 50]
+        declarations = ", ".join(f"$login{i}: String!" for i in range(len(batch)))
+        fields = " ".join(
+            f"p{i}: user(login: $login{i}) {{ login avatarUrl(size: 128) }}"
+            for i in range(len(batch))
+        )
+        data = request(
+            f"query({declarations}) {{ {fields} }}",
+            {f"login{i}": login for i, login in enumerate(batch)},
+        )
+        for profile in data.values():
+            if profile is not None:
+                avatars[profile["login"].lower()] = profile["avatarUrl"]
+    return avatars

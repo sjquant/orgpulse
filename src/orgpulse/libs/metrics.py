@@ -80,14 +80,23 @@ def group_report(
     until: date,
     since: date,
     timezone: tzinfo,
+    start: date | None = None,
 ) -> dict[str, Any]:
     """Trend against the previous range, plus a row per person against the team.
 
     `people=None` means everyone who merged a PR in the range.
     """
 
-    periods = _periods(grain, count, until, since)
-    previous = _periods(grain, count, periods[0].start - timedelta(days=1), since)
+    periods = _periods(grain, count, until, since, start=start)
+    if start is None:
+        previous = _periods(grain, count, periods[0].start - timedelta(days=1), since)
+    else:
+        # Compare custom windows by equal elapsed days, aligned with current bins.
+        offset = until - start + timedelta(days=1)
+        previous = [
+            _period(grain, period.start - offset, period.end - offset, since)
+            for period in periods
+        ]
     merged = _merged(pull_requests, timezone)
     logins = _logins(people, merged, periods)
     by_login: dict[str, list[_Merged]] = {login: [] for login in logins}
@@ -122,8 +131,8 @@ def group_report(
         "periods": [
             {
                 **_period_json(period),
-                "current": _summary(team, [period], headcount),
-                "compare": _summary(team, [earlier], headcount),
+                "current": _summary(team, [period], headcount, elapsed=False),
+                "compare": _summary(team, [earlier], headcount, elapsed=False),
             }
             for period, earlier in zip(periods, previous, strict=True)
         ],
@@ -148,10 +157,11 @@ def person_report(
     until: date,
     since: date,
     timezone: tzinfo,
+    start: date | None = None,
 ) -> dict[str, Any]:
     """One person's trend and recent PRs, each set against their team."""
 
-    periods = _periods(grain, count, until, since)
+    periods = _periods(grain, count, until, since, start=start)
     merged = _merged(pull_requests, timezone)
     team_logins = _logins(team, merged, periods)
     team_items = _Items([item for item in merged if item.login in team_logins])
@@ -161,8 +171,8 @@ def person_report(
         "periods": [
             {
                 **_period_json(period),
-                "current": _summary(own, [period], 1),
-                "compare": _summary(team_items, [period], team_size),
+                "current": _summary(own, [period], 1, elapsed=False),
+                "compare": _summary(team_items, [period], team_size, elapsed=False),
             }
             for period in periods
         ],
@@ -179,25 +189,40 @@ def person_report(
     }
 
 
-def _periods(grain: Grain, count: int, until: date, since: date) -> list[_Period]:
-    starts = [grain.start_of(until)]
-    while len(starts) < count:
-        starts.append(grain.start_of(starts[-1] - timedelta(days=1)))
+def _periods(
+    grain: Grain, count: int, until: date, since: date, *, start: date | None = None
+) -> list[_Period]:
+    if start is None:
+        starts = [grain.start_of(until)]
+        while len(starts) < count:
+            starts.append(grain.start_of(starts[-1] - timedelta(days=1)))
+        start = starts[-1]
     periods = []
-    for start in reversed(starts):
-        end = grain.next_start(start) - timedelta(days=1)
-        length = (end - start).days + 1
-        elapsed = (min(until, end) - start).days + 1
-        periods.append(
-            _Period(
-                start=start,
-                end=end,
-                coverage=elapsed / length,
-                synced=end >= since,
-                complete=start >= since,
-            )
-        )
+    cursor = start
+    while cursor <= until:
+        end = min(grain.next_start(grain.start_of(cursor)) - timedelta(days=1), until)
+        periods.append(_period(grain, cursor, end, since))
+        cursor = end + timedelta(days=1)
     return periods
+
+
+def _period(grain: Grain, start: date, end: date, since: date) -> _Period:
+    # Shifted comparison bins may cross calendar-month boundaries.
+    coverage = 0.0
+    cursor = start
+    while cursor <= end:
+        bucket_start = grain.start_of(cursor)
+        next_start = grain.next_start(bucket_start)
+        stop = min(end + timedelta(days=1), next_start)
+        coverage += (stop - cursor).days / (next_start - bucket_start).days
+        cursor = stop
+    return _Period(
+        start=start,
+        end=end,
+        coverage=coverage,
+        synced=end >= since,
+        complete=start >= since,
+    )
 
 
 def _merged(pull_requests: list[PullRequest], timezone: tzinfo) -> list[_Merged]:
@@ -232,7 +257,7 @@ def _logins(
 
 
 def _summary(
-    items: _Items, periods: list[_Period], headcount: int
+    items: _Items, periods: list[_Period], headcount: int, *, elapsed: bool = True
 ) -> dict[str, Any] | None:
     """Throughput and medians over the synced periods; None if none are synced."""
 
@@ -240,7 +265,9 @@ def _summary(
     if not covered:
         return None
     merged = items.within(covered)
-    person_periods = headcount * sum(period.coverage for period in covered)
+    person_periods = headcount * (
+        sum(period.coverage for period in covered) if elapsed else len(covered)
+    )
     return {
         "merged": len(merged),
         "merged_per_person": (
@@ -304,7 +331,7 @@ def _percentiles(items: list[_Merged], quantile: float) -> dict[str, float | Non
 
 
 def _period_json(period: _Period) -> dict[str, Any]:
-    return {"start": period.start.isoformat(), "partial": period.coverage < 1}
+    return {"start": period.start.isoformat(), "partial": period.coverage < 1 - 1e-9}
 
 
 def _hours(start: datetime, end: datetime) -> float:

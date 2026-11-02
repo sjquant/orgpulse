@@ -131,8 +131,8 @@ def group_report(
         "periods": [
             {
                 **_period_json(period),
-                "current": _summary(team, [period], headcount, elapsed=False),
-                "compare": _summary(team, [earlier], headcount, elapsed=False),
+                "current": _summary(team, [period], headcount),
+                "compare": _summary(team, [earlier], headcount),
             }
             for period, earlier in zip(periods, previous, strict=True)
         ],
@@ -171,8 +171,8 @@ def person_report(
         "periods": [
             {
                 **_period_json(period),
-                "current": _summary(own, [period], 1, elapsed=False),
-                "compare": _summary(team_items, [period], team_size, elapsed=False),
+                "current": _summary(own, [period], 1),
+                "compare": _summary(team_items, [period], team_size),
             }
             for period in periods
         ],
@@ -257,7 +257,7 @@ def _logins(
 
 
 def _summary(
-    items: _Items, periods: list[_Period], headcount: int, *, elapsed: bool = True
+    items: _Items, periods: list[_Period], headcount: int
 ) -> dict[str, Any] | None:
     """Throughput and medians over the synced periods; None if none are synced."""
 
@@ -265,9 +265,7 @@ def _summary(
     if not covered:
         return None
     merged = items.within(covered)
-    person_periods = headcount * (
-        sum(period.coverage for period in covered) if elapsed else len(covered)
-    )
+    person_periods = headcount * sum(period.coverage for period in covered)
     return {
         "merged": len(merged),
         "merged_per_person": (

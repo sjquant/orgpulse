@@ -74,8 +74,8 @@ Four metrics, per week or month, never cumulative. Click a metric to chart it.
 - A group or everyone: each period is drawn against the same period of the previous
   range, and the team table shows every member next to the team value.
 - A person: each period is drawn against their team, and their recent PRs are listed.
-- PR chart points use actual merged counts per person in each bucket, including
-  the current partial week or month. They are never extrapolated to a full period.
+- PR chart points for partial weeks/months are projected to a full period using
+  the current pace and drawn dashed. Actual merged totals remain in the API.
   KPI cards and team tables show range averages per elapsed week or month.
 - An orange dot marks a person's median above 1.5× the team's, or a PR above the
   team's 90th percentile. Periods before `since` show no data rather than zeros.

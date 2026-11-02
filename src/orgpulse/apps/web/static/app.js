@@ -26,7 +26,7 @@ const I18N = {
     personMerged: "Merged PRs",
     averageMerged: { week: "Average PRs / week", month: "Average PRs / month" },
     averagePerPerson: { week: "Average PRs / person / week", month: "Average PRs / person / month" },
-    partialCounts: "The current week or month shows PRs merged so far, without extrapolation.",
+    partialCounts: "Dashed PR counts are projected to a full week or month at the current pace.",
     columnMerged: { week: "Merged/wk", month: "Merged/mo" },
     definition: {
       merged_per_person: "Merged PRs ÷ people ÷ periods, counted by merge date.",
@@ -75,7 +75,7 @@ const I18N = {
     personMerged: "머지 PR",
     averageMerged: { week: "주평균 머지 PR", month: "월평균 머지 PR" },
     averagePerPerson: { week: "인당 주평균 머지 PR", month: "인당 월평균 머지 PR" },
-    partialCounts: "진행 중인 주·월은 현재까지 실제 병합된 누적값입니다.",
+    partialCounts: "점선 구간의 PR 수는 현재 속도를 기준으로 한 주·월 전체로 환산한 예상값입니다.",
     columnMerged: { week: "머지/주", month: "머지/월" },
     definition: {
       merged_per_person: "머지된 PR 수 ÷ 인원 ÷ 기간. 머지일 기준입니다.",

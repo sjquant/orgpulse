@@ -22,6 +22,7 @@ CREATE TABLE IF NOT EXISTS pull_requests (
     merged_at TEXT NOT NULL,
     additions INTEGER NOT NULL,
     deletions INTEGER NOT NULL,
+    commits INTEGER,
     PRIMARY KEY (repository, number)
 );
 CREATE TABLE IF NOT EXISTS repositories (
@@ -41,6 +42,21 @@ class Store:
         path.parent.mkdir(parents=True, exist_ok=True)
         self._connection = sqlite3.connect(path)
         self._connection.executescript(SCHEMA)
+        if "commits" not in {
+            row[1]
+            for row in self._connection.execute("PRAGMA table_info(pull_requests)")
+        }:
+            with self._connection:
+                self._connection.execute("BEGIN IMMEDIATE")
+                if "commits" not in {
+                    row[1]
+                    for row in self._connection.execute(
+                        "PRAGMA table_info(pull_requests)"
+                    )
+                }:
+                    self._connection.execute(
+                        "ALTER TABLE pull_requests ADD COLUMN commits INTEGER"
+                    )
 
     def __enter__(self) -> Store:
         return self
@@ -88,6 +104,21 @@ class Store:
             self._connection.execute(
                 "INSERT OR REPLACE INTO repositories VALUES (?, ?, ?)",
                 (full_name, since.isoformat(), synced_at.isoformat()),
+            )
+
+    def missing_commit_counts(self) -> dict[str, list[int]]:
+        missing: dict[str, list[int]] = {}
+        for repository, number in self._connection.execute(
+            "SELECT repository, number FROM pull_requests WHERE commits IS NULL"
+        ):
+            missing.setdefault(repository, []).append(number)
+        return missing
+
+    def save_commit_counts(self, repository: str, counts: dict[int, int]) -> None:
+        with self._connection:
+            self._connection.executemany(
+                "UPDATE pull_requests SET commits = ? WHERE repository = ? AND number = ?",
+                [(count, repository, number) for number, count in counts.items()],
             )
 
     def merged_counts(self) -> list[tuple[str, str, int]]:

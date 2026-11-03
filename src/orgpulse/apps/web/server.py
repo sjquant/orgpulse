@@ -1,20 +1,30 @@
 from __future__ import annotations
 
 import json
+import re
 from collections import Counter
 from collections.abc import Callable
 from datetime import date, datetime, timezone
 from functools import cache
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from io import BytesIO
 from pathlib import Path
 from threading import Lock, Thread
 from typing import Any
-from urllib.parse import parse_qs, urlsplit
+from urllib.parse import parse_qs, urlencode, urlsplit
+from zipfile import ZIP_DEFLATED, ZipFile
 
 from orgpulse.common.config import Config
 from orgpulse.common.errors import OrgpulseError
-from orgpulse.libs.metrics import Grain, group_report, person_report
+from orgpulse.common.models import PullRequest
+from orgpulse.libs.html_export import inline_github_avatar, render_person_html
+from orgpulse.libs.metrics import (
+    DISTRIBUTION_METRICS,
+    Grain,
+    group_report,
+    person_report,
+)
 from orgpulse.libs.store import Store
 
 STATIC_DIR = Path(__file__).parent / "static"
@@ -82,21 +92,18 @@ class _SyncJob:
     def _run(self) -> None:
         try:
             assert self.runner is not None
-            count = self.runner(self._progress)
-            with self.lock:
-                self.status.update(state="success", processed_prs=count)
+            outcome = {"state": "success", "processed_prs": self.runner(self._progress)}
         except Exception as exc:
-            # Unexpected exception details may contain configuration or credentials.
             error = (
                 str(exc)
                 if isinstance(exc, OrgpulseError)
                 else "Sync failed. Please retry."
             )
-            with self.lock:
-                self.status.update(state="error", error=error)
-        finally:
-            with self.lock:
-                self.status["finished_at"] = datetime.now(timezone.utc).isoformat()
+            outcome = {"state": "error", "error": error}
+        with self.lock:
+            self.status.update(
+                **outcome, finished_at=datetime.now(timezone.utc).isoformat()
+            )
 
 
 def make_server(
@@ -107,12 +114,12 @@ def make_server(
     sync_runner: SyncRunner | None = None,
     avatar_loader: AvatarLoader | None = None,
 ) -> ThreadingHTTPServer:
-    """Build the local report server; CLI supplies feature workflow callbacks."""
+    """Serve local reports and optional GitHub refreshes."""
     job = _SyncJob(sync_runner)
 
     @cache
     def profiles(people: tuple[str, ...]) -> dict[str, str]:
-        if avatar_loader is None:
+        if avatar_loader is None or not people:
             return {}
         try:
             return avatar_loader(people)
@@ -120,7 +127,19 @@ def make_server(
             return {}  # Profile lookup must not prevent offline reporting.
 
     class Handler(BaseHTTPRequestHandler):
+        def _local_host(self) -> bool:
+            assert isinstance(self.server, ThreadingHTTPServer)
+            return self.headers.get("Host", "").lower() in {
+                f"127.0.0.1:{self.server.server_port}",
+                f"localhost:{self.server.server_port}",
+            }
+
         def do_GET(self) -> None:
+            if not self._local_host():
+                self._send_json(
+                    HTTPStatus.FORBIDDEN, {"error": "localhost requests only"}
+                )
+                return
             url = urlsplit(self.path)
             if url.path in STATIC_FILES:
                 filename, content_type = STATIC_FILES[url.path]
@@ -128,11 +147,21 @@ def make_server(
                     HTTPStatus.OK, (STATIC_DIR / filename).read_bytes(), content_type
                 )
             elif url.path == "/api/meta":
-                meta = _meta(config)
-                meta["avatars"] = profiles(tuple(meta["people"]))
-                self._send_json(HTTPStatus.OK, meta)
+                self._send_json(HTTPStatus.OK, _meta(config))
+            elif url.path == "/api/profiles":
+                people = _meta(config)["people"]
+                self._send_json(HTTPStatus.OK, {"avatars": profiles(tuple(people))})
             elif url.path == "/api/sync":
                 self._send_json(HTTPStatus.OK, job.snapshot())
+            elif url.path == "/api/export":
+                try:
+                    body, filename, content_type = export_reports(
+                        config, parse_qs(url.query), profiles
+                    )
+                except _BadRequest as exc:
+                    self._send_json(HTTPStatus.BAD_REQUEST, {"error": str(exc)})
+                    return
+                self._send(HTTPStatus.OK, body, content_type, filename=filename)
             elif url.path == "/api/report":
                 try:
                     payload = _report(config, parse_qs(url.query))
@@ -148,15 +177,10 @@ def make_server(
                 self._send_json(HTTPStatus.NOT_FOUND, {"error": "not found"})
                 return
             # A page on another origin must not be able to trigger local GitHub work.
-            assert isinstance(self.server, ThreadingHTTPServer)
             authority = self.headers.get("Host", "")
-            expected = {
-                f"127.0.0.1:{self.server.server_port}",
-                f"localhost:{self.server.server_port}",
-            }
             origin = self.headers.get("Origin")
             if (
-                authority not in expected
+                not self._local_host()
                 or (origin and origin != f"http://{authority}")
                 or self.headers.get("Sec-Fetch-Site") == "cross-site"
             ):
@@ -189,11 +213,22 @@ def make_server(
             body = json.dumps(payload, ensure_ascii=False).encode()
             self._send(status, body, "application/json; charset=utf-8")
 
-        def _send(self, status: HTTPStatus, body: bytes, content_type: str) -> None:
+        def _send(
+            self,
+            status: HTTPStatus,
+            body: bytes,
+            content_type: str,
+            *,
+            filename: str | None = None,
+        ) -> None:
             self.send_response(status)
             self.send_header("Content-Type", content_type)
             self.send_header("Content-Length", str(len(body)))
             self.send_header("Cache-Control", "no-store")
+            if filename is not None:
+                self.send_header(
+                    "Content-Disposition", f'attachment; filename="{filename}"'
+                )
             self.end_headers()
             self.wfile.write(body)
 
@@ -222,10 +257,36 @@ def _meta(config: Config) -> dict[str, Any]:
     }
 
 
-def _report(config: Config, query: dict[str, list[str]]) -> dict[str, Any]:
+def _report(
+    config: Config,
+    query: dict[str, list[str]],
+    *,
+    pull_requests: list[PullRequest] | None = None,
+) -> dict[str, Any]:
     """Build the group, person, or everyone report named in the query."""
 
     today = datetime.now(config.timezone).date()
+    raw_analysis = _param(query, "analysis", "{}")
+    if len(raw_analysis) > 2048:
+        raise _BadRequest("analysis options are too long")
+    try:
+        analysis = json.loads(raw_analysis)
+    except ValueError as exc:
+        raise _BadRequest("invalid analysis options") from exc
+    if not isinstance(analysis, dict) or any(
+        metric not in DISTRIBUTION_METRICS for metric in analysis
+    ):
+        raise _BadRequest("analysis only supports PR-level distribution metrics")
+    for options in analysis.values():
+        if not isinstance(options, dict) or set(options) - {
+            "statistic",
+            "exclude_outliers",
+        }:
+            raise _BadRequest("invalid analysis settings")
+        if options.get("statistic", "median") not in ("mean", "median"):
+            raise _BadRequest("statistic must be mean or median")
+        if not isinstance(options.get("exclude_outliers", False), bool):
+            raise _BadRequest("exclude_outliers must be a boolean")
     try:
         grain = Grain(_param(query, "grain", Grain.WEEK.value))
         count = int(_param(query, "count", "12"))
@@ -255,13 +316,14 @@ def _report(config: Config, query: dict[str, list[str]]) -> dict[str, Any]:
         "since": config.since,
         "timezone": config.timezone,
         "start": start,
+        "analysis": analysis,
     }
-    with Store(config.database) as store:
-        pull_requests = [
-            pr
-            for pr in store.pull_requests()
-            if config.includes_repository(pr.repository)
-        ]
+    if pull_requests is None:
+        with Store(config.database) as store:
+            pull_requests = store.pull_requests()
+    pull_requests = [
+        pr for pr in pull_requests if config.includes_repository(pr.repository)
+    ]
     if person:
         team = config.team_of(person)
         return {
@@ -274,6 +336,96 @@ def _report(config: Config, query: dict[str, list[str]]) -> dict[str, Any]:
         "scope": {"kind": "group" if group else "everyone", "name": group},
         **group_report(pull_requests, people=config.members(group), **window),
     }
+
+
+def export_reports(
+    config: Config,
+    query: dict[str, list[str]],
+    profiles: AvatarLoader,
+) -> tuple[bytes, str, str]:
+    """Export personal reports from a consistent data snapshot."""
+    frozen_query = {key: list(value) for key, value in query.items()}
+    frozen_query.setdefault("until", [datetime.now(config.timezone).date().isoformat()])
+    with Store(config.database) as store:
+        pull_requests = store.pull_requests()
+    _report(
+        config, frozen_query, pull_requests=pull_requests
+    )  # Validate before image requests.
+    meta = _meta(config)
+    person = _param(query, "person", "")
+    people = (person,) if person else config.members(_param(query, "group", "") or None)
+    if people is None:
+        people = tuple(meta["people"])
+    unique_people: dict[str, str] = {}
+    for login in people:
+        unique_people.setdefault(login.lower(), login)
+    people = tuple(unique_people.values())
+    if not people or any(
+        not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9-]{0,38}", login) for login in people
+    ):
+        raise _BadRequest("a valid GitHub person is required for each report")
+    avatar_sources = profiles(tuple(people))
+    assets = {
+        name: (STATIC_DIR / name).read_text()
+        for name in ("index.html", "app.css", "app.js")
+    }
+    created_at = datetime.now(config.timezone).isoformat()
+    files = []
+    for login in people:
+        person_query = {**frozen_query, "person": [login]}
+        person_query.pop("group", None)
+        reports = {}
+        # Four shared variants suffice: each metric's statistic/filter is independent.
+        for statistic in ("mean", "median"):
+            for exclude in (False, True):
+                options = {
+                    metric: {"statistic": statistic, "exclude_outliers": exclude}
+                    for metric in DISTRIBUTION_METRICS
+                }
+                reports[f"{statistic}:{int(exclude)}"] = _report(
+                    config,
+                    {**person_query, "analysis": [json.dumps(options)]},
+                    pull_requests=pull_requests,
+                )
+        start = reports["median:0"]["periods"][0]["start"]
+        end = frozen_query["until"][0]
+        avatar = inline_github_avatar(avatar_sources.get(login.lower()))
+        snapshot_meta = {
+            **meta,
+            "people": [login],
+            "avatars": {login.lower(): avatar} if avatar else {},
+            "snapshot": {
+                "person": login,
+                "from": start,
+                "until": end,
+                "timezone": str(config.timezone),
+                "created_at": created_at,
+                "history_since": config.since.isoformat(),
+            },
+        }
+        snapshot = {
+            "meta": snapshot_meta,
+            "query": urlencode(person_query, doseq=True),
+            "reports": reports,
+        }
+        html = render_person_html(
+            snapshot,
+            template=assets["index.html"],
+            styles=assets["app.css"],
+            script=assets["app.js"],
+            icon=(STATIC_DIR / "favicon.svg").read_bytes(),
+        )
+        org = re.sub(r"[^A-Za-z0-9-]", "_", config.org)
+        filename = f"orgpulse-{org}-{login}-{start}_to_{end}.html"
+        files.append((filename, html.encode()))
+    if person:
+        filename, body = files[0]
+        return body, filename, "text/html; charset=utf-8"
+    archive = BytesIO()
+    with ZipFile(archive, "w", compression=ZIP_DEFLATED) as bundle:
+        for filename, body in files:
+            bundle.writestr(filename, body)
+    return archive.getvalue(), "orgpulse-person-reports.zip", "application/zip"
 
 
 def _param(query: dict[str, list[str]], name: str, default: str) -> str:

@@ -118,9 +118,9 @@ select, .segmented button, .date-range input, .date-range button {
 .segmented button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--on-accent); font-weight: 600; position: relative; }
 .error { color: var(--bad); }
 
-.kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.kpis { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
 .kpi {
-  display: grid; gap: 2px; text-align: left; cursor: pointer;
+  display: grid; gap: 2px; min-width: 0; text-align: left; cursor: pointer;
   background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px;
 }
 .kpi:hover { border-color: var(--muted); }
@@ -233,3 +233,38 @@ tfoot td { color: var(--muted); }
 .sync-controls button { background: var(--card-raised); border: 1px solid var(--border); border-radius: 10px; padding: 7px 10px; cursor: pointer; }
 .sync-controls button:disabled { opacity: .6; cursor: default; }
 #sync-status { font-size: 12px; padding: 0 10px; overflow-wrap: anywhere; }
+
+.chart__tools { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.analysis-options { position: relative; }
+.analysis-options summary { cursor: pointer; border: 1px solid var(--border); border-radius: 8px; padding: 5px 10px; font-size: 12px; }
+.analysis-popover { position: absolute; z-index: 20; right: 0; top: calc(100% + 8px); width: min(290px, calc(100vw - 48px)); padding: 16px; display: grid; gap: 12px; background: var(--card); border: 1px solid var(--border); border-radius: 12px; box-shadow: 0 8px 24px rgb(0 0 0 / 12%); }
+.analysis-popover label { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.analysis-popover input { accent-color: var(--accent-ink); }
+.analysis-popover button { cursor: pointer; padding: 6px; border: 1px solid var(--border); border-radius: 8px; background: var(--card-raised); }
+.analysis-popover p, .analysis-sample { font-size: 12px; }
+
+.main { container: report / inline-size; }
+.kpi__value { overflow-wrap: anywhere; }
+@container report (min-width: 1120px) {
+  .kpis { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+  .kpi__value { font-size: 26px; }
+}
+@container report (max-width: 600px) {
+  .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@container report (max-width: 340px) {
+  .kpis { grid-template-columns: minmax(0, 1fr); }
+}
+
+#export-report { font: inherit; padding: 6px 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--card-raised); cursor: pointer; }
+#export-report:disabled { opacity: .6; cursor: wait; }
+.report-context { font-size: 12px; overflow-wrap: anywhere; }
+.snapshot #nav, .snapshot .sync-controls { display: none; }
+.snapshot .sidebar { display: none; }
+.snapshot .app { grid-template-columns: minmax(0, 1fr); max-width: 1200px; }
+@media print {
+  .snapshot .sidebar, .snapshot .analysis-options { display: none; }
+  .snapshot .app { display: block; padding: 0; }
+  .snapshot .main { border: 0; }
+  .snapshot .kpis, .snapshot .chart { break-inside: avoid; }
+}

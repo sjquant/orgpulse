@@ -6,7 +6,12 @@ from datetime import datetime, time, timedelta, timezone
 
 from orgpulse.common.config import Config
 from orgpulse.common.models import PullRequest
-from orgpulse.libs.github import GraphQLRequest, iter_pull_requests, iter_repositories
+from orgpulse.libs.github import (
+    GraphQLRequest,
+    iter_pull_requests,
+    iter_repositories,
+    pull_request_commit_counts,
+)
 from orgpulse.libs.store import Store
 
 # Re-read a little before the previous sync so updates racing it are not missed.
@@ -39,24 +44,35 @@ def sync(
                 synced_at - SYNC_OVERLAP if synced_at else floor
             )
 
-        def fetch(full_name: str) -> list[PullRequest]:
-            return [
+        missing_counts = store.missing_commit_counts()
+
+        def fetch(full_name: str) -> tuple[list[PullRequest], dict[int, int]]:
+            pull_requests = [
                 pull_request
                 for pull_request in iter_pull_requests(
                     request, full_name, updated_since=updated_since[full_name]
                 )
                 if pull_request.created_at >= floor
             ]
+            fetched = {pr.number for pr in pull_requests}
+            missing = [
+                number
+                for number in missing_counts.get(full_name, [])
+                if number not in fetched
+            ]
+            counts = pull_request_commit_counts(request, full_name, missing)
+            return pull_requests, counts
 
         executor = ThreadPoolExecutor(max_workers=FETCH_WORKERS)
         try:
             futures = {executor.submit(fetch, name): name for name in updated_since}
             for future in as_completed(futures):
                 full_name = futures[future]
-                pull_requests = future.result()
+                pull_requests, counts = future.result()
                 store.save(
                     full_name, pull_requests, since=config.since, synced_at=started_at
                 )
+                store.save_commit_counts(full_name, counts)
                 saved += len(pull_requests)
                 on_repository(full_name, len(pull_requests))
         finally:

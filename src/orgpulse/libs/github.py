@@ -49,6 +49,7 @@ query($owner: String!, $name: String!, $after: String) {
         mergedAt
         additions
         deletions
+        commits { totalCount }
         author { __typename login }
         reviews(first: 30) { nodes { submittedAt author { __typename login } } }
         timelineItems(first: 1, itemTypes: [READY_FOR_REVIEW_EVENT]) {
@@ -85,7 +86,9 @@ def resolve_token() -> str:
     return token
 
 
-def graphql_requester(token: str) -> GraphQLRequest:
+def graphql_requester(
+    token: str, *, timeout: float = 60, max_attempts: int = MAX_ATTEMPTS
+) -> GraphQLRequest:
     """Build a GraphQL caller that retries transient GitHub failures."""
 
     def request(query: str, variables: dict[str, Any]) -> dict[str, Any]:
@@ -99,20 +102,20 @@ def graphql_requester(token: str) -> GraphQLRequest:
                 "User-Agent": "orgpulse",
             },
         )
-        for attempt in range(1, MAX_ATTEMPTS + 1):
+        for attempt in range(1, max_attempts + 1):
             try:
-                with urllib.request.urlopen(http_request, timeout=60) as response:
+                with urllib.request.urlopen(http_request, timeout=timeout) as response:
                     payload = json.load(response)
                 break
             except urllib.error.HTTPError as exc:
-                if exc.code < 500 or attempt == MAX_ATTEMPTS:
+                if exc.code < 500 or attempt == max_attempts:
                     detail = exc.read().decode(errors="replace")[:300]
                     raise GitHubError(
                         f"GitHub returned HTTP {exc.code}: {detail}"
                     ) from exc
             # Timeouts, dropped connections, and truncated JSON are all worth a retry.
             except (OSError, http.client.HTTPException, ValueError) as exc:
-                if attempt == MAX_ATTEMPTS:
+                if attempt == max_attempts:
                     raise GitHubError(f"GitHub request failed: {exc}") from exc
             time.sleep(RETRY_BACKOFF_SECONDS * attempt)
         if payload.get("errors"):
@@ -212,6 +215,7 @@ def _pull_request(repository: str, node: dict[str, Any]) -> PullRequest | None:
         merged_at=datetime.fromisoformat(node["mergedAt"]),
         additions=node["additions"],
         deletions=node["deletions"],
+        commits=node["commits"]["totalCount"],
     )
 
 
@@ -237,3 +241,30 @@ def avatar_urls(request: GraphQLRequest, logins: tuple[str, ...]) -> dict[str, s
             if profile is not None:
                 avatars[profile["login"].lower()] = profile["avatarUrl"]
     return avatars
+
+
+def pull_request_commit_counts(
+    request: GraphQLRequest, repository: str, numbers: list[int]
+) -> dict[int, int]:
+    """Backfill only missing counts, without re-fetching reviews or PR history."""
+    owner, name = repository.split("/", 1)
+    counts = {}
+    for start in range(0, len(numbers), 50):
+        batch = numbers[start : start + 50]
+        declarations = ", ".join(f"$n{i}: Int!" for i in range(len(batch)))
+        fields = " ".join(
+            f"p{i}: pullRequest(number: $n{i}) {{ commits {{ totalCount }} }}"
+            for i in range(len(batch))
+        )
+        data = request(
+            f"query($owner: String!, $name: String!, {declarations}) {{ repository(owner: $owner, name: $name) {{ {fields} }} }}",
+            {
+                "owner": owner,
+                "name": name,
+                **{f"n{i}": number for i, number in enumerate(batch)},
+            },
+        )["repository"]
+        for i, number in enumerate(batch):
+            if data and data[f"p{i}"] is not None:
+                counts[number] = data[f"p{i}"]["commits"]["totalCount"]
+    return counts

@@ -216,3 +216,115 @@ def test_in_progress_month_chart_projects_counts_at_the_current_pace():
     # Actual totals remain available separately from projected period rates.
     assert person["periods"][0]["current"]["merged"] == 6
     assert person["summary"]["current"]["merged_per_person"] == 60
+
+
+def test_mean_median_and_iqr_are_metric_local_and_preserve_actual_totals():
+    prs = [
+        merged_pr(
+            "alice", "2026-06-10T12:00:00", number=i, commits=commits, additions=lines
+        )
+        for i, (commits, lines) in enumerate(
+            [(1, 10), (2, 10), (3, 10), (100, 1000), (None, 5)]
+        )
+    ]
+    default = group_report(prs, **_window(people=["alice"]))["summary"]["current"]
+    assert default["commits"] == 26.5
+    assert default["total_lines"] == 1035
+    assert default["analysis_samples"]["commits"] == {
+        "total": 4,
+        "analyzed": 4,
+        "excluded": 0,
+        "missing": 1,
+    }
+    median = person_report(
+        prs,
+        **_window(
+            login="alice", team=["alice"], analysis={"commits": {"statistic": "median"}}
+        ),
+    )["summary"]["current"]
+    assert median["commits"] == 2.5
+    filtered = group_report(
+        prs,
+        **_window(
+            people=["alice"],
+            analysis={"commits": {"statistic": "mean", "exclude_outliers": True}},
+        ),
+    )["summary"]["current"]
+    assert filtered["commits"] == 2
+    assert filtered["analysis_samples"]["commits"]["excluded"] == 1
+    assert filtered["total_lines"] == default["total_lines"]
+    assert filtered["size"] == default["size"]
+    assert filtered["merged"] == default["merged"]
+    assert filtered["added_lines"] == 1035 and filtered["deleted_lines"] == 0
+
+
+def test_unknown_commits_are_not_zero_and_small_samples_are_not_trimmed():
+    unknown = group_report(
+        [merged_pr("alice", "2026-06-10T12:00:00")], **_window(people=["alice"])
+    )["summary"]["current"]
+    assert unknown["commits"] is None
+    assert unknown["analysis_samples"]["commits"]["missing"] == 1
+    prs = [
+        merged_pr("alice", "2026-06-10T12:00:00", number=i, commits=n)
+        for i, n in enumerate([1, 2, 100])
+    ]
+    stats = group_report(
+        prs,
+        **_window(people=["alice"], analysis={"commits": {"exclude_outliers": True}}),
+    )["summary"]["current"]
+    assert stats["analysis_samples"]["commits"]["excluded"] == 0
+    assert stats["commits"] == round(103 / 3, 2)
+
+
+def test_time_and_size_statistic_switches_and_total_lines_use_merge_window():
+    prs = [
+        merged_pr(
+            "alice",
+            "2026-06-10T12:00:00",
+            number=i,
+            hours_open=hours,
+            additions=lines,
+            deletions=2,
+        )
+        for i, (hours, lines) in enumerate([(1, 10), (2, 20), (9, 90)])
+    ]
+    stats = group_report(
+        prs,
+        **_window(
+            people=["alice"],
+            analysis={
+                "lead_time": {"statistic": "mean"},
+                "size": {"statistic": "mean"},
+            },
+        ),
+    )["summary"]["current"]
+    assert stats["lead_time"] == 4
+    assert stats["size"] == 42
+    assert stats["total_lines"] == 126
+    assert stats["added_lines"] == 120 and stats["deleted_lines"] == 6
+
+
+def test_person_changed_lines_compare_with_team_per_member_average():
+    prs = [
+        merged_pr("alice", "2026-06-10T12:00:00", number=1, additions=80, deletions=20),
+        merged_pr("bob", "2026-06-10T12:00:00", number=2, additions=250, deletions=50),
+    ]
+    report = person_report(
+        prs, **_window(login="alice", team=["alice", "bob", "carol", "dave"])
+    )
+    assert report["team_size"] == 4
+    assert report["summary"]["current"]["total_lines"] == 100
+    assert report["summary"]["compare"]["total_lines"] == 100
+    assert report["summary"]["compare"]["added_lines"] == 82.5
+    assert report["summary"]["compare"]["deleted_lines"] == 17.5
+    assert report["periods"][-1]["compare"]["total_lines"] == 100
+    group = group_report(prs, **_window(people=["alice", "bob", "carol", "dave"]))
+    assert group["summary"]["current"]["total_lines"] == 400
+
+
+def test_person_changed_lines_without_a_team_has_no_average_baseline():
+    report = person_report(
+        [merged_pr("alice", "2026-06-10T12:00:00")], **_window(login="alice", team=[])
+    )
+    assert report["team_size"] == 0
+    assert report["summary"]["compare"]["total_lines"] is None

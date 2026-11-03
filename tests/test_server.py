@@ -5,6 +5,7 @@ import urllib.error
 import urllib.request
 from contextlib import contextmanager
 from datetime import datetime, timezone
+from unittest.mock import Mock
 
 import pytest
 
@@ -195,13 +196,7 @@ def test_background_sync_is_single_flight_and_reports_progress(tmp_path):
 
 
 def test_sync_error_is_visible_and_can_be_retried(tmp_path):
-    attempts = []
-
-    def runner(progress):
-        attempts.append(1)
-        if len(attempts) == 1:
-            raise GitHubError("GitHub authentication is required")
-        return 0
+    runner = Mock(side_effect=[GitHubError("GitHub authentication is required"), 0])
 
     with _feature_server(tmp_path, sync_runner=runner) as base:
         _post(f"{base}/api/sync")
@@ -250,6 +245,14 @@ def test_sync_requires_a_configured_runner(base_url):
 
 
 def test_profile_urls_are_cached_and_optional(tmp_path):
+    config = make_config(tmp_path)
+    with Store(config.database) as store:
+        store.save(
+            "acme/api",
+            [merged_pr("alice", "2026-06-02T12:00:00")],
+            since=config.since,
+            synced_at=datetime.now(timezone.utc),
+        )
     calls = []
 
     def profiles(people):
@@ -257,8 +260,10 @@ def test_profile_urls_are_cached_and_optional(tmp_path):
         return {"alice": "https://avatars.githubusercontent.com/u/1"}
 
     with _feature_server(tmp_path, avatar_loader=profiles) as base:
+        assert _get(f"{base}/api/meta")[0] == 200
+        assert calls == []
         for _ in range(2):
-            _, body = _get(f"{base}/api/meta")
+            _, body = _get(f"{base}/api/profiles")
             assert json.loads(body)["avatars"]["alice"].startswith("https://avatars.")
         assert len(calls) == 1
 
@@ -266,4 +271,157 @@ def test_profile_urls_are_cached_and_optional(tmp_path):
         raise GitHubError("offline")
 
     with _feature_server(tmp_path, avatar_loader=unavailable) as base:
-        assert json.loads(_get(f"{base}/api/meta")[1])["avatars"] == {}
+        assert json.loads(_get(f"{base}/api/profiles")[1])["avatars"] == {}
+
+
+@pytest.mark.parametrize(
+    "settings",
+    [
+        [],
+        {"total_lines": {"statistic": "mean"}},
+        {"commits": {"statistic": "sum"}},
+        {"size": {"exclude_outliers": "yes"}},
+        {"size": {"unknown": True}},
+        {"size": []},
+        {"size": {"exclude_outliers": 1}},
+    ],
+)
+def test_invalid_analysis_options_are_rejected(base_url, settings):
+    from urllib.parse import urlencode
+
+    with pytest.raises(urllib.error.HTTPError) as error:
+        _get(f"{base_url}/api/report?" + urlencode({"analysis": json.dumps(settings)}))
+    assert error.value.code == 400
+
+
+def test_analysis_api_returns_actual_lines_and_sample_counts(base_url):
+    from urllib.parse import urlencode
+
+    query = urlencode(
+        {
+            "group": "backend",
+            "grain": "month",
+            "count": 1,
+            "until": "2026-06-05",
+            "analysis": json.dumps(
+                {"size": {"statistic": "mean", "exclude_outliers": True}}
+            ),
+        }
+    )
+    report = json.loads(_get(f"{base_url}/api/report?{query}")[1])
+    stats = report["summary"]["current"]
+    assert stats["total_lines"] == 30
+    assert stats["size"] == 10
+    assert stats["analysis_samples"]["size"]["analyzed"] == 3
+    assert stats["commits"] is None
+
+
+def test_person_html_export_freezes_dates_options_and_all_metric_variants(base_url):
+    from urllib.parse import parse_qs, urlencode
+
+    from tests.test_html_export import parse_snapshot
+
+    query = urlencode(
+        {
+            "person": "bob",
+            "grain": "week",
+            "count": 1,
+            "until": "2026-06-07",
+            "analysis": json.dumps(
+                {"size": {"statistic": "mean", "exclude_outliers": True}}
+            ),
+        }
+    )
+    with urllib.request.urlopen(f"{base_url}/api/export?{query}") as response:
+        assert response.headers.get_content_type() == "text/html"
+        assert (
+            'attachment; filename="orgpulse-acme-bob-'
+            in response.headers["Content-Disposition"]
+        )
+        snapshot, external = parse_snapshot(response.read().decode())
+    assert not external
+    assert snapshot["meta"]["people"] == ["bob"]
+    assert snapshot["meta"]["snapshot"]["from"] == "2026-06-01"
+    assert snapshot["meta"]["snapshot"]["until"] == "2026-06-07"
+    assert json.loads(parse_qs(snapshot["query"])["analysis"][0])["size"][
+        "exclude_outliers"
+    ]
+    assert set(snapshot["reports"]) == {"mean:0", "mean:1", "median:0", "median:1"}
+    assert snapshot["reports"]["mean:0"]["scope"]["name"] == "bob"
+    assert snapshot["reports"]["mean:0"]["summary"]["current"]["merged"] == 2
+    assert snapshot["reports"]["mean:0"]["summary"]["current"]["total_lines"] == 20
+
+
+def test_group_zip_contains_one_independent_report_per_member(base_url):
+    from io import BytesIO
+    from zipfile import ZipFile
+
+    from tests.test_html_export import parse_snapshot
+
+    with urllib.request.urlopen(
+        f"{base_url}/api/export?group=backend&grain=week&count=1&until=2026-06-07"
+    ) as response:
+        assert response.headers.get_content_type() == "application/zip"
+        data = response.read()
+    with ZipFile(BytesIO(data)) as bundle:
+        assert len(bundle.namelist()) == 2
+        people = set()
+        for filename in bundle.namelist():
+            assert "/" not in filename and filename.endswith(".html")
+            snapshot, external = parse_snapshot(bundle.read(filename).decode())
+            assert not external
+            name = snapshot["meta"]["snapshot"]["person"]
+            assert snapshot["meta"]["people"] == [name]
+            people.add(name)
+        assert people == {"alice", "bob"}
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "person=..%2Funsafe",
+        "person=bad%0D%0AHeader",
+        "person=bob&grain=year",
+        "group=unknown",
+    ],
+)
+def test_export_rejects_invalid_people_or_ranges(base_url, query):
+    with pytest.raises(urllib.error.HTTPError) as error:
+        _get(f"{base_url}/api/export?{query}")
+    assert error.value.code == 400
+
+
+@pytest.mark.parametrize("path", ["/api/report", "/"])
+def test_local_report_server_rejects_foreign_host_headers(base_url, path):
+    request = urllib.request.Request(
+        f"{base_url}{path}", headers={"Host": "unrelated.example"}
+    )
+    with pytest.raises(urllib.error.HTTPError) as error:
+        urllib.request.urlopen(request)
+    assert error.value.code == 403
+
+
+def test_empty_export_group_never_falls_back_to_other_people(tmp_path):
+    from orgpulse.apps.web.server import export_reports
+
+    config = make_config(tmp_path, groups={"empty": (), "team": ("alice", "bob")})
+    with pytest.raises(ValueError, match="valid GitHub person"):
+        export_reports(
+            config,
+            {"group": ["empty"]},
+            lambda people: pytest.fail("empty export should not fetch photos"),
+        )
+
+
+def test_group_export_deduplicates_case_insensitive_members(tmp_path):
+    from io import BytesIO
+    from zipfile import ZipFile
+
+    from orgpulse.apps.web.server import export_reports
+
+    config = make_config(tmp_path, groups={"team": ("Alice", "alice", "Bob", "Alice")})
+    body, _, _ = export_reports(config, {"group": ["team"]}, lambda people: {})
+    with ZipFile(BytesIO(body)) as archive:
+        assert len(archive.namelist()) == 2
+        assert "-Alice-" in archive.namelist()[0]
+        assert "-Bob-" in archive.namelist()[1]

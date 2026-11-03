@@ -6,6 +6,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, tzinfo
 from enum import StrEnum
+from statistics import mean, median, quantiles
 from typing import Any
 
 from orgpulse.common.models import PullRequest
@@ -15,6 +16,7 @@ PANEL_RECENT_LIMIT = 3
 PERSON_RECENT_LIMIT = 10
 # Medians reported per scope; higher is worse for each, so each can be flagged.
 METRICS = ("size", "lead_time", "review_wait")
+DISTRIBUTION_METRICS = (*METRICS, "commits")
 # A person's median this far past the team's median is flagged.
 OUTLIER_FACTOR = 1.5
 # A single PR past this team percentile is flagged.
@@ -55,6 +57,7 @@ class _Merged:
     size: int
     lead_time: float
     review_wait: float | None
+    commits: int | None
 
 
 class _Items:
@@ -81,6 +84,7 @@ def group_report(
     since: date,
     timezone: tzinfo,
     start: date | None = None,
+    analysis: dict[str, dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Trend against the previous range, plus a row per person against the team.
 
@@ -105,7 +109,7 @@ def group_report(
             by_login[item.login].append(item)
     team = _Items([item for items in by_login.values() for item in items])
     headcount = len(logins)
-    current = _summary(team, periods, headcount)
+    current = _summary(team, periods, headcount, analysis)
     person_limits = {
         metric: current[metric] * OUTLIER_FACTOR
         if current and current[metric] is not None
@@ -116,7 +120,7 @@ def group_report(
     rows = []
     for login, name in logins.items():
         own = _Items(by_login[login])
-        stats = _summary(own, periods, 1) or _empty()
+        stats = _summary(own, periods, 1, analysis) or _empty()
         rows.append(
             {
                 "login": name,
@@ -131,8 +135,8 @@ def group_report(
         "periods": [
             {
                 **_period_json(period),
-                "current": _summary(team, [period], headcount),
-                "compare": _summary(team, [earlier], headcount),
+                "current": _summary(team, [period], headcount, analysis),
+                "compare": _summary(team, [earlier], headcount, analysis),
             }
             for period, earlier in zip(periods, previous, strict=True)
         ],
@@ -140,7 +144,9 @@ def group_report(
             "current": current,
             # A range reaching before `since` would compare against unsynced history.
             "compare": (
-                _summary(team, previous, headcount) if previous[0].complete else None
+                _summary(team, previous, headcount, analysis)
+                if previous[0].complete
+                else None
             ),
         },
         "people": rows,
@@ -158,6 +164,7 @@ def person_report(
     since: date,
     timezone: tzinfo,
     start: date | None = None,
+    analysis: dict[str, dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """One person's trend and recent PRs, each set against their team."""
 
@@ -168,17 +175,18 @@ def person_report(
     own = _Items([item for item in merged if item.login == login.lower()])
     team_size = len(team_logins)
     return {
+        "team_size": team_size,
         "periods": [
             {
                 **_period_json(period),
-                "current": _summary(own, [period], 1),
-                "compare": _summary(team_items, [period], team_size),
+                "current": _summary(own, [period], 1, analysis),
+                "compare": _team_summary(team_items, [period], team_size, analysis),
             }
             for period in periods
         ],
         "summary": {
-            "current": _summary(own, periods, 1),
-            "compare": _summary(team_items, periods, team_size),
+            "current": _summary(own, periods, 1, analysis),
+            "compare": _team_summary(team_items, periods, team_size, analysis),
         },
         "recent": _recent(
             own,
@@ -232,6 +240,7 @@ def _merged(pull_requests: list[PullRequest], timezone: tzinfo) -> list[_Merged]
             login=pr.author.lower(),
             merged_on=pr.merged_at.astimezone(timezone).date(),
             size=pr.changed_lines,
+            commits=pr.commits,
             lead_time=_hours(pr.created_at, pr.merged_at),
             review_wait=(
                 _hours(pr.ready_at, pr.first_review_at) if pr.first_review_at else None
@@ -256,8 +265,24 @@ def _logins(
     }
 
 
+def _team_summary(
+    items: _Items,
+    periods: list[_Period],
+    headcount: int,
+    analysis: dict[str, dict[str, Any]] | None = None,
+) -> dict[str, Any] | None:
+    stats = _summary(items, periods, headcount, analysis)
+    if stats is not None:
+        for metric in ("total_lines", "added_lines", "deleted_lines"):
+            stats[metric] = round(stats[metric] / headcount, 2) if headcount else None
+    return stats
+
+
 def _summary(
-    items: _Items, periods: list[_Period], headcount: int
+    items: _Items,
+    periods: list[_Period],
+    headcount: int,
+    analysis: dict[str, dict[str, Any]] | None = None,
 ) -> dict[str, Any] | None:
     """Throughput and medians over the synced periods; None if none are synced."""
 
@@ -266,17 +291,58 @@ def _summary(
         return None
     merged = items.within(covered)
     person_periods = headcount * sum(period.coverage for period in covered)
+    distributions = {
+        metric: _distribution(merged, metric, (analysis or {}).get(metric, {}))
+        for metric in DISTRIBUTION_METRICS
+    }
     return {
         "merged": len(merged),
+        "total_lines": sum(item.size for item in merged),
+        "added_lines": sum(item.pull_request.additions for item in merged),
+        "deleted_lines": sum(item.pull_request.deletions for item in merged),
+        "analysis_samples": {
+            metric: result[1] for metric, result in distributions.items()
+        },
         "merged_per_person": (
             round(len(merged) / person_periods, 2) if person_periods else None
         ),
-        **_percentiles(merged, 0.5),
+        **{metric: result[0] for metric, result in distributions.items()},
+    }
+
+
+def _distribution(
+    items: list[_Merged], metric: str, options: dict[str, Any]
+) -> tuple[float | None, dict[str, int]]:
+    values = [value for item in items if (value := getattr(item, metric)) is not None]
+    total = len(values)
+    if options.get("exclude_outliers") and total >= 4:
+        q1, _, q3 = quantiles(values, n=4, method="inclusive")
+        spread = q3 - q1
+        values = [
+            value for value in values if q1 - 1.5 * spread <= value <= q3 + 1.5 * spread
+        ]
+    statistic = options.get("statistic", "mean" if metric == "commits" else "median")
+    value = (
+        (mean(values) if statistic == "mean" else median(values)) if values else None
+    )
+    return (round(value, 2) if value is not None else None), {
+        "total": total,
+        "analyzed": len(values),
+        "excluded": total - len(values),
+        "missing": len(items) - total,
     }
 
 
 def _empty() -> dict[str, Any]:
-    return {"merged": 0, "merged_per_person": None, **dict.fromkeys(METRICS)}
+    return {
+        "merged": 0,
+        "merged_per_person": None,
+        "total_lines": 0,
+        "added_lines": 0,
+        "deleted_lines": 0,
+        "analysis_samples": {},
+        **dict.fromkeys(DISTRIBUTION_METRICS),
+    }
 
 
 def _flagged(values: dict[str, Any], limits: dict[str, float | None]) -> list[str]:
@@ -311,6 +377,7 @@ def _recent(
                 "url": pr.url,
                 "repository": pr.repository,
                 "number": pr.number,
+                "commits": pr.commits,
                 **values,
                 "flags": _flagged(values, limits),
             }

@@ -26,10 +26,12 @@
       <header class="head">
         <div class="head__title" id="title"></div>
         <div class="head__controls">
+          <button id="export-report" type="button" hidden></button>
           <select id="count" aria-label="Range"></select>
           <div class="segmented" id="grain" role="group"></div>
         </div>
       </header>
+      <p id="report-context" class="report-context muted" hidden></p>
       <form id="custom-range" class="date-range" hidden>
         <label><span id="from-label"></span><input id="from" type="date" required></label>
         <label><span id="until-label"></span><input id="until" type="date" required></label>

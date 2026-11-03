@@ -328,3 +328,61 @@ def test_person_changed_lines_without_a_team_has_no_average_baseline():
     )
     assert report["team_size"] == 0
     assert report["summary"]["compare"]["total_lines"] is None
+
+
+def test_team_medians_use_member_rates_and_volumes_including_zero_activity():
+    prs = [merged_pr("alice", "2026-06-10T12:00:00", additions=10)]
+    prs += [
+        merged_pr("bob", "2026-06-10T12:00:00", number=i, additions=20)
+        for i in range(2)
+    ]
+    prs += [
+        merged_pr("carol", "2026-06-10T12:00:00", number=i + 2, additions=50)
+        for i in range(9)
+    ]
+    window = _window(grain=Grain.MONTH, count=1, until=date(2026, 6, 30))
+    people = ["Alice", "bob", "carol", "inactive"]
+    average = person_report(prs, login="alice", team=people, **window)
+    middle = person_report(
+        prs, login="alice", team=people, team_statistic="median", **window
+    )
+    assert average["summary"]["compare"]["merged_per_person"] == 3
+    assert average["summary"]["compare"]["total_lines"] == 125
+    assert middle["summary"]["compare"]["merged_per_person"] == 1.5
+    assert middle["summary"]["compare"]["total_lines"] == 25
+    assert middle["periods"][0]["compare"]["merged_per_person"] == 1.5
+    assert middle["summary"]["current"] == average["summary"]["current"]
+    group = group_report(prs, people=people, team_statistic="median", **window)
+    assert group["team_summary"]["total_lines"] == 25
+    assert group["summary"]["current"]["total_lines"] == 500
+    assert group["summary"]["current"]["merged"] == 12
+    assert group["people"][-1]["merged"] == 0
+    earlier = person_report(
+        prs,
+        login="alice",
+        team=people,
+        team_statistic="median",
+        **_window(
+            grain=Grain.MONTH, count=1, until=date(2025, 12, 31), since=date(2026, 1, 1)
+        ),
+    )
+    assert earlier["summary"]["compare"] is None
+
+
+def test_team_median_rates_keep_partial_period_projection_and_missing_team():
+    prs = [merged_pr("alice", "2026-06-01T12:00:00", number=i) for i in range(3)]
+    window = _window(grain=Grain.MONTH, count=1, until=date(2026, 6, 3))
+    report = person_report(
+        prs,
+        login="alice",
+        team=["alice", "inactive"],
+        team_statistic="median",
+        **window,
+    )
+    assert report["summary"]["current"]["merged_per_person"] == 30
+    assert report["summary"]["compare"]["merged_per_person"] == 15
+    empty = person_report(
+        prs, login="alice", team=[], team_statistic="median", **window
+    )
+    assert empty["summary"]["compare"]["merged_per_person"] is None
+    assert empty["summary"]["compare"]["total_lines"] is None

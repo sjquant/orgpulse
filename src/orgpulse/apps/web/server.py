@@ -266,6 +266,9 @@ def _report(
     """Build the group, person, or everyone report named in the query."""
 
     today = datetime.now(config.timezone).date()
+    team_statistic = _param(query, "team_statistic", "mean")
+    if team_statistic not in ("mean", "median"):
+        raise _BadRequest("team_statistic must be mean or median")
     raw_analysis = _param(query, "analysis", "{}")
     if len(raw_analysis) > 2048:
         raise _BadRequest("analysis options are too long")
@@ -317,6 +320,7 @@ def _report(
         "timezone": config.timezone,
         "start": start,
         "analysis": analysis,
+        "team_statistic": team_statistic,
     }
     if pull_requests is None:
         with Store(config.database) as store:

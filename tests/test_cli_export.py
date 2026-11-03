@@ -54,6 +54,8 @@ def test_cli_person_export_includes_october_31_in_configured_timezone(
             export_config,
             "--person",
             "bob",
+            "--team-statistic",
+            "median",
             "--since",
             "2026-10-01",
             "--until",
@@ -65,6 +67,7 @@ def test_cli_person_export_includes_october_31_in_configured_timezone(
     )
     snapshot, external = parse_snapshot(output.read_text())
     assert not external
+    assert parse_qs(snapshot["query"])["team_statistic"] == ["median"]
     assert snapshot["meta"]["snapshot"]["until"] == "2026-10-31"
     stats = snapshot["reports"]["mean:0"]["summary"]["current"]
     assert stats["merged"] == 2 and stats["commits"] == 3

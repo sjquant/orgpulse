@@ -85,6 +85,7 @@ def group_report(
     timezone: tzinfo,
     start: date | None = None,
     analysis: dict[str, dict[str, Any]] | None = None,
+    team_statistic: str = "mean",
 ) -> dict[str, Any]:
     """Trend against the previous range, plus a row per person against the team.
 
@@ -131,6 +132,9 @@ def group_report(
         )
     rows.sort(key=lambda row: (-row["merged"], row["login"].lower()))
     return {
+        "team_summary": _team_summary(
+            team, periods, tuple(logins), analysis, team_statistic
+        ),
         "headcount": headcount,
         "periods": [
             {
@@ -165,6 +169,7 @@ def person_report(
     timezone: tzinfo,
     start: date | None = None,
     analysis: dict[str, dict[str, Any]] | None = None,
+    team_statistic: str = "mean",
 ) -> dict[str, Any]:
     """One person's trend and recent PRs, each set against their team."""
 
@@ -180,13 +185,17 @@ def person_report(
             {
                 **_period_json(period),
                 "current": _summary(own, [period], 1, analysis),
-                "compare": _team_summary(team_items, [period], team_size, analysis),
+                "compare": _team_summary(
+                    team_items, [period], tuple(team_logins), analysis, team_statistic
+                ),
             }
             for period in periods
         ],
         "summary": {
             "current": _summary(own, periods, 1, analysis),
-            "compare": _team_summary(team_items, periods, team_size, analysis),
+            "compare": _team_summary(
+                team_items, periods, tuple(team_logins), analysis, team_statistic
+            ),
         },
         "recent": _recent(
             own,
@@ -268,13 +277,47 @@ def _logins(
 def _team_summary(
     items: _Items,
     periods: list[_Period],
-    headcount: int,
+    people: Sequence[str],
     analysis: dict[str, dict[str, Any]] | None = None,
+    statistic: str = "mean",
 ) -> dict[str, Any] | None:
-    stats = _summary(items, periods, headcount, analysis)
-    if stats is not None:
-        for metric in ("total_lines", "added_lines", "deleted_lines"):
-            stats[metric] = round(stats[metric] / headcount, 2) if headcount else None
+    """Compare person-level rates and volumes across the configured roster."""
+    stats = _summary(items, periods, len(people), analysis)
+    if stats is None:
+        return None
+    covered = [period for period in periods if period.synced]
+    elapsed = sum(period.coverage for period in covered)
+    per_person = {
+        login: {
+            "merged_per_person": 0.0,
+            "total_lines": 0,
+            "added_lines": 0,
+            "deleted_lines": 0,
+        }
+        for login in people
+    }
+    for item in items.within(covered):
+        own = per_person[item.login]
+        own["merged_per_person"] += 1 / elapsed
+        own["total_lines"] += item.size
+        own["added_lines"] += item.pull_request.additions
+        own["deleted_lines"] += item.pull_request.deletions
+    benchmarks = {
+        name: {
+            metric: round(aggregate([own[metric] for own in per_person.values()]), 2)
+            if per_person
+            else None
+            for metric in (
+                "merged_per_person",
+                "total_lines",
+                "added_lines",
+                "deleted_lines",
+            )
+        }
+        for name, aggregate in (("mean", mean), ("median", median))
+    }
+    stats["team_benchmarks"] = benchmarks
+    stats.update(benchmarks[statistic])
     return stats
 
 

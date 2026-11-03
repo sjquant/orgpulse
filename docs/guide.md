@@ -67,8 +67,11 @@ available and fall back to initials. Credentials stay on your computer.
 | Commits / PR | Commit count on the original GitHub PR, before squash/rebase merging; mean by default |
 
 In a personal view, changed-line totals are compared with the **team's per-person
-average**, including configured members with no PRs in the range. Group views
-retain actual totals. PR counts in an unfinished week/month are projected to a
+average** by default. On a merged-PR or changed-line chart, open **Team comparison**
+to choose mean or median across members. This choice applies to both metrics;
+your own rate and total remain unchanged. Configured members with no PRs in the
+range count as zero. Without configured groups, only people with merged PRs in
+the range are known. Group views retain actual totals. PR counts in an unfinished week/month are projected to a
 full period at the current pace and drawn dashed. Other unfinished-period values
 are observed statistics, not forecasts.
 
@@ -107,7 +110,9 @@ uv run orgpulse export --person alice \
   --output reports/alice-through-2026-10-31.html
 ```
 
-Both dates include the entire day in the configured timezone. Omit `--since` to
+`--team-statistic mean|median` sets the initial team comparison for merged PR
+rates and changed lines. Both dates include the entire day in the configured
+timezone. Omit `--since` to
 use the configured history start. `--statistic mean|median` and
 `--exclude-outliers` set the initial distribution-metric view. `--no-avatars`
 avoids all network requests and uses initials. Export reads stored data without
@@ -125,7 +130,11 @@ without a qualifying review are excluded from those statistics, not counted as
 zero. The next sync fills missing commit counts in an existing database. First
 review currently checks the first 30 reviews and first ready-for-review event per
 PR. Changing group membership also changes historical comparisons; the report
-does not reconstruct past team rosters.
+does not reconstruct past team rosters or know join/leave dates. A first or last
+PR is not treated as a participation boundary. Periods before collected history
+remain unavailable rather than zero. Team comparisons can therefore understate
+activity for people who joined during the selected range; choose a shared period
+when comparing them.
 
 ## Development
 

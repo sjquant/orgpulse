@@ -91,6 +91,7 @@ def test_meta_lists_grouped_people_and_groups(base_url):
     [
         "group=frontend",
         "grain=year",
+        "team_statistic=sum",
         "count=157",
         "grain=month&count=37",
         "from=2026-06-10&until=2026-06-01",
@@ -324,6 +325,7 @@ def test_person_html_export_freezes_dates_options_and_all_metric_variants(base_u
     query = urlencode(
         {
             "person": "bob",
+            "team_statistic": "median",
             "grain": "week",
             "count": 1,
             "until": "2026-06-07",
@@ -341,6 +343,10 @@ def test_person_html_export_freezes_dates_options_and_all_metric_variants(base_u
         snapshot, external = parse_snapshot(response.read().decode())
     assert not external
     assert snapshot["meta"]["people"] == ["bob"]
+    assert parse_qs(snapshot["query"])["team_statistic"] == ["median"]
+    assert set(
+        snapshot["reports"]["mean:0"]["summary"]["compare"]["team_benchmarks"]
+    ) == {"mean", "median"}
     assert snapshot["meta"]["snapshot"]["from"] == "2026-06-01"
     assert snapshot["meta"]["snapshot"]["until"] == "2026-06-07"
     assert json.loads(parse_qs(snapshot["query"])["analysis"][0])["size"][

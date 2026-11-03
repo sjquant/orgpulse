@@ -50,6 +50,12 @@ def main() -> int:
     )
     export.add_argument("--period", choices=("week", "month"), default="month")
     export.add_argument(
+        "--team-statistic",
+        choices=("mean", "median"),
+        default="mean",
+        help="team comparison for merged PR rates and changed lines",
+    )
+    export.add_argument(
         "--statistic",
         choices=("mean", "median"),
         help="initial statistic for all distribution metrics",
@@ -100,6 +106,7 @@ def _export(config: Config, args: argparse.Namespace) -> None:
         "from": [(args.since or config.since).isoformat()],
         "until": [(args.until or datetime.now(config.timezone).date()).isoformat()],
         "grain": [args.period],
+        "team_statistic": [args.team_statistic],
     }
     if args.person:
         query["person"] = [args.person]

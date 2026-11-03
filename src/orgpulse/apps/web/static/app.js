@@ -45,7 +45,7 @@ const I18N = {
     analysis: "Analysis options", analysisScope: "Applies to this metric only", statistic: "Statistic",
     mean: "Mean", median: "Median", excludeOutliers: "Exclude outliers", outlierRule: "1.5 × IQR; at least 4 observations", reset: "Reset",
     sample: (s) => `${s.analyzed} analyzed · ${s.excluded} excluded${s.missing ? ` · ${s.missing} missing` : ""}`,
-    actualTotal: "Actual sum · additions + deletions", teamAverage: "Team per-person average",
+    actualTotal: "Actual sum · additions + deletions", teamAverage: "Team per-person average", teamMedian: "Team median", teamComparison: "Team comparison", teamScope: "For merged PR rates and changed lines. Configured members with no PRs count as zero; participation dates are not tracked.",
     team: "Team",
     teamValue: (value) => `team ${value}`,
     thisPeriod: "This period",
@@ -103,7 +103,7 @@ const I18N = {
     analysis: "분석 옵션", analysisScope: "이 지표에만 적용", statistic: "대표값",
     mean: "평균", median: "중앙값", excludeOutliers: "이상치 제외", outlierRule: "1.5 × IQR 기준 · 표본 4개 이상", reset: "초기화",
     sample: (s) => `분석 ${s.analyzed}개 · 제외 ${s.excluded}개${s.missing ? ` · 미수집 ${s.missing}개` : ""}`,
-    actualTotal: "실제 합계 · 추가 + 삭제", teamAverage: "팀 인당 평균",
+    actualTotal: "실제 합계 · 추가 + 삭제", teamAverage: "팀 인당 평균", teamMedian: "팀 중앙값", teamComparison: "팀 비교 기준", teamScope: "머지 PR과 변경 라인 비교에 적용합니다. 설정된 구성원의 활동이 없으면 0으로 포함하며, 합류·퇴사일은 반영하지 않습니다.",
     team: "팀",
     teamValue: (value) => `팀 ${value}`,
     thisPeriod: "이번 기간",
@@ -123,11 +123,12 @@ const I18N = {
 
 const METRICS = ["merged_per_person", "lead_time", "size", "review_wait", "total_lines", "commits"];
 const DISTRIBUTION_METRICS = ["lead_time", "size", "review_wait", "commits"];
+const TEAM_METRICS = ["merged_per_person", "total_lines"];
 const PR_METRICS = ["lead_time", "size", "review_wait", "commits"];
 const RANGES = { week: [4, 12, 26, 52, 104, 156], month: [3, 6, 12, 24, 36] };
 const DEFAULT_COUNT = { week: 12, month: 6 };
 
-const state = { group: null, person: null, grain: "week", count: 12, metric: "merged_per_person", focus: null, custom: false, from: "", until: "", analysis: {}, analysisOpen: false };
+const state = { group: null, person: null, grain: "week", count: 12, metric: "merged_per_person", focus: null, custom: false, from: "", until: "", analysis: {}, teamStatistic: "mean", analysisOpen: false };
 let meta = null;
 let report = null;
 let reportRequest = 0;
@@ -299,6 +300,7 @@ function readUrl() {
     state.from = params.get("from");
     state.until = params.get("until");
   }
+  if (params.get("team_statistic") === "median") state.teamStatistic = "median";
   if (params.has("analysis")) state.analysis = JSON.parse(params.get("analysis"));
   if (METRICS.includes(params.get("metric"))) state.metric = params.get("metric");
   if (params.get("person")) state.person = params.get("person");
@@ -316,6 +318,7 @@ function syncUrl() {
     params.set("until", state.until);
   } else params.set("count", state.count);
   params.set("metric", state.metric);
+  if (state.teamStatistic !== "mean") params.set("team_statistic", state.teamStatistic);
   if (Object.keys(state.analysis).length) params.set("analysis", JSON.stringify(state.analysis));
   if (!SNAPSHOT) history.replaceState(null, "", `?${params}`);
   return params;
@@ -355,6 +358,9 @@ function snapshotReport() {
       copy(result.summary[key], source.summary[key]);
       result.periods.forEach((period, i) => copy(period[key], source.periods[i][key]));
     }
+  }
+  for (const compare of [result.summary.compare, ...result.periods.map((period) => period.compare)]) {
+    if (compare?.team_benchmarks) Object.assign(compare, compare.team_benchmarks[state.teamStatistic]);
   }
   return result;
 }
@@ -519,7 +525,7 @@ function renderKpis() {
         h("span", { class: "kpi__value" }, format(metric, value), unit(metric) ? h("small", {}, unit(metric)) : null),
         metric === "total_lines" && current ? h("span", { class: "kpi__note" }, `+${fmtNumber(current.added_lines, 0)} / −${fmtNumber(current.deleted_lines, 0)}`) : null,
         DISTRIBUTION_METRICS.includes(metric) ? h("span", { class: "kpi__note" }, t[analysisOptions(metric).statistic], analysisOptions(metric).exclude_outliers ? ` · ${t.excludeOutliers}` : "") : null,
-        person ? h("span", { class: "kpi__note" }, metric === "total_lines" ? `${t.teamAverage} ${withUnit(metric, other)}` : t.teamValue(withUnit(metric, other))) : delta(metric, value, other),
+        person ? h("span", { class: "kpi__note" }, TEAM_METRICS.includes(metric) ? `${teamLabel(metric)} ${withUnit(metric, other)}` : t.teamValue(withUnit(metric, other))) : delta(metric, value, other),
       );
     }),
   );
@@ -541,7 +547,21 @@ function analysisOptions(metric) {
   return { statistic: metric === "commits" ? "mean" : "median", exclude_outliers: false, ...state.analysis[metric] };
 }
 
+function teamLabel(metric) {
+  return TEAM_METRICS.includes(metric) ? (state.teamStatistic === "median" ? t.teamMedian : t.teamAverage) : t.team;
+}
+
 function analysisControls(metric) {
+  if (TEAM_METRICS.includes(metric)) {
+    const picker = h("select", { "aria-label": t.teamComparison, onchange: (event) => { state.teamStatistic = event.target.value; load(); } },
+      h("option", { value: "mean" }, t.mean), h("option", { value: "median" }, t.median));
+    picker.value = state.teamStatistic;
+    return h("details", { class: "analysis-options", open: state.analysisOpen ? "" : null, ontoggle: (event) => { state.analysisOpen = event.target.open; } },
+      h("summary", {}, t.teamComparison),
+      h("div", { class: "analysis-popover" },
+        h("label", {}, t.teamComparison, picker),
+        h("p", { class: "muted" }, t.teamScope)));
+  }
   if (!DISTRIBUTION_METRICS.includes(metric)) return null;
   const options = analysisOptions(metric);
   const change = (patch) => { state.analysis[metric] = { ...analysisOptions(metric), ...patch }; load(); };
@@ -565,7 +585,7 @@ function renderChart() {
   const person = report.scope.kind === "person";
   const series = [
     { key: "current", name: person ? report.scope.name : t.thisPeriod, color: "var(--series)", area: true },
-    { key: "compare", name: person ? (metric === "total_lines" ? t.teamAverage : t.team) : t.previousPeriod, color: "var(--series-2)", dashed: true },
+    { key: "compare", name: person ? teamLabel(metric) : t.previousPeriod, color: "var(--series-2)", dashed: true },
   ].filter((s) => periods.some((period) => period[s.key]?.[metric] != null));
   const note = metric === "merged_per_person" ? t.chartNote[state.grain] : metric === "total_lines" ? t.actualTotal : `${t[analysisOptions(metric).statistic]}${analysisOptions(metric).exclude_outliers ? ` · ${t.excludeOutliers}` : ""}`;
   const sample = report.summary.current?.analysis_samples?.[metric];
@@ -790,7 +810,7 @@ function renderPanel() {
   panel.hidden = !row;
   $("app").classList.toggle("no-panel", !row);
   if (!row) return;
-  const team = report.summary.current;
+  const team = report.team_summary;
   fill(
     panel,
     h(
@@ -811,7 +831,7 @@ function renderPanel() {
             "div",
             {},
             h("span", {}, columnLabel(metric)),
-            h("b", { class: row.flags.includes(metric) ? "flag" : null }, format(metric, row[metric]), h("small", {}, ` vs ${format(metric, team?.[metric] ?? null)}`)),
+            h("b", { class: row.flags.includes(metric) ? "flag" : null }, format(metric, row[metric]), h("small", {}, ` vs ${format(metric, team?.[metric] ?? null)}${TEAM_METRICS.includes(metric) ? ` (${teamLabel(metric)})` : ""}`)),
           ),
         ),
       ),

@@ -19,6 +19,7 @@ class PullRequest:
     merged_at: datetime
     additions: int
     deletions: int
+    commits: int | None = None
 
     @property
     def changed_lines(self) -> int:

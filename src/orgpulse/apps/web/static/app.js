@@ -1,14 +1,23 @@
 "use strict";
 
+const SNAPSHOT = document.getElementById("report-data") ? JSON.parse(document.getElementById("report-data").textContent) : null;
+
 const I18N = {
   en: {
-    never: "Not synced yet. Run `orgpulse sync`.",
+    never: "Not synced yet.",
+    exportPerson: "Download HTML report", exportGroup: "Personal reports ZIP", exporting: "Preparing report…", snapshotLabel: "Personal report", generated: "Created", historySince: "History since",
+    sync: "Sync now", syncing: "Syncing…", syncDone: "Sync complete",
+    syncProgress: (repos, prs) => `${repos} repositories · ${prs} PRs processed`,
+    syncConnectionError: "Cannot check sync status. Reconnecting…",
     synced: (at) => `Synced ${at}`,
     groups: "Groups",
     people: "People",
     everyone: "Everyone",
     grain: { week: "Week", month: "Month" },
     last: (span) => `Last ${span}`,
+    custom: "Custom range…", from: "Start date", until: "End date", apply: "Apply",
+    invalidRange: "Start date must be on or before end date.",
+    customComparison: (from, until) => `${from} – ${until} · Compared with the preceding equal-length range`,
     vsPrevious: (span) => `Compared with the previous ${span}`,
     vsTeam: (team) => `Compared with ${team}`,
     metric: {
@@ -16,39 +25,57 @@ const I18N = {
       lead_time: "Time to merge",
       size: "PR size",
       review_wait: "First review",
+      total_lines: "Total changed lines", commits: "Commits / PR",
     },
     personMerged: "Merged PRs",
+    averageMerged: { week: "Average PRs / week", month: "Average PRs / month" },
+    averagePerPerson: { week: "Average PRs / person / week", month: "Average PRs / person / month" },
+    partialCounts: "Dashed PR counts are projected to a full week or month at the current pace.",
     columnMerged: { week: "Merged/wk", month: "Merged/mo" },
     definition: {
+      total_lines: "Actual additions plus deletions across merged PRs. Not unique lines or net growth; unaffected by outlier removal.",
+      commits: "Number of commits in the GitHub PR, before squash/rebase merging. Missing counts are excluded.",
       merged_per_person: "Merged PRs ÷ people ÷ periods, counted by merge date.",
-      lead_time: "Median time from opening a PR to merging it.",
-      size: "Median lines added plus deleted per merged PR.",
-      review_wait: "Median time from ready-for-review to the first review by someone else. Bots are ignored.",
+      lead_time: "Time from opening a PR to merging it.",
+      size: "Lines added plus deleted per merged PR.",
+      review_wait: "Time from ready-for-review to the first review by someone else. Bots are ignored.",
     },
     unit: { week: "/wk", month: "/mo", lines: "lines" },
     chartNote: { week: "per week", month: "per month", median: "median" },
+    analysis: "Analysis options", analysisScope: "Applies to this metric only", statistic: "Statistic",
+    mean: "Mean", median: "Median", excludeOutliers: "Exclude outliers", outlierRule: "1.5 × IQR; at least 4 observations", reset: "Reset",
+    sample: (s) => `${s.analyzed} analyzed · ${s.excluded} excluded${s.missing ? ` · ${s.missing} missing` : ""}`,
+    actualTotal: "Actual sum · additions + deletions", teamAverage: "Team per-person average", teamMedian: "Team median", teamComparison: "Team comparison", teamScope: "For merged PR rates and changed lines. Configured members with no PRs count as zero; participation dates are not tracked.",
     team: "Team",
     teamValue: (value) => `team ${value}`,
     thisPeriod: "This period",
     previousPeriod: "Previous period",
     inProgress: "in progress",
     noData: "No merged PRs in this range.",
+    noValues: "No known values to analyze. Sync to fill missing commit counts.",
     person: "Person",
     versusTeam: (name) => `${name} vs team`,
     recent: "Recent PRs",
     pr: "PR",
     open: (name) => `Open ${name} →`,
     flagNote: "Well above the team's usual value",
-    flagTitle: "Above 1.5× the team median for a person, or the team's 90th percentile for a PR",
+    flagTitle: "Above 1.5× the team representative value for a person, or the team's 90th percentile for a PR",
   },
   ko: {
-    never: "아직 동기화하지 않았습니다. `orgpulse sync`를 실행하세요.",
+    never: "아직 동기화하지 않았습니다.",
+    exportPerson: "HTML 보고서 다운로드", exportGroup: "개인별 보고서 ZIP", exporting: "보고서 준비 중…", snapshotLabel: "개인 보고서", generated: "생성", historySince: "수집 시작",
+    sync: "지금 동기화", syncing: "동기화 중…", syncDone: "동기화 완료",
+    syncProgress: (repos, prs) => `${repos}개 저장소 · ${prs}개 PR 처리`,
+    syncConnectionError: "동기화 상태를 확인할 수 없습니다. 다시 연결 중…",
     synced: (at) => `${at} 동기화`,
     groups: "그룹",
     people: "사람",
     everyone: "전체",
     grain: { week: "주", month: "월" },
     last: (span) => `최근 ${span}`,
+    custom: "사용자 지정…", from: "시작일", until: "종료일", apply: "적용",
+    invalidRange: "시작일은 종료일보다 늦을 수 없습니다.",
+    customComparison: (from, until) => `${from} – ${until} · 직전 같은 길이 기간 대비`,
     vsPrevious: (span) => `이전 ${span} 대비`,
     vsTeam: (team) => `${team} 대비`,
     metric: {
@@ -56,42 +83,58 @@ const I18N = {
       lead_time: "머지까지 시간",
       size: "PR 크기",
       review_wait: "첫 리뷰까지",
+      total_lines: "총 변경 라인", commits: "PR당 커밋 수",
     },
     personMerged: "머지 PR",
+    averageMerged: { week: "주평균 머지 PR", month: "월평균 머지 PR" },
+    averagePerPerson: { week: "인당 주평균 머지 PR", month: "인당 월평균 머지 PR" },
+    partialCounts: "점선 구간의 PR 수는 현재 속도를 기준으로 한 주·월 전체로 환산한 예상값입니다.",
     columnMerged: { week: "머지/주", month: "머지/월" },
     definition: {
+      total_lines: "선택 기간에 병합된 PR의 추가+삭제 줄 수 합계. 순증가·고유 라인 수가 아니며 이상치 제외와 무관합니다.",
+      commits: "스쿼시·리베이스 후 커밋 수가 아닌 GitHub PR의 커밋 수. 미수집 항목은 통계에서 제외합니다.",
       merged_per_person: "머지된 PR 수 ÷ 인원 ÷ 기간. 머지일 기준입니다.",
-      lead_time: "PR을 연 시점부터 머지까지 걸린 시간의 중앙값.",
-      size: "머지된 PR의 추가+삭제 줄 수 중앙값.",
-      review_wait: "리뷰 가능 상태부터 작성자가 아닌 사람의 첫 리뷰까지 걸린 시간의 중앙값. 봇은 제외합니다.",
+      lead_time: "PR을 연 시점부터 머지까지 걸린 시간.",
+      size: "머지된 PR의 추가+삭제 줄 수.",
+      review_wait: "리뷰 가능 상태부터 작성자가 아닌 사람의 첫 리뷰까지 걸린 시간. 봇은 제외합니다.",
     },
     unit: { week: "/주", month: "/월", lines: "줄" },
     chartNote: { week: "주당", month: "월당", median: "중앙값" },
+    analysis: "분석 옵션", analysisScope: "이 지표에만 적용", statistic: "대표값",
+    mean: "평균", median: "중앙값", excludeOutliers: "이상치 제외", outlierRule: "1.5 × IQR 기준 · 표본 4개 이상", reset: "초기화",
+    sample: (s) => `분석 ${s.analyzed}개 · 제외 ${s.excluded}개${s.missing ? ` · 미수집 ${s.missing}개` : ""}`,
+    actualTotal: "실제 합계 · 추가 + 삭제", teamAverage: "팀 인당 평균", teamMedian: "팀 중앙값", teamComparison: "팀 비교 기준", teamScope: "머지 PR과 변경 라인 비교에 적용합니다. 설정된 구성원의 활동이 없으면 0으로 포함하며, 합류·퇴사일은 반영하지 않습니다.",
     team: "팀",
     teamValue: (value) => `팀 ${value}`,
     thisPeriod: "이번 기간",
     previousPeriod: "이전 기간",
     inProgress: "진행 중",
     noData: "이 기간에 머지된 PR이 없습니다.",
+    noValues: "분석 가능한 값이 없습니다. 커밋 수가 미수집 상태라면 동기화해 주세요.",
     person: "사람",
     versusTeam: (name) => `${name} vs 팀`,
     recent: "최근 PR",
     pr: "PR",
     open: (name) => `${name} 화면 열기 →`,
     flagNote: "팀 평소보다 크게 높은 값",
-    flagTitle: "사람은 팀 중앙값의 1.5배 초과, PR은 팀 상위 10%",
+    flagTitle: "사람은 팀 대표값의 1.5배 초과, PR은 팀 상위 10%",
   },
 };
 
-const METRICS = ["merged_per_person", "lead_time", "size", "review_wait"];
-const PR_METRICS = METRICS.slice(1);
-const RANGES = { week: [4, 12, 26, 52], month: [3, 6, 12] };
+const METRICS = ["merged_per_person", "lead_time", "size", "review_wait", "total_lines", "commits"];
+const DISTRIBUTION_METRICS = ["lead_time", "size", "review_wait", "commits"];
+const TEAM_METRICS = ["merged_per_person", "total_lines"];
+const PR_METRICS = ["lead_time", "size", "review_wait", "commits"];
+const RANGES = { week: [4, 12, 26, 52, 104, 156], month: [3, 6, 12, 24, 36] };
 const DEFAULT_COUNT = { week: 12, month: 6 };
 
-const state = { group: null, person: null, grain: "week", count: 12, metric: "merged_per_person", focus: null };
+const state = { group: null, person: null, grain: "week", count: 12, metric: "merged_per_person", focus: null, custom: false, from: "", until: "", analysis: {}, teamStatistic: "mean", analysisOpen: false };
 let meta = null;
 let report = null;
+let reportRequest = 0;
 let t = I18N.en;
+let syncStatus = null;
+let syncTimer;
 
 const $ = (id) => document.getElementById(id);
 const present = (children) => children.filter((child) => child !== null && child !== undefined && child !== false);
@@ -138,12 +181,13 @@ function fmtHours(value) {
 
 function format(metric, value) {
   if (metric === "lead_time" || metric === "review_wait") return fmtHours(value);
-  return fmtNumber(value, metric === "size" ? 0 : 1);
+  return fmtNumber(value, ["size", "total_lines"].includes(metric) ? 0 : 1);
 }
 
 function unit(metric) {
   if (metric === "merged_per_person") return t.unit[state.grain];
-  if (metric === "size") return t.unit.lines;
+  if (metric === "size" || metric === "total_lines") return t.unit.lines;
+  if (metric === "commits") return meta.locale === "ko" ? "개 / PR" : "commits / PR";
   return "";
 }
 
@@ -155,8 +199,11 @@ function span(count = state.count) {
   return fmtUnit(count, state.grain, 0, "long");
 }
 
-function metricLabel(metric) {
-  return metric === "merged_per_person" && report.scope.kind === "person" ? t.personMerged : t.metric[metric];
+function metricLabel(metric, summary = false) {
+  if (metric !== "merged_per_person") return t.metric[metric];
+  const person = report.scope.kind === "person";
+  if (summary) return (person ? t.averageMerged : t.averagePerPerson)[state.grain];
+  return person ? t.personMerged : t.metric[metric];
 }
 
 function columnLabel(metric) {
@@ -169,14 +216,70 @@ function initials(login) {
 
 function dateLabel(iso) {
   const day = new Date(`${iso}T00:00:00`);
-  if (state.grain === "month") return day.toLocaleDateString(meta.locale, { month: "short" });
-  return day.toLocaleDateString(meta.locale, { month: "short", day: "numeric" });
+  const year = report.periods[0].start.slice(0, 4) !== report.periods.at(-1).start.slice(0, 4) ? "numeric" : undefined;
+  if (state.grain === "month") return day.toLocaleDateString(meta.locale, { year, month: "short" });
+  return day.toLocaleDateString(meta.locale, { year, month: "short", day: "numeric" });
+}
+
+function avatar(login, large = false) {
+  const url = meta.avatars?.[login.toLowerCase()];
+  return h("span", { class: `avatar${large ? " large" : ""}` }, initials(login),
+    url ? h("img", { src: url, alt: "", loading: "lazy", decoding: "async", referrerpolicy: "no-referrer", onerror: (event) => event.target.remove() }) : null);
+}
+
+function renderSync() {
+  $("synced").textContent = meta.synced_at ? t.synced(new Date(meta.synced_at).toLocaleString(meta.locale, { dateStyle: "medium", timeStyle: "short" })) : t.never;
+  $("sync").disabled = !syncStatus?.available || syncStatus.state === "running";
+  $("sync").textContent = syncStatus?.state === "running" ? t.syncing : t.sync;
+  const progress = syncStatus?.repositories ? t.syncProgress(syncStatus.repositories, syncStatus.processed_prs) : "";
+  $("sync-status").textContent = syncStatus?.state === "error" ? syncStatus.error : [syncStatus?.state === "success" ? t.syncDone : "", progress].filter(Boolean).join(" · ");
+  $("sync-status").classList.toggle("error", syncStatus?.state === "error");
+}
+
+async function loadProfiles() {
+  try {
+    const photos = await getJSON("/api/profiles");
+    meta.avatars = { ...meta.avatars, ...photos.avatars };
+    renderNav();
+    if (report) { renderTitle(); renderDetail(); renderPanel(); }
+  } catch { /* Initials remain available when GitHub cannot be reached. */ }
+}
+
+async function pollSync(refresh = false) {
+  clearTimeout(syncTimer);
+  const wasRunning = syncStatus?.state === "running";
+  try {
+    syncStatus = await getJSON("/api/sync");
+    renderSync();
+    if (syncStatus.state === "running") syncTimer = setTimeout(pollSync, 1500);
+    else if (wasRunning || refresh) {
+      meta = { ...await getJSON("/api/meta"), avatars: meta.avatars || {} };
+      loadProfiles();
+      renderSync();
+      await load();
+    }
+  } catch (error) {
+    $("sync-status").textContent = t.syncConnectionError;
+    syncTimer = setTimeout(pollSync, 3000);
+  }
+}
+
+async function startSync() {
+  $("sync").disabled = true;
+  try {
+    syncStatus = await getJSON("/api/sync", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+    renderSync();
+    await pollSync(true);
+  } catch (error) {
+    $("sync-status").textContent = error.message;
+    await pollSync();
+  }
 }
 
 // ---- state & data ------------------------------------------------------
 
-async function getJSON(url) {
-  const response = await fetch(url);
+async function getJSON(url, options = {}) {
+  const response = await fetch(url, options);
   const payload = await response.json();
   if (!response.ok) throw new Error(payload.error || response.statusText);
   return payload;
@@ -188,13 +291,21 @@ function showError(message) {
 }
 
 function readUrl() {
-  const params = new URLSearchParams(location.search);
+  const params = new URLSearchParams(SNAPSHOT ? SNAPSHOT.query : location.search);
   if (params.get("grain") === "month") state.grain = "month";
   const count = Number(params.get("count"));
   state.count = RANGES[state.grain].includes(count) ? count : DEFAULT_COUNT[state.grain];
+  if (params.has("from") && params.has("until")) {
+    state.custom = true;
+    state.from = params.get("from");
+    state.until = params.get("until");
+  }
+  if (params.get("team_statistic") === "median") state.teamStatistic = "median";
+  if (params.has("analysis")) state.analysis = JSON.parse(params.get("analysis"));
   if (METRICS.includes(params.get("metric"))) state.metric = params.get("metric");
   if (params.get("person")) state.person = params.get("person");
   else if (meta.groups.includes(params.get("group"))) state.group = params.get("group");
+  else if (meta.groups.length === 1) state.group = meta.groups[0];
 }
 
 function syncUrl() {
@@ -202,25 +313,73 @@ function syncUrl() {
   if (state.person) params.set("person", state.person);
   else if (state.group) params.set("group", state.group);
   params.set("grain", state.grain);
-  params.set("count", state.count);
+  if (state.custom) {
+    params.set("from", state.from);
+    params.set("until", state.until);
+  } else params.set("count", state.count);
   params.set("metric", state.metric);
-  history.replaceState(null, "", `?${params}`);
+  if (state.teamStatistic !== "mean") params.set("team_statistic", state.teamStatistic);
+  if (Object.keys(state.analysis).length) params.set("analysis", JSON.stringify(state.analysis));
+  if (!SNAPSHOT) history.replaceState(null, "", `?${params}`);
   return params;
 }
 
 async function load() {
+  if (SNAPSHOT) { report = snapshotReport(); render(); return; }
+  const request = ++reportRequest;
   const params = syncUrl();
   renderNav();
   try {
-    report = await getJSON(`/api/report?${params}`);
+    const payload = await getJSON(`/api/report?${params}`);
+    if (request !== reportRequest) return;
+    report = payload;
     showError("");
   } catch (error) {
+    if (request !== reportRequest) return;
     showError(error.message);
     return;
   }
   const people = report.people || [];
   if (!people.some((row) => row.login === state.focus)) state.focus = people[0]?.login ?? null;
   render();
+}
+
+function snapshotReport() {
+  const result = structuredClone(SNAPSHOT.reports["median:0"]);
+  for (const metric of DISTRIBUTION_METRICS) {
+    const options = analysisOptions(metric);
+    const source = SNAPSHOT.reports[`${options.statistic}:${options.exclude_outliers ? 1 : 0}`];
+    const copy = (target, from) => {
+      if (!target || !from) return;
+      target[metric] = from[metric];
+      target.analysis_samples[metric] = structuredClone(from.analysis_samples[metric]);
+    };
+    for (const key of ["current", "compare"]) {
+      copy(result.summary[key], source.summary[key]);
+      result.periods.forEach((period, i) => copy(period[key], source.periods[i][key]));
+    }
+  }
+  for (const compare of [result.summary.compare, ...result.periods.map((period) => period.compare)]) {
+    if (compare?.team_benchmarks) Object.assign(compare, compare.team_benchmarks[state.teamStatistic]);
+  }
+  return result;
+}
+
+async function exportReport() {
+  const button = $("export-report");
+  button.disabled = true;
+  button.textContent = t.exporting;
+  try {
+    const response = await fetch(`/api/export?${syncUrl()}`);
+    if (!response.ok) { const error = await response.json(); throw new Error(error.error || response.statusText); }
+    const blob = await response.blob();
+    const href = URL.createObjectURL(blob);
+    const link = h("a", { href, download: /filename="([^"]+)"/.exec(response.headers.get("Content-Disposition") || "")?.[1] || "orgpulse-report.html" });
+    document.body.append(link);
+    link.click(); link.remove();
+    setTimeout(() => URL.revokeObjectURL(href), 1000);
+  } catch (error) { showError(error.message); }
+  finally { button.disabled = false; button.textContent = state.person ? t.exportPerson : t.exportGroup; }
 }
 
 function select(scope) {
@@ -243,7 +402,7 @@ function render() {
 
 function renderNav() {
   const people = meta.people.map((login) =>
-    navItem(login, state.person?.toLowerCase() === login.toLowerCase(), () => select({ person: login }), h("span", { class: "avatar" }, initials(login))),
+    navItem(login, state.person?.toLowerCase() === login.toLowerCase(), () => select({ person: login }), avatar(login)),
   );
   fill(
     $("nav"),
@@ -251,7 +410,7 @@ function renderNav() {
       "div",
       { class: "nav-group" },
       h("div", { class: "nav-label" }, t.groups),
-      navItem(t.everyone, !state.group && !state.person, () => select({})),
+      meta.groups.length !== 1 ? navItem(t.everyone, !state.group && !state.person, () => select({})) : null,
       ...meta.groups.map((name) => navItem(name, state.group === name, () => select({ group: name }))),
     ),
     people.length ? h("div", { class: "nav-group" }, h("div", { class: "nav-label" }, t.people), ...people) : null,
@@ -267,20 +426,53 @@ function renderTitle() {
   if (kind === "person") {
     fill(
       $("title"),
-      h("span", { class: "avatar large" }, initials(name)),
+      avatar(name, true),
       h("div", {}, h("h1", {}, name), h("p", {}, t.vsTeam(team || t.everyone))),
     );
   } else {
-    fill($("title"), h("div", {}, h("h1", {}, name || t.everyone), h("p", {}, t.vsPrevious(span()))));
+    fill($("title"), h("div", {}, h("h1", {}, name || t.everyone), h("p", {}, state.custom ? t.customComparison(state.from, state.until) : t.vsPrevious(span()))));
   }
 }
 
 function renderControls() {
+  $("export-report").hidden = Boolean(SNAPSHOT);
+  $("export-report").textContent = state.person ? t.exportPerson : t.exportGroup;
+  $("export-report").onclick = exportReport;
+  if (SNAPSHOT) {
+    $("count").hidden = $("grain").hidden = $("custom-range").hidden = true;
+    $("report-context").hidden = false;
+    const info = meta.snapshot;
+    $("report-context").textContent = `orgpulse · ${meta.org} · ${t.snapshotLabel} · ${info.from} — ${info.until} (${t.grain[state.grain]}) · ${info.timezone} · ${t.synced(meta.synced_at ? new Date(meta.synced_at).toLocaleString(meta.locale) : "–")} · ${t.generated} ${info.created_at.slice(0, 10)} · ${t.historySince} ${info.history_since}`;
+    return;
+  }
   const count = $("count");
-  fill(count, ...RANGES[state.grain].map((n) => h("option", { value: n }, t.last(span(n)))));
-  count.value = String(state.count);
+  fill(count, ...RANGES[state.grain].map((n) => h("option", { value: n }, t.last(span(n)))), h("option", { value: "custom" }, t.custom));
+  count.value = state.custom ? "custom" : String(state.count);
   count.onchange = () => {
-    state.count = Number(count.value);
+    state.custom = count.value === "custom";
+    if (state.custom) {
+      state.from ||= report.periods[0].start;
+      state.until ||= meta.today;
+      renderControls();
+    } else {
+      state.count = Number(count.value);
+      load();
+    }
+  };
+  $("custom-range").hidden = !state.custom;
+  $("from-label").textContent = t.from;
+  $("until-label").textContent = t.until;
+  $("apply-range").textContent = t.apply;
+  $("from").value = state.from;
+  $("until").value = state.until;
+  $("from").max = $("until").max = meta.today;
+  $("custom-range").onsubmit = (event) => {
+    event.preventDefault();
+    if (!$("custom-range").reportValidity()) return;
+    const from = $("from").value, until = $("until").value;
+    if (from > until) { showError(t.invalidRange); return; }
+    state.from = from;
+    state.until = until;
     load();
   };
   fill(
@@ -319,18 +511,21 @@ function renderKpis() {
         {
           type: "button",
           class: "kpi",
-          title: t.definition[metric],
+          title: DISTRIBUTION_METRICS.includes(metric) ? `${t[analysisOptions(metric).statistic]} · ${t.definition[metric]}` : t.definition[metric],
           "aria-pressed": String(metric === state.metric),
           onclick: () => {
             state.metric = metric;
+            state.analysisOpen = false;
             syncUrl();
             renderKpis();
             renderChart();
           },
         },
-        h("span", { class: "kpi__label" }, metricLabel(metric)),
+        h("span", { class: "kpi__label" }, metricLabel(metric, true)),
         h("span", { class: "kpi__value" }, format(metric, value), unit(metric) ? h("small", {}, unit(metric)) : null),
-        person ? h("span", { class: "kpi__note" }, t.teamValue(withUnit(metric, other))) : delta(metric, value, other),
+        metric === "total_lines" && current ? h("span", { class: "kpi__note" }, `+${fmtNumber(current.added_lines, 0)} / −${fmtNumber(current.deleted_lines, 0)}`) : null,
+        DISTRIBUTION_METRICS.includes(metric) ? h("span", { class: "kpi__note" }, t[analysisOptions(metric).statistic], analysisOptions(metric).exclude_outliers ? ` · ${t.excludeOutliers}` : "") : null,
+        person ? h("span", { class: "kpi__note" }, TEAM_METRICS.includes(metric) ? `${teamLabel(metric)} ${withUnit(metric, other)}` : t.teamValue(withUnit(metric, other))) : delta(metric, value, other),
       );
     }),
   );
@@ -342,11 +537,47 @@ function delta(metric, value, before) {
   const shown = format(metric, Math.abs(change));
   // A change that rounds to zero at display precision is no change.
   if (shown === format(metric, 0)) return h("span", { class: "kpi__delta" }, shown);
-  const better = change > 0 === (metric === "merged_per_person") ? "good" : "bad";
+  const better = ["commits", "total_lines"].includes(metric) ? "" : change > 0 === (metric === "merged_per_person") ? "good" : "bad";
   return h("span", { class: `kpi__delta ${better}` }, `${change > 0 ? "▲ +" : "▼ −"}${shown}`);
 }
 
 // ---- chart -------------------------------------------------------------------
+
+function analysisOptions(metric) {
+  return { statistic: metric === "commits" ? "mean" : "median", exclude_outliers: false, ...state.analysis[metric] };
+}
+
+function teamLabel(metric) {
+  return TEAM_METRICS.includes(metric) ? (state.teamStatistic === "median" ? t.teamMedian : t.teamAverage) : t.team;
+}
+
+function analysisControls(metric) {
+  if (TEAM_METRICS.includes(metric)) {
+    const picker = h("select", { "aria-label": t.teamComparison, onchange: (event) => { state.teamStatistic = event.target.value; load(); } },
+      h("option", { value: "mean" }, t.mean), h("option", { value: "median" }, t.median));
+    picker.value = state.teamStatistic;
+    return h("details", { class: "analysis-options", open: state.analysisOpen ? "" : null, ontoggle: (event) => { state.analysisOpen = event.target.open; } },
+      h("summary", {}, t.teamComparison),
+      h("div", { class: "analysis-popover" },
+        h("label", {}, t.teamComparison, picker),
+        h("p", { class: "muted" }, t.teamScope)));
+  }
+  if (!DISTRIBUTION_METRICS.includes(metric)) return null;
+  const options = analysisOptions(metric);
+  const change = (patch) => { state.analysis[metric] = { ...analysisOptions(metric), ...patch }; load(); };
+  const picker = h("select", { "aria-label": t.statistic, onchange: (event) => change({ statistic: event.target.value }) },
+    h("option", { value: "mean" }, t.mean), h("option", { value: "median" }, t.median));
+  picker.value = options.statistic;
+  return h("details", { class: "analysis-options", open: state.analysisOpen ? "" : null, ontoggle: (event) => { state.analysisOpen = event.target.open; } },
+    h("summary", {}, t.analysis),
+    h("div", { class: "analysis-popover" },
+      h("p", { class: "muted" }, t.analysisScope),
+      h("label", {}, t.statistic, picker),
+      h("label", {}, t.excludeOutliers, h("input", { type: "checkbox", checked: options.exclude_outliers ? "" : null, onchange: (event) => change({ exclude_outliers: event.target.checked }) })),
+      h("p", { class: "muted" }, t.outlierRule),
+      h("button", { type: "button", onclick: () => { delete state.analysis[metric]; load(); } }, t.reset),
+    ));
+}
 
 function renderChart() {
   const metric = state.metric;
@@ -354,20 +585,24 @@ function renderChart() {
   const person = report.scope.kind === "person";
   const series = [
     { key: "current", name: person ? report.scope.name : t.thisPeriod, color: "var(--series)", area: true },
-    { key: "compare", name: person ? t.team : t.previousPeriod, color: "var(--series-2)", dashed: true },
+    { key: "compare", name: person ? teamLabel(metric) : t.previousPeriod, color: "var(--series-2)", dashed: true },
   ].filter((s) => periods.some((period) => period[s.key]?.[metric] != null));
-  const note = metric === "merged_per_person" ? t.chartNote[state.grain] : t.chartNote.median;
+  const note = metric === "merged_per_person" ? t.chartNote[state.grain] : metric === "total_lines" ? t.actualTotal : `${t[analysisOptions(metric).statistic]}${analysisOptions(metric).exclude_outliers ? ` · ${t.excludeOutliers}` : ""}`;
+  const sample = report.summary.current?.analysis_samples?.[metric];
   const host = h("div");
-  const empty = !periods.some((period) => period.current?.merged);
+  const hasMerged = periods.some((period) => period.current?.merged);
+  const empty = !hasMerged || !periods.some((period) => period.current?.[metric] != null);
   fill(
     $("chart"),
     h(
       "div",
       { class: "chart__head" },
       h("div", {}, h("h2", {}, metricLabel(metric)), h("p", {}, note)),
-      h("div", { class: "legend" }, ...series.map((s) => h("span", {}, h("i", { class: s.dashed ? "dashed" : null, style: `--key:${s.color}` }), s.name))),
+      h("div", { class: "chart__tools" }, h("div", { class: "legend" }, ...series.map((s) => h("span", {}, h("i", { class: s.dashed ? "dashed" : null, style: `--key:${s.color}` }), s.name))), analysisControls(metric)),
     ),
-    empty ? h("p", { class: "empty" }, t.noData) : host,
+    sample ? h("p", { class: "muted analysis-sample" }, t.sample(sample)) : null,
+    empty ? h("p", { class: "empty" }, hasMerged ? t.noValues : t.noData) : host,
+    metric === "merged_per_person" && periods.some((period) => period.partial) ? h("p", { class: "muted" }, t.partialCounts) : null,
   );
   if (!empty) requestAnimationFrame(() => lineChart(host, metric, series, periods));
 }
@@ -526,7 +761,7 @@ function renderDetail() {
           onclick: () => focusPerson(row.login),
           onkeydown: (event) => event.key === "Enter" && focusPerson(row.login),
         },
-        h("td", {}, h("span", { class: "person" }, h("span", { class: "avatar" }, initials(row.login)), row.login)),
+        h("td", {}, h("span", { class: "person" }, avatar(row.login), row.login)),
         ...METRICS.map((metric) => valueCell(metric, row)),
       ),
     ),
@@ -575,13 +810,13 @@ function renderPanel() {
   panel.hidden = !row;
   $("app").classList.toggle("no-panel", !row);
   if (!row) return;
-  const team = report.summary.current;
+  const team = report.team_summary;
   fill(
     panel,
     h(
       "div",
       { class: "panel__who" },
-      h("span", { class: "avatar large" }, initials(row.login)),
+      avatar(row.login, true),
       h("div", {}, h("h2", {}, row.login), report.scope.name ? h("p", { class: "muted" }, report.scope.name) : null),
     ),
     h(
@@ -596,7 +831,7 @@ function renderPanel() {
             "div",
             {},
             h("span", {}, columnLabel(metric)),
-            h("b", { class: row.flags.includes(metric) ? "flag" : null }, format(metric, row[metric]), h("small", {}, ` vs ${format(metric, team?.[metric] ?? null)}`)),
+            h("b", { class: row.flags.includes(metric) ? "flag" : null }, format(metric, row[metric]), h("small", {}, ` vs ${format(metric, team?.[metric] ?? null)}${TEAM_METRICS.includes(metric) ? ` (${teamLabel(metric)})` : ""}`)),
           ),
         ),
       ),
@@ -627,14 +862,16 @@ function renderPanel() {
 // ---- boot ---------------------------------------------------------------------
 
 async function init() {
-  meta = await getJSON("/api/meta");
+  meta = SNAPSHOT ? SNAPSHOT.meta : await getJSON("/api/meta");
+  document.body.classList.toggle("snapshot", Boolean(SNAPSHOT));
   t = I18N[meta.locale] || I18N.en;
   document.documentElement.lang = meta.locale;
   document.title = `${meta.org} · orgpulse`;
   $("org").textContent = meta.org;
-  $("synced").textContent = meta.synced_at ? t.synced(new Date(meta.synced_at).toLocaleString(meta.locale, { dateStyle: "medium", timeStyle: "short" })) : t.never;
+  if (!SNAPSHOT) { renderSync(); $("sync").onclick = startSync; }
   readUrl();
   await load();
+  if (!SNAPSHOT) { loadProfiles(); await pollSync(); }
   let resizeTimer;
   window.addEventListener("resize", () => {
     clearTimeout(resizeTimer);

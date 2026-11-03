@@ -63,6 +63,7 @@ def pr_node(
         "mergedAt": merged,
         "additions": 5,
         "deletions": 3,
+        "commits": {"totalCount": 3},
         "author": {"__typename": author_type, "login": author} if author else None,
         "reviews": {
             "nodes": [
@@ -185,3 +186,31 @@ def test_moving_since_earlier_refetches_full_history(tmp_path):
 
     # Then
     assert sorted(_stored(config)) == [1, 7]
+
+
+def test_incremental_sync_backfills_only_missing_commit_counts(tmp_path):
+    from tests.factories import merged_pr
+
+    config = make_config(tmp_path)
+    watermark = datetime.now(timezone.utc)
+    with Store(config.database) as store:
+        store.save(
+            "acme/api",
+            [merged_pr("alice", "2026-06-02T12:00:00", number=1)],
+            since=config.since,
+            synced_at=watermark,
+        )
+    github = FakeGitHub([("acme/api", _recent())], {"acme/api": [[pr_node(1)]]})
+    count_calls = []
+
+    def request(query, variables):
+        if "pullRequest(number:" in query:
+            count_calls.append(variables)
+            return {"repository": {"p0": {"commits": {"totalCount": 9}}}}
+        return github(query, variables)
+
+    assert sync(config, request) == 0
+    assert len(count_calls) == 1
+    assert _stored(config)[1].commits == 9
+    sync(config, request)
+    assert len(count_calls) == 1

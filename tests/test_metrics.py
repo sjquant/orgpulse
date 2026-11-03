@@ -152,3 +152,237 @@ def _window(**overrides: Any) -> dict[str, Any]:
         "timezone": timezone.utc,
         **overrides,
     }
+
+
+def test_custom_dates_include_only_local_boundary_days_and_compare_equal_days():
+    # June 2 16:00 UTC is June 3 in Seoul; June 9 15:00 UTC is June 10.
+    prs = [
+        merged_pr("alice", stamp, number=i)
+        for i, stamp in enumerate(
+            [
+                "2026-05-27T12:00:00",
+                "2026-06-02T12:00:00",
+                "2026-06-02T16:00:00",
+                "2026-06-09T14:59:00",
+                "2026-06-09T15:00:00",
+            ],
+            1,
+        )
+    ]
+    window = _window(
+        start=date(2026, 6, 3), until=date(2026, 6, 9), timezone=ZoneInfo("Asia/Seoul")
+    )
+    group = group_report(prs, people=["alice"], **window)
+    assert group["summary"]["current"]["merged"] == 2
+    assert group["summary"]["current"]["merged_per_person"] == 2
+    assert group["summary"]["compare"]["merged"] == 2
+    assert [p["current"]["merged"] for p in group["periods"]] == [1, 1]
+    person = person_report(prs, login="alice", team=["alice"], **window)
+    assert [pr["number"] for pr in person["recent"]] == [4, 3]
+
+
+def test_custom_month_range_uses_fractional_calendar_months():
+    prs = [merged_pr("alice", "2026-04-20T12:00:00")]
+    report = group_report(
+        prs,
+        **_window(
+            people=["alice"],
+            grain=Grain.MONTH,
+            start=date(2026, 4, 15),
+            until=date(2026, 5, 10),
+        ),
+    )
+    assert report["summary"]["current"]["merged_per_person"] == round(
+        1 / (16 / 30 + 10 / 31), 2
+    )
+    assert [p["start"] for p in report["periods"]] == ["2026-04-15", "2026-05-01"]
+
+
+def test_report_until_excludes_later_merges_in_the_same_bucket():
+    prs = [merged_pr("alice", "2026-06-11T12:00:00")]
+    report = group_report(prs, **_window(people=["alice"], until=date(2026, 6, 10)))
+    assert report["summary"]["current"]["merged"] == 0
+
+
+def test_in_progress_month_chart_projects_counts_at_the_current_pace():
+    prs = [merged_pr("alice", "2026-11-02T12:00:00", number=i) for i in range(6)]
+    window = _window(grain=Grain.MONTH, count=1, until=date(2026, 11, 3))
+    group = group_report(prs, people=["alice", "bob"], **window)
+    assert group["periods"][0]["current"]["merged"] == 6
+    assert group["periods"][0]["current"]["merged_per_person"] == 30
+    person = person_report(prs, login="alice", team=["alice", "bob"], **window)
+    assert person["periods"][0]["current"]["merged_per_person"] == 60
+    assert person["periods"][0]["compare"]["merged_per_person"] == 30
+    # Actual totals remain available separately from projected period rates.
+    assert person["periods"][0]["current"]["merged"] == 6
+    assert person["summary"]["current"]["merged_per_person"] == 60
+
+
+def test_mean_median_and_iqr_are_metric_local_and_preserve_actual_totals():
+    prs = [
+        merged_pr(
+            "alice", "2026-06-10T12:00:00", number=i, commits=commits, additions=lines
+        )
+        for i, (commits, lines) in enumerate(
+            [(1, 10), (2, 10), (3, 10), (100, 1000), (None, 5)]
+        )
+    ]
+    default = group_report(prs, **_window(people=["alice"]))["summary"]["current"]
+    assert default["commits"] == 26.5
+    assert default["total_lines"] == 1035
+    assert default["analysis_samples"]["commits"] == {
+        "total": 4,
+        "analyzed": 4,
+        "excluded": 0,
+        "missing": 1,
+    }
+    median = person_report(
+        prs,
+        **_window(
+            login="alice", team=["alice"], analysis={"commits": {"statistic": "median"}}
+        ),
+    )["summary"]["current"]
+    assert median["commits"] == 2.5
+    filtered = group_report(
+        prs,
+        **_window(
+            people=["alice"],
+            analysis={"commits": {"statistic": "mean", "exclude_outliers": True}},
+        ),
+    )["summary"]["current"]
+    assert filtered["commits"] == 2
+    assert filtered["analysis_samples"]["commits"]["excluded"] == 1
+    assert filtered["total_lines"] == default["total_lines"]
+    assert filtered["size"] == default["size"]
+    assert filtered["merged"] == default["merged"]
+    assert filtered["added_lines"] == 1035 and filtered["deleted_lines"] == 0
+
+
+def test_unknown_commits_are_not_zero_and_small_samples_are_not_trimmed():
+    unknown = group_report(
+        [merged_pr("alice", "2026-06-10T12:00:00")], **_window(people=["alice"])
+    )["summary"]["current"]
+    assert unknown["commits"] is None
+    assert unknown["analysis_samples"]["commits"]["missing"] == 1
+    prs = [
+        merged_pr("alice", "2026-06-10T12:00:00", number=i, commits=n)
+        for i, n in enumerate([1, 2, 100])
+    ]
+    stats = group_report(
+        prs,
+        **_window(people=["alice"], analysis={"commits": {"exclude_outliers": True}}),
+    )["summary"]["current"]
+    assert stats["analysis_samples"]["commits"]["excluded"] == 0
+    assert stats["commits"] == round(103 / 3, 2)
+
+
+def test_time_and_size_statistic_switches_and_total_lines_use_merge_window():
+    prs = [
+        merged_pr(
+            "alice",
+            "2026-06-10T12:00:00",
+            number=i,
+            hours_open=hours,
+            additions=lines,
+            deletions=2,
+        )
+        for i, (hours, lines) in enumerate([(1, 10), (2, 20), (9, 90)])
+    ]
+    stats = group_report(
+        prs,
+        **_window(
+            people=["alice"],
+            analysis={
+                "lead_time": {"statistic": "mean"},
+                "size": {"statistic": "mean"},
+            },
+        ),
+    )["summary"]["current"]
+    assert stats["lead_time"] == 4
+    assert stats["size"] == 42
+    assert stats["total_lines"] == 126
+    assert stats["added_lines"] == 120 and stats["deleted_lines"] == 6
+
+
+def test_person_changed_lines_compare_with_team_per_member_average():
+    prs = [
+        merged_pr("alice", "2026-06-10T12:00:00", number=1, additions=80, deletions=20),
+        merged_pr("bob", "2026-06-10T12:00:00", number=2, additions=250, deletions=50),
+    ]
+    report = person_report(
+        prs, **_window(login="alice", team=["alice", "bob", "carol", "dave"])
+    )
+    assert report["team_size"] == 4
+    assert report["summary"]["current"]["total_lines"] == 100
+    assert report["summary"]["compare"]["total_lines"] == 100
+    assert report["summary"]["compare"]["added_lines"] == 82.5
+    assert report["summary"]["compare"]["deleted_lines"] == 17.5
+    assert report["periods"][-1]["compare"]["total_lines"] == 100
+    group = group_report(prs, **_window(people=["alice", "bob", "carol", "dave"]))
+    assert group["summary"]["current"]["total_lines"] == 400
+
+
+def test_person_changed_lines_without_a_team_has_no_average_baseline():
+    report = person_report(
+        [merged_pr("alice", "2026-06-10T12:00:00")], **_window(login="alice", team=[])
+    )
+    assert report["team_size"] == 0
+    assert report["summary"]["compare"]["total_lines"] is None
+
+
+def test_team_medians_use_member_rates_and_volumes_including_zero_activity():
+    prs = [merged_pr("alice", "2026-06-10T12:00:00", additions=10)]
+    prs += [
+        merged_pr("bob", "2026-06-10T12:00:00", number=i, additions=20)
+        for i in range(2)
+    ]
+    prs += [
+        merged_pr("carol", "2026-06-10T12:00:00", number=i + 2, additions=50)
+        for i in range(9)
+    ]
+    window = _window(grain=Grain.MONTH, count=1, until=date(2026, 6, 30))
+    people = ["Alice", "bob", "carol", "inactive"]
+    average = person_report(prs, login="alice", team=people, **window)
+    middle = person_report(
+        prs, login="alice", team=people, team_statistic="median", **window
+    )
+    assert average["summary"]["compare"]["merged_per_person"] == 3
+    assert average["summary"]["compare"]["total_lines"] == 125
+    assert middle["summary"]["compare"]["merged_per_person"] == 1.5
+    assert middle["summary"]["compare"]["total_lines"] == 25
+    assert middle["periods"][0]["compare"]["merged_per_person"] == 1.5
+    assert middle["summary"]["current"] == average["summary"]["current"]
+    group = group_report(prs, people=people, team_statistic="median", **window)
+    assert group["team_summary"]["total_lines"] == 25
+    assert group["summary"]["current"]["total_lines"] == 500
+    assert group["summary"]["current"]["merged"] == 12
+    assert group["people"][-1]["merged"] == 0
+    earlier = person_report(
+        prs,
+        login="alice",
+        team=people,
+        team_statistic="median",
+        **_window(
+            grain=Grain.MONTH, count=1, until=date(2025, 12, 31), since=date(2026, 1, 1)
+        ),
+    )
+    assert earlier["summary"]["compare"] is None
+
+
+def test_team_median_rates_keep_partial_period_projection_and_missing_team():
+    prs = [merged_pr("alice", "2026-06-01T12:00:00", number=i) for i in range(3)]
+    window = _window(grain=Grain.MONTH, count=1, until=date(2026, 6, 3))
+    report = person_report(
+        prs,
+        login="alice",
+        team=["alice", "inactive"],
+        team_statistic="median",
+        **window,
+    )
+    assert report["summary"]["current"]["merged_per_person"] == 30
+    assert report["summary"]["compare"]["merged_per_person"] == 15
+    empty = person_report(
+        prs, login="alice", team=[], team_statistic="median", **window
+    )
+    assert empty["summary"]["compare"]["merged_per_person"] is None
+    assert empty["summary"]["compare"]["total_lines"] is None

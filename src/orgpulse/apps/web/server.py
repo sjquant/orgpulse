@@ -18,7 +18,7 @@ from zipfile import ZIP_DEFLATED, ZipFile
 from orgpulse.common.config import Config
 from orgpulse.common.errors import OrgpulseError
 from orgpulse.common.models import PullRequest
-from orgpulse.libs.html_export import inline_github_avatar, render_person_html
+from orgpulse.libs.html_export import inline_github_avatar, render_report_html
 from orgpulse.libs.metrics import (
     DISTRIBUTION_METRICS,
     Grain,
@@ -347,7 +347,7 @@ def export_reports(
     query: dict[str, list[str]],
     profiles: AvatarLoader,
 ) -> tuple[bytes, str, str]:
-    """Export personal reports from a consistent data snapshot."""
+    """Export a scope report or personal reports from one data snapshot."""
     frozen_query = {key: list(value) for key, value in query.items()}
     frozen_query.setdefault("until", [datetime.now(config.timezone).date().isoformat()])
     with Store(config.database) as store:
@@ -357,6 +357,9 @@ def export_reports(
     )  # Validate before image requests.
     meta = _meta(config)
     person = _param(query, "person", "")
+    output_format = _param(query, "format", "html" if person else "zip")
+    if output_format not in ("html", "zip") or (person and output_format != "html"):
+        raise _BadRequest("format must be html, or zip for personal reports of a group")
     people = (person,) if person else config.members(_param(query, "group", "") or None)
     if people is None:
         people = tuple(meta["people"])
@@ -364,7 +367,7 @@ def export_reports(
     for login in people:
         unique_people.setdefault(login.lower(), login)
     people = tuple(unique_people.values())
-    if not people or any(
+    if (not people and output_format == "zip") or any(
         not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9-]{0,38}", login) for login in people
     ):
         raise _BadRequest("a valid GitHub person is required for each report")
@@ -374,12 +377,12 @@ def export_reports(
         for name in ("index.html", "app.css", "app.js")
     }
     created_at = datetime.now(config.timezone).isoformat()
-    files = []
-    for login in people:
-        person_query = {**frozen_query, "person": [login]}
-        person_query.pop("group", None)
+
+    def document(
+        report_query: dict[str, list[str]], name: str, members: tuple[str, ...]
+    ) -> tuple[str, bytes]:
         reports = {}
-        # Four shared variants suffice: each metric's statistic/filter is independent.
+        # Each metric can independently select one of four shared variants.
         for statistic in ("mean", "median"):
             for exclude in (False, True):
                 options = {
@@ -388,18 +391,24 @@ def export_reports(
                 }
                 reports[f"{statistic}:{int(exclude)}"] = _report(
                     config,
-                    {**person_query, "analysis": [json.dumps(options)]},
+                    {**report_query, "analysis": [json.dumps(options)]},
                     pull_requests=pull_requests,
                 )
         start = reports["median:0"]["periods"][0]["start"]
         end = frozen_query["until"][0]
-        avatar = inline_github_avatar(avatar_sources.get(login.lower()))
+        avatars = {}
+        for login in members:
+            avatar = inline_github_avatar(avatar_sources.get(login.lower()))
+            if avatar:
+                avatars[login.lower()] = avatar
         snapshot_meta = {
             **meta,
-            "people": [login],
-            "avatars": {login.lower(): avatar} if avatar else {},
+            "people": list(members),
+            "avatars": avatars,
             "snapshot": {
-                "person": login,
+                "person": _param(report_query, "person", "") or None,
+                "name": name,
+                "kind": reports["median:0"]["scope"]["kind"],
                 "from": start,
                 "until": end,
                 "timezone": str(config.timezone),
@@ -409,10 +418,10 @@ def export_reports(
         }
         snapshot = {
             "meta": snapshot_meta,
-            "query": urlencode(person_query, doseq=True),
+            "query": urlencode(report_query, doseq=True),
             "reports": reports,
         }
-        html = render_person_html(
+        html = render_report_html(
             snapshot,
             template=assets["index.html"],
             styles=assets["app.css"],
@@ -420,11 +429,18 @@ def export_reports(
             icon=(STATIC_DIR / "favicon.svg").read_bytes(),
         )
         org = re.sub(r"[^A-Za-z0-9-]", "_", config.org)
-        filename = f"orgpulse-{org}-{login}-{start}_to_{end}.html"
-        files.append((filename, html.encode()))
-    if person:
-        filename, body = files[0]
+        safe_name = re.sub(r"[^A-Za-z0-9_-]", "_", name)
+        return f"orgpulse-{org}-{safe_name}-{start}_to_{end}.html", html.encode()
+
+    if output_format == "html":
+        name = person or _param(query, "group", "") or "everyone"
+        filename, body = document(frozen_query, name, people)
         return body, filename, "text/html; charset=utf-8"
+    files = []
+    for login in people:
+        person_query = {**frozen_query, "person": [login], "format": ["html"]}
+        person_query.pop("group", None)
+        files.append(document(person_query, login, (login,)))
     archive = BytesIO()
     with ZipFile(archive, "w", compression=ZIP_DEFLATED) as bundle:
         for filename, body in files:

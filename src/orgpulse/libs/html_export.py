@@ -29,10 +29,10 @@ def inline_github_avatar(url: str | None) -> str | None:
         return None
 
 
-def render_person_html(
+def render_report_html(
     snapshot: dict[str, Any], *, template: str, styles: str, script: str, icon: bytes
 ) -> str:
-    """Render a personal HTML report that opens offline."""
+    """Render an interactive HTML report that opens offline."""
     payload = (
         json.dumps(snapshot, ensure_ascii=False)
         .replace("&", "\\u0026")
@@ -40,7 +40,7 @@ def render_person_html(
         .replace(">", "\\u003e")
     )
     title = escape(
-        f"{snapshot['meta']['snapshot']['person']} · {snapshot['meta']['org']} · orgpulse"
+        f"{snapshot['meta']['snapshot'].get('name', snapshot['meta']['snapshot'].get('person', 'everyone'))} · {snapshot['meta']['org']} · orgpulse"
     )
     html = template.replace("<title>orgpulse</title>", f"<title>{title}</title>")
     html = html.replace(

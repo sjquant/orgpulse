@@ -91,24 +91,30 @@ a person's contribution or the quality of the work.
 ## Save a report
 
 On a person's page, click **Download HTML report**. On a group page, choose
-**Personal reports ZIP** for one HTML file per member.
+**Group HTML report** to save its trends and member summary in one file, or
+**Personal reports ZIP** for one HTML file per member. The Everyone view saves
+the same report for the configured members; without groups it includes people
+with merged PRs in the range.
 
 Reports keep the chosen dates, timezone, data-sync time, and initial analysis
 settings. Open them in a browser without orgpulse or Internet access; switching
-metrics and analysis options still works. They contain that person's recent PRs
-and aggregate team comparisons. Export again for another period or newer data.
+metrics and analysis options still works. Personal reports contain recent PRs and aggregate team comparisons. Group
+reports contain member rows and their recent PRs; selecting a row shows the
+member summary. Dates and scope are fixed in saved reports. Export again for another period or newer data.
 
 You can also export without starting the web server:
 
 ```bash
-uv run orgpulse export --group backend \
+uv run orgpulse export --group backend --format html \
   --since 2025-01-01 --until 2026-10-31 \
-  --output reports/backend-through-2026-10-31.zip
+  --output reports/backend-through-2026-10-31.html
 
 uv run orgpulse export --person alice \
   --since 2025-01-01 --until 2026-10-31 \
   --output reports/alice-through-2026-10-31.html
 ```
+
+For a ZIP of personal reports, omit `--format html` and use a `.zip` output.
 
 `--team-statistic mean|median` sets the initial team comparison for merged PR
 rates and changed lines. Both dates include the entire day in the configured

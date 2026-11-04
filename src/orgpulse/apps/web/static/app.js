@@ -5,7 +5,7 @@ const SNAPSHOT = document.getElementById("report-data") ? JSON.parse(document.ge
 const I18N = {
   en: {
     never: "Not synced yet.",
-    exportPerson: "Download HTML report", exportGroup: "Personal reports ZIP", exporting: "Preparing report…", snapshotLabel: "Personal report", generated: "Created", historySince: "History since",
+    exportPerson: "Download HTML report", exportGroup: "Group HTML report", exportPeople: "Personal reports ZIP", exporting: "Preparing report…", snapshotLabel: "Saved report", generated: "Created", historySince: "History since",
     sync: "Sync now", syncing: "Syncing…", syncDone: "Sync complete",
     syncProgress: (repos, prs) => `${repos} repositories · ${prs} PRs processed`,
     syncConnectionError: "Cannot check sync status. Reconnecting…",
@@ -63,7 +63,7 @@ const I18N = {
   },
   ko: {
     never: "아직 동기화하지 않았습니다.",
-    exportPerson: "HTML 보고서 다운로드", exportGroup: "개인별 보고서 ZIP", exporting: "보고서 준비 중…", snapshotLabel: "개인 보고서", generated: "생성", historySince: "수집 시작",
+    exportPerson: "HTML 보고서 다운로드", exportGroup: "그룹 HTML 보고서", exportPeople: "개인별 보고서 ZIP", exporting: "보고서 준비 중…", snapshotLabel: "저장된 보고서", generated: "생성", historySince: "수집 시작",
     sync: "지금 동기화", syncing: "동기화 중…", syncDone: "동기화 완료",
     syncProgress: (repos, prs) => `${repos}개 저장소 · ${prs}개 PR 처리`,
     syncConnectionError: "동기화 상태를 확인할 수 없습니다. 다시 연결 중…",
@@ -325,7 +325,11 @@ function syncUrl() {
 }
 
 async function load() {
-  if (SNAPSHOT) { report = snapshotReport(); render(); return; }
+  if (SNAPSHOT) {
+    report = snapshotReport();
+    state.focus ||= report.people?.[0]?.login ?? null;
+    render(); return;
+  }
   const request = ++reportRequest;
   const params = syncUrl();
   renderNav();
@@ -354,23 +358,31 @@ function snapshotReport() {
       target[metric] = from[metric];
       target.analysis_samples[metric] = structuredClone(from.analysis_samples[metric]);
     };
+    copy(result.team_summary, source.team_summary);
+    (result.people || []).forEach((person, i) => {
+      copy(person, source.people[i]);
+      person.flags = person.flags.filter((flag) => flag !== metric);
+      if (source.people[i].flags.includes(metric)) person.flags.push(metric);
+    });
     for (const key of ["current", "compare"]) {
       copy(result.summary[key], source.summary[key]);
       result.periods.forEach((period, i) => copy(period[key], source.periods[i][key]));
     }
   }
-  for (const compare of [result.summary.compare, ...result.periods.map((period) => period.compare)]) {
+  for (const compare of [result.team_summary, result.summary.compare, ...result.periods.map((period) => period.compare)]) {
     if (compare?.team_benchmarks) Object.assign(compare, compare.team_benchmarks[state.teamStatistic]);
   }
   return result;
 }
 
-async function exportReport() {
-  const button = $("export-report");
+async function exportReport(format = "html") {
+  const button = $(format === "zip" ? "export-people" : "export-report");
   button.disabled = true;
   button.textContent = t.exporting;
   try {
-    const response = await fetch(`/api/export?${syncUrl()}`);
+    const params = syncUrl();
+    params.set("format", format);
+    const response = await fetch(`/api/export?${params}`);
     if (!response.ok) { const error = await response.json(); throw new Error(error.error || response.statusText); }
     const blob = await response.blob();
     const href = URL.createObjectURL(blob);
@@ -379,7 +391,7 @@ async function exportReport() {
     link.click(); link.remove();
     setTimeout(() => URL.revokeObjectURL(href), 1000);
   } catch (error) { showError(error.message); }
-  finally { button.disabled = false; button.textContent = state.person ? t.exportPerson : t.exportGroup; }
+  finally { button.disabled = false; button.textContent = format === "zip" ? t.exportPeople : state.person ? t.exportPerson : t.exportGroup; }
 }
 
 function select(scope) {
@@ -437,7 +449,10 @@ function renderTitle() {
 function renderControls() {
   $("export-report").hidden = Boolean(SNAPSHOT);
   $("export-report").textContent = state.person ? t.exportPerson : t.exportGroup;
-  $("export-report").onclick = exportReport;
+  $("export-report").onclick = () => exportReport();
+  $("export-people").hidden = Boolean(SNAPSHOT) || Boolean(state.person);
+  $("export-people").textContent = t.exportPeople;
+  $("export-people").onclick = () => exportReport("zip");
   if (SNAPSHOT) {
     $("count").hidden = $("grain").hidden = $("custom-range").hidden = true;
     $("report-context").hidden = false;
@@ -855,7 +870,7 @@ function renderPanel() {
           ),
         )
       : null,
-    h("button", { type: "button", class: "open-person", onclick: () => select({ person: row.login }) }, t.open(row.login)),
+    !SNAPSHOT ? h("button", { type: "button", class: "open-person", onclick: () => select({ person: row.login }) }, t.open(row.login)) : null,
   );
 }
 

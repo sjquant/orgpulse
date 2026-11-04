@@ -7,7 +7,7 @@ from pathlib import Path
 from types import TracebackType
 from typing import Any
 
-from orgpulse.common.models import PullRequest
+from orgpulse.common.models import PullRequest, Review
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS pull_requests (
@@ -24,6 +24,16 @@ CREATE TABLE IF NOT EXISTS pull_requests (
     deletions INTEGER NOT NULL,
     commits INTEGER,
     PRIMARY KEY (repository, number)
+);
+CREATE TABLE IF NOT EXISTS review_activity (
+    repository TEXT NOT NULL, number INTEGER NOT NULL, author TEXT NOT NULL,
+    title TEXT NOT NULL, url TEXT NOT NULL, reviewer TEXT NOT NULL,
+    submitted_at TEXT NOT NULL, requested_at TEXT,
+    PRIMARY KEY (repository, number, reviewer, submitted_at)
+);
+CREATE TABLE IF NOT EXISTS review_scope (repository TEXT PRIMARY KEY);
+CREATE TABLE IF NOT EXISTS review_sync (
+    repository TEXT PRIMARY KEY, since TEXT NOT NULL, synced_at TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS repositories (
     full_name TEXT PRIMARY KEY,
@@ -105,6 +115,92 @@ class Store:
                 "INSERT OR REPLACE INTO repositories VALUES (?, ?, ?)",
                 (full_name, since.isoformat(), synced_at.isoformat()),
             )
+
+    def repository_names(self) -> list[str]:
+        return [
+            row[0]
+            for row in self._connection.execute("SELECT full_name FROM repositories")
+        ]
+
+    def plan_reviews(self, repositories: list[str]) -> None:
+        """Record the complete included repository scope before collecting reviews."""
+        with self._connection:
+            self._connection.execute("DELETE FROM review_scope")
+            self._connection.executemany(
+                "INSERT INTO review_scope VALUES (?)",
+                [(name,) for name in repositories],
+            )
+
+    def review_repositories(self) -> list[str]:
+        return [
+            row[0]
+            for row in self._connection.execute("SELECT repository FROM review_scope")
+        ]
+
+    def reviews_synced_at(self, repository: str, *, since: date) -> datetime | None:
+        row = self._connection.execute(
+            "SELECT since, synced_at FROM review_sync WHERE repository = ?",
+            (repository,),
+        ).fetchone()
+        return (
+            datetime.fromisoformat(row[1])
+            if row and date.fromisoformat(row[0]) <= since
+            else None
+        )
+
+    def save_reviews(
+        self,
+        repository: str,
+        records: list[tuple[int, list[Review]]],
+        *,
+        since: date,
+        synced_at: datetime,
+    ) -> None:
+        with self._connection:
+            for number, reviews in records:
+                self._connection.execute(
+                    "DELETE FROM review_activity WHERE repository = ? AND number = ?",
+                    (repository, number),
+                )
+                self._connection.executemany(
+                    "INSERT OR REPLACE INTO review_activity VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                    [
+                        (
+                            review.repository,
+                            review.number,
+                            review.author,
+                            review.title,
+                            review.url,
+                            review.reviewer,
+                            review.submitted_at.isoformat(),
+                            review.requested_at.isoformat()
+                            if review.requested_at
+                            else None,
+                        )
+                        for review in reviews
+                    ],
+                )
+            self._connection.execute(
+                "INSERT OR REPLACE INTO review_sync VALUES (?, ?, ?)",
+                (repository, since.isoformat(), synced_at.isoformat()),
+            )
+
+    def reviews(self) -> list[Review]:
+        return [
+            Review(
+                repository=row[0],
+                number=row[1],
+                author=row[2],
+                title=row[3],
+                url=row[4],
+                reviewer=row[5],
+                submitted_at=datetime.fromisoformat(row[6]),
+                requested_at=datetime.fromisoformat(row[7]) if row[7] else None,
+            )
+            for row in self._connection.execute(
+                "SELECT repository, number, author, title, url, reviewer, submitted_at, requested_at FROM review_activity"
+            )
+        ]
 
     def missing_commit_counts(self) -> dict[str, list[int]]:
         missing: dict[str, list[int]] = {}

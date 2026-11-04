@@ -136,3 +136,34 @@ def test_cli_invalid_range_does_not_create_a_file(export_config, tmp_path, monke
         == 1
     )
     assert not output.exists()
+
+
+def test_cli_group_html_keeps_inactive_members_and_timezone_cutoff(
+    export_config, tmp_path, monkeypatch
+):
+    output = tmp_path / "backend.html"
+    assert (
+        run_export(
+            monkeypatch,
+            export_config,
+            "--group",
+            "backend",
+            "--format",
+            "html",
+            "--until",
+            "2026-10-31",
+            "--output",
+            str(output),
+        )
+        == 0
+    )
+    snapshot, external = parse_snapshot(output.read_text())
+    assert not external
+    report = snapshot["reports"]["median:0"]
+    assert report["scope"] == {"kind": "group", "name": "backend"}
+    assert report["summary"]["current"]["merged"] == 2
+    assert [(row["login"], row["merged"]) for row in report["people"]] == [
+        ("bob", 2),
+        ("alice", 0),
+    ]
+    assert snapshot["meta"]["snapshot"]["until"] == "2026-10-31"

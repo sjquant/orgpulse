@@ -48,12 +48,17 @@ def main() -> int:
         type=date.fromisoformat,
         help="inclusive merge-date end (default: today in configured timezone)",
     )
+    export.add_argument(
+        "--format",
+        choices=("html", "zip"),
+        help="one scope HTML or personal reports ZIP (group default: zip)",
+    )
     export.add_argument("--period", choices=("week", "month"), default="month")
     export.add_argument(
         "--team-statistic",
         choices=("mean", "median"),
         default="mean",
-        help="team comparison for merged PR rates and changed lines",
+        help="team comparison for merged PR rates, changed lines, and reviewed PRs",
     )
     export.add_argument(
         "--statistic",
@@ -74,7 +79,7 @@ def main() -> int:
         "--output",
         type=Path,
         required=True,
-        help="new .html file for --person, otherwise a new .zip file",
+        help="new .html or .zip file matching --format",
     )
     args = parser.parse_args()
     try:
@@ -97,7 +102,10 @@ def main() -> int:
 
 
 def _export(config: Config, args: argparse.Namespace) -> None:
-    expected_suffix = ".html" if args.person else ".zip"
+    output_format = args.format or ("html" if args.person else "zip")
+    if args.person and output_format != "html":
+        raise ValueError("--person requires --format html")
+    expected_suffix = f".{output_format}"
     if args.output.suffix.lower() != expected_suffix:
         raise ValueError(f"--output must end with {expected_suffix}")
     if args.output.exists():
@@ -107,6 +115,7 @@ def _export(config: Config, args: argparse.Namespace) -> None:
         "until": [(args.until or datetime.now(config.timezone).date()).isoformat()],
         "grain": [args.period],
         "team_statistic": [args.team_statistic],
+        "format": [output_format],
     }
     if args.person:
         query["person"] = [args.person]

@@ -64,24 +64,36 @@ available and fall back to initials. Credentials stay on your computer.
 | PR size | Added + deleted lines per PR; median by default |
 | First review | Time from ready-for-review to the first review by someone other than the author; median by default |
 | Total changed lines | Added + deleted lines across the selected PRs; neither net growth nor unique lines |
-| Commits / PR | Commit count on the original GitHub PR, before squash/rebase merging; mean by default |
+| Reviewed PRs | Distinct PRs each person reviewed during the selected range, including open and closed PRs |
 
 In a personal view, changed-line totals are compared with the **team's per-person
-average** by default. On a merged-PR or changed-line chart, open **Team comparison**
-to choose mean or median across members. This choice applies to both metrics;
+average** by default. On a merged-PR, changed-line, or reviewed-PR chart, open **Team comparison**
+to choose mean or median across members. This choice applies to all three metrics;
 your own rate and total remain unchanged. Configured members with no PRs in the
 range count as zero. Without configured groups, only people with merged PRs in
 the range are known. Group views retain actual totals. PR counts in an unfinished week/month are projected to a
 full period at the current pace and drawn dashed. Other unfinished-period values
 are observed statistics, not forecasts.
 
+Select **Reviewed PRs** to switch between review counts and **Review response time**.
+Response time measures an individual request to the first submitted review;
+it is a waiting time, not time spent working. Canceled requests are discarded,
+and a later request starts a new wait. Voluntary reviews and team-only requests
+count toward reviewed PRs but have no response-time sample. The time statistic
+uses the first measurable response per reviewer/PR in the range, with median as
+the default. Counts use review submission dates, so later reviews of a PR can
+appear in later chart buckets; the whole range still counts each reviewer/PR once.
+Group totals sum each member's distinct PR count, including separate reviewers of
+the same PR. Counts are observed totals, never projected or outlier-filtered.
+Commit counts remain available in individual PR details.
+
 ### Adjust the analysis
 
-Open **Analysis options** on time, size, review-wait, or commit charts to choose
+Open **Analysis options** on time, size, review-wait, or review-response charts to choose
 mean/median or exclude outliers for that metric. Outlier exclusion starts off.
 It uses 1.5×IQR fences with at least four known values, calculated separately for
 each displayed scope and chart bucket. The chart shows analyzed, excluded, and
-missing counts. PR counts and changed-line totals never change with these options.
+missing counts. PR counts, reviewed PR counts, and changed-line totals never change with these options.
 Your selections stay in the URL.
 
 Orange markers highlight unusually high values relative to the team; they are
@@ -91,27 +103,33 @@ a person's contribution or the quality of the work.
 ## Save a report
 
 On a person's page, click **Download HTML report**. On a group page, choose
-**Personal reports ZIP** for one HTML file per member.
+**Group HTML report** to save its trends and member summary in one file, or
+**Personal reports ZIP** for one HTML file per member. The Everyone view saves
+the same report for the configured members; without groups it includes people
+with merged PRs in the range.
 
 Reports keep the chosen dates, timezone, data-sync time, and initial analysis
 settings. Open them in a browser without orgpulse or Internet access; switching
-metrics and analysis options still works. They contain that person's recent PRs
-and aggregate team comparisons. Export again for another period or newer data.
+metrics and analysis options still works. Personal reports contain recent PRs and aggregate team comparisons. Group
+reports contain member rows and their recent PRs; selecting a row shows the
+member summary. Dates and scope are fixed in saved reports. Export again for another period or newer data.
 
 You can also export without starting the web server:
 
 ```bash
-uv run orgpulse export --group backend \
+uv run orgpulse export --group backend --format html \
   --since 2025-01-01 --until 2026-10-31 \
-  --output reports/backend-through-2026-10-31.zip
+  --output reports/backend-through-2026-10-31.html
 
 uv run orgpulse export --person alice \
   --since 2025-01-01 --until 2026-10-31 \
   --output reports/alice-through-2026-10-31.html
 ```
 
+For a ZIP of personal reports, omit `--format html` and use a `.zip` output.
+
 `--team-statistic mean|median` sets the initial team comparison for merged PR
-rates and changed lines. Both dates include the entire day in the configured
+rates, changed lines, and reviewed PR counts. Both dates include the entire day in the configured
 timezone. Omit `--since` to
 use the configured history start. `--statistic mean|median` and
 `--exclude-outliers` set the initial distribution-metric view. `--no-avatars`
@@ -120,16 +138,21 @@ syncing and refuses to overwrite an existing output file.
 
 ## Data coverage
 
-Only merged, human-authored PRs **created on or after the configured `since` date**
-are collected. Earlier-created PRs are excluded even if merged during a selected
-reporting period. Bot PRs/reviews, unmerged PRs, issues, and full commit histories
-are outside this report. Collection covers repositories visible to the credential.
+Author metrics cover merged, human-authored PRs **created on or after the configured
+`since` date**. Reviewer activity covers human-authored PRs created since that date
+regardless of merge state or recent pushes, with reviews and request events
+paginated to the end. Earlier-created PRs are excluded even if merged during a selected
+reporting period. Bot PRs/reviews, issues, and full commit histories are outside this report.
+Unmerged PRs contribute only to reviewer metrics. Collection covers repositories visible to the credential.
 
 Periods before collected history show no data. Unknown commit counts and PRs
 without a qualifying review are excluded from those statistics, not counted as
 zero. The next sync fills missing commit counts in an existing database. First
 review currently checks the first 30 reviews and first ready-for-review event per
-PR. Changing group membership also changes historical comparisons; the report
+PR for the author-side first-review metric; reviewer activity reads all pages.
+The next sync backfills existing review history independently of the author-data
+watermark. Until this completes for all included repositories,
+reviewer metrics remain unavailable rather than zero. Changing group membership also changes historical comparisons; the report
 does not reconstruct past team rosters or know join/leave dates. A first or last
 PR is not treated as a participation boundary. Periods before collected history
 remain unavailable rather than zero. Team comparisons can therefore understate

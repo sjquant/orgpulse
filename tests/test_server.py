@@ -358,6 +358,33 @@ def test_person_html_export_freezes_dates_options_and_all_metric_variants(base_u
     assert snapshot["reports"]["mean:0"]["summary"]["current"]["total_lines"] == 20
 
 
+def test_group_html_keeps_scope_members_and_offline_comparisons(base_url):
+    from tests.test_html_export import parse_snapshot
+
+    query = "group=backend&format=html&grain=week&count=1&until=2026-06-07&team_statistic=median"
+    with urllib.request.urlopen(f"{base_url}/api/export?{query}") as response:
+        assert response.headers.get_content_type() == "text/html"
+        assert (
+            "orgpulse-acme-backend-2026-06-01_to_2026-06-07.html"
+            in response.headers["Content-Disposition"]
+        )
+        snapshot, external = parse_snapshot(response.read().decode())
+    assert not external
+    assert snapshot["meta"]["snapshot"]["kind"] == "group"
+    assert snapshot["meta"]["snapshot"]["name"] == "backend"
+    assert snapshot["meta"]["people"] == ["alice", "bob"]
+    report = snapshot["reports"]["median:0"]
+    assert report["scope"] == {"kind": "group", "name": "backend"}
+    assert report["summary"]["current"]["merged"] == 3
+    assert report["summary"]["current"]["total_lines"] == 30
+    assert [(row["login"], row["merged"]) for row in report["people"]] == [
+        ("bob", 2),
+        ("alice", 1),
+    ]
+    assert set(snapshot["reports"]) == {"mean:0", "mean:1", "median:0", "median:1"}
+    assert report["team_summary"]["team_benchmarks"]["median"]["total_lines"] == 15
+
+
 def test_group_zip_contains_one_independent_report_per_member(base_url):
     from io import BytesIO
     from zipfile import ZipFile
@@ -389,6 +416,8 @@ def test_group_zip_contains_one_independent_report_per_member(base_url):
         "person=bad%0D%0AHeader",
         "person=bob&grain=year",
         "group=unknown",
+        "group=backend&format=pdf",
+        "person=alice&format=zip",
     ],
 )
 def test_export_rejects_invalid_people_or_ranges(base_url, query):

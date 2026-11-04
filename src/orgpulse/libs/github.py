@@ -13,7 +13,7 @@ from datetime import datetime
 from typing import Any
 
 from orgpulse.common.errors import GitHubError
-from orgpulse.common.models import PullRequest
+from orgpulse.common.models import PullRequest, Review
 
 GRAPHQL_URL = "https://api.github.com/graphql"
 MAX_ATTEMPTS = 3
@@ -268,3 +268,127 @@ def pull_request_commit_counts(
             if data and data[f"p{i}"] is not None:
                 counts[number] = data[f"p{i}"]["commits"]["totalCount"]
     return counts
+
+
+REVIEW_FIELDS = """reviews(first: 100, after: $reviewAfter) {
+  pageInfo { hasNextPage endCursor }
+  nodes { submittedAt author { __typename login } }
+}"""
+REQUEST_FIELDS = """timelineItems(first: 100, after: $eventAfter,
+  itemTypes: [REVIEW_REQUESTED_EVENT, REVIEW_REQUEST_REMOVED_EVENT]) {
+  pageInfo { hasNextPage endCursor }
+  nodes {
+    __typename
+    ... on ReviewRequestedEvent { createdAt requestedReviewer { __typename ... on User { login } } }
+    ... on ReviewRequestRemovedEvent { createdAt requestedReviewer { __typename ... on User { login } } }
+  }
+}"""
+REVIEW_ACTIVITY_QUERY = (
+    """query ReviewActivity($owner: String!, $name: String!, $after: String) {
+ repository(owner: $owner, name: $name) {
+  pullRequests(first: 50, after: $after, orderBy: {field: UPDATED_AT, direction: DESC}) {
+   pageInfo { hasNextPage endCursor }
+   nodes { number title url createdAt updatedAt author { __typename login }
+"""
+    + REVIEW_FIELDS.replace(", after: $reviewAfter", "")
+    + REQUEST_FIELDS.replace(", after: $eventAfter", "")
+    + "}}}}"
+)
+
+
+def iter_review_activity(
+    request: GraphQLRequest,
+    repository: str,
+    *,
+    updated_since: datetime,
+    created_since: datetime,
+) -> Iterator[tuple[int, list[Review]]]:
+    """Read all submitted reviews and individual request events, including open PRs."""
+    owner, name = repository.split("/", 1)
+    variables = {"owner": owner, "name": name}
+    for node in _nodes(
+        request,
+        REVIEW_ACTIVITY_QUERY,
+        variables,
+        lambda data: data["repository"]["pullRequests"],
+    ):
+        if datetime.fromisoformat(node["updatedAt"]) < updated_since:
+            return
+        author = node["author"]
+        if datetime.fromisoformat(node["createdAt"]) < created_since or (
+            author and author["__typename"] == "Bot"
+        ):
+            continue
+        for field, selection, cursor in (
+            ("reviews", REVIEW_FIELDS, "reviewAfter"),
+            ("timelineItems", REQUEST_FIELDS, "eventAfter"),
+        ):
+            page = node[field]
+            nodes = list(page["nodes"])
+            while page["pageInfo"]["hasNextPage"]:
+                query = f"query($owner: String!, $name: String!, $number: Int!, ${cursor}: String) {{ repository(owner: $owner, name: $name) {{ pullRequest(number: $number) {{ {selection} }} }} }}"
+                page = request(
+                    query,
+                    {
+                        **variables,
+                        "number": node["number"],
+                        cursor: page["pageInfo"]["endCursor"],
+                    },
+                )["repository"]["pullRequest"][field]
+                nodes.extend(page["nodes"])
+            node[field] = {"nodes": nodes}
+        yield node["number"], _reviews(repository, node)
+
+
+def _reviews(repository: str, node: dict[str, Any]) -> list[Review]:
+    author = node["author"]["login"] if node["author"] else "ghost"
+    events = []
+    for event in node["timelineItems"]["nodes"]:
+        who = event.get("requestedReviewer")
+        if who and who["__typename"] == "User":
+            events.append(
+                (
+                    datetime.fromisoformat(event["createdAt"]),
+                    0 if event["__typename"] == "ReviewRequestedEvent" else 2,
+                    who["login"],
+                    event["__typename"],
+                )
+            )
+    for review in node["reviews"]["nodes"]:
+        who = review["author"]
+        if (
+            review["submittedAt"]
+            and who
+            and who["__typename"] != "Bot"
+            and who["login"].lower() != author.lower()
+        ):
+            events.append(
+                (
+                    datetime.fromisoformat(review["submittedAt"]),
+                    1,
+                    who["login"],
+                    "submitted",
+                )
+            )
+    pending: dict[str, datetime] = {}
+    reviews = []
+    for at, _, login, kind in sorted(events):
+        key = login.lower()
+        if kind == "ReviewRequestedEvent":
+            pending.setdefault(key, at)
+        elif kind == "ReviewRequestRemovedEvent":
+            pending.pop(key, None)
+        else:
+            reviews.append(
+                Review(
+                    repository,
+                    node["number"],
+                    author,
+                    node["title"],
+                    node["url"],
+                    login,
+                    at,
+                    pending.pop(key, None),
+                )
+            )
+    return reviews

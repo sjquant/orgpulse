@@ -1,7 +1,7 @@
 import json
 from html.parser import HTMLParser
 
-from orgpulse.libs.html_export import inline_github_avatar, render_person_html
+from orgpulse.libs.html_export import inline_github_avatar, render_report_html
 
 
 class SnapshotParser(HTMLParser):
@@ -39,7 +39,7 @@ def test_snapshot_json_cannot_close_its_script_element():
     text = '</script><script>alert("unsafe")</script> & <img src=x>'
     snapshot = {"meta": {"snapshot": {"person": "alice"}, "org": "acme"}, "title": text}
     template = '<title>orgpulse</title><link rel="icon" href="/favicon.svg"><link rel="stylesheet" href="/app.css"><script src="/app.js"></script>'
-    html = render_person_html(
+    html = render_report_html(
         snapshot, template=template, styles="body {}", script="void 0;", icon=b"<svg/>"
     )
     result, external = parse_snapshot(html)

@@ -140,7 +140,8 @@ syncing and refuses to overwrite an existing output file.
 
 Author metrics cover merged, human-authored PRs **created on or after the configured
 `since` date**. Reviewer activity covers human-authored PRs created since that date
-regardless of merge state, with reviews and request events paginated to the end. Earlier-created PRs are excluded even if merged during a selected
+regardless of merge state or recent pushes, with reviews and request events
+paginated to the end. Earlier-created PRs are excluded even if merged during a selected
 reporting period. Bot PRs/reviews, issues, and full commit histories are outside this report.
 Unmerged PRs contribute only to reviewer metrics. Collection covers repositories visible to the credential.
 
@@ -150,7 +151,7 @@ zero. The next sync fills missing commit counts in an existing database. First
 review currently checks the first 30 reviews and first ready-for-review event per
 PR for the author-side first-review metric; reviewer activity reads all pages.
 The next sync backfills existing review history independently of the author-data
-watermark. Until this completes for all included, previously synced repositories,
+watermark. Until this completes for all included repositories,
 reviewer metrics remain unavailable rather than zero. Changing group membership also changes historical comparisons; the report
 does not reconstruct past team rosters or know join/leave dates. A first or last
 PR is not treated as a participation boundary. Periods before collected history

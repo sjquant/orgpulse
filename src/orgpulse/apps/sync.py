@@ -34,34 +34,41 @@ def sync(
     saved = 0
     with Store(config.database) as store:
         updated_since: dict[str, datetime] = {}
+        review_since: dict[str, datetime] = {}
         for repository in iter_repositories(request, config.org):
             if not config.includes_repository(repository.full_name):
                 continue
-            # Repositories arrive most recently pushed first.
+            review_since[repository.full_name] = (
+                store.reviews_synced_at(repository.full_name, since=config.since)
+                or floor
+            ) - SYNC_OVERLAP
+            # Review activity does not require a recent code push.
             if repository.pushed_at is None or repository.pushed_at < floor:
-                break
+                continue
             synced_at = store.synced_at(repository.full_name, since=config.since)
             updated_since[repository.full_name] = (
                 synced_at - SYNC_OVERLAP if synced_at else floor
             )
 
         missing_counts = store.missing_commit_counts()
-        review_since = {
-            name: (store.reviews_synced_at(name, since=config.since) or floor)
-            - SYNC_OVERLAP
-            for name in updated_since
-        }
+        store.plan_reviews(list(review_since))
 
         def fetch(
             full_name: str,
         ) -> tuple[list[PullRequest], dict[int, int], list[tuple[int, list[Review]]]]:
-            pull_requests = [
-                pull_request
-                for pull_request in iter_pull_requests(
-                    request, full_name, updated_since=updated_since[full_name]
-                )
-                if pull_request.created_at >= floor
-            ]
+            pull_requests = (
+                [
+                    pull_request
+                    for pull_request in iter_pull_requests(
+                        request,
+                        full_name,
+                        updated_since=updated_since.get(full_name, started_at),
+                    )
+                    if pull_request.created_at >= floor
+                ]
+                if full_name in updated_since
+                else []
+            )
             fetched = {pr.number for pr in pull_requests}
             missing = [
                 number
@@ -81,14 +88,18 @@ def sync(
 
         executor = ThreadPoolExecutor(max_workers=FETCH_WORKERS)
         try:
-            futures = {executor.submit(fetch, name): name for name in updated_since}
+            futures = {executor.submit(fetch, name): name for name in review_since}
             for future in as_completed(futures):
                 full_name = futures[future]
                 pull_requests, counts, reviews = future.result()
-                store.save(
-                    full_name, pull_requests, since=config.since, synced_at=started_at
-                )
-                store.save_commit_counts(full_name, counts)
+                if full_name in updated_since:
+                    store.save(
+                        full_name,
+                        pull_requests,
+                        since=config.since,
+                        synced_at=started_at,
+                    )
+                    store.save_commit_counts(full_name, counts)
                 store.save_reviews(
                     full_name, reviews, since=config.since, synced_at=started_at
                 )

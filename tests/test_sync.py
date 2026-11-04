@@ -30,7 +30,11 @@ class FakeGitHub:
         page = int(variables["after"] or 0)
         if "query ReviewActivity" not in query:
             self.calls.append((full_name, page))
-        pages = self.pages[full_name]
+        pages = (
+            self.pages.get(full_name, [[]])
+            if "query ReviewActivity" in query
+            else self.pages[full_name]
+        )
         return {
             "repository": {
                 "pullRequests": {

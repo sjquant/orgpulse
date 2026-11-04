@@ -329,3 +329,30 @@ def test_review_only_roster_and_custom_previous_window(tmp_path):
     )
     assert later["summary"]["current"]["reviewed_prs"] == 0
     assert later["summary"]["compare"]["reviewed_prs"] == 1
+
+
+def test_reviews_from_repositories_without_recent_pushes_are_collected(tmp_path):
+    config = make_config(tmp_path, groups={"team": ("bob",)})
+    node = pr_node(1, merged=None, reviews=[("bob", "User", "2026-06-02T00:00:00Z")])
+    fake = FakeGitHub(
+        [("acme/inactive", "2020-01-01T00:00:00Z")], {"acme/inactive": [[node]]}
+    )
+    sync(config, fake)
+    assert fake.calls == []
+    with Store(config.database) as store:
+        assert store.review_repositories() == ["acme/inactive"]
+        assert len(store.reviews()) == 1
+        assert store.pull_requests() == []
+        store.plan_reviews(["acme/inactive", "acme/pending"])
+    query = {
+        "group": ["team"],
+        "grain": ["month"],
+        "count": ["1"],
+        "until": ["2026-06-30"],
+    }
+    assert _report(config, query)["summary"]["current"]["reviewed_prs"] is None
+    with Store(config.database) as store:
+        store.save_reviews(
+            "acme/pending", [], since=config.since, synced_at=utc("2026-07-01")
+        )
+    assert _report(config, query)["summary"]["current"]["reviewed_prs"] == 1

@@ -336,7 +336,7 @@ def _report(
             reviews = store.reviews() if reviews is None else reviews
             required = [
                 name
-                for name in store.repository_names()
+                for name in (store.review_repositories() or store.repository_names())
                 if config.includes_repository(name)
             ]
             review_available = bool(required) and all(
@@ -408,7 +408,7 @@ def export_reports(
         reviews = store.reviews()
         required = [
             name
-            for name in store.repository_names()
+            for name in (store.review_repositories() or store.repository_names())
             if config.includes_repository(name)
         ]
         review_available = bool(required) and all(

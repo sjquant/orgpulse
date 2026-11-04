@@ -31,6 +31,7 @@ CREATE TABLE IF NOT EXISTS review_activity (
     submitted_at TEXT NOT NULL, requested_at TEXT,
     PRIMARY KEY (repository, number, reviewer, submitted_at)
 );
+CREATE TABLE IF NOT EXISTS review_scope (repository TEXT PRIMARY KEY);
 CREATE TABLE IF NOT EXISTS review_sync (
     repository TEXT PRIMARY KEY, since TEXT NOT NULL, synced_at TEXT NOT NULL
 );
@@ -119,6 +120,21 @@ class Store:
         return [
             row[0]
             for row in self._connection.execute("SELECT full_name FROM repositories")
+        ]
+
+    def plan_reviews(self, repositories: list[str]) -> None:
+        """Record the complete included repository scope before collecting reviews."""
+        with self._connection:
+            self._connection.execute("DELETE FROM review_scope")
+            self._connection.executemany(
+                "INSERT INTO review_scope VALUES (?)",
+                [(name,) for name in repositories],
+            )
+
+    def review_repositories(self) -> list[str]:
+        return [
+            row[0]
+            for row in self._connection.execute("SELECT repository FROM review_scope")
         ]
 
     def reviews_synced_at(self, repository: str, *, since: date) -> datetime | None:

@@ -16,7 +16,7 @@ PANEL_RECENT_LIMIT = 3
 PERSON_RECENT_LIMIT = 10
 # Medians reported per scope; higher is worse for each, so each can be flagged.
 METRICS = ("size", "lead_time", "review_wait")
-DISTRIBUTION_METRICS = (*METRICS, "commits")
+DISTRIBUTION_METRICS = (*METRICS, "commits", "review_response")
 # A person's median this far past the team's median is flagged.
 OUTLIER_FACTOR = 1.5
 # A single PR past this team percentile is flagged.
@@ -139,6 +139,8 @@ def group_report(
         "periods": [
             {
                 **_period_json(period),
+                "compare_start": earlier.start.isoformat(),
+                "compare_end": earlier.end.isoformat(),
                 "current": _summary(team, [period], headcount, analysis),
                 "compare": _summary(team, [earlier], headcount, analysis),
             }
@@ -336,7 +338,7 @@ def _summary(
     person_periods = headcount * sum(period.coverage for period in covered)
     distributions = {
         metric: _distribution(merged, metric, (analysis or {}).get(metric, {}))
-        for metric in DISTRIBUTION_METRICS
+        for metric in (*METRICS, "commits")
     }
     return {
         "merged": len(merged),
@@ -439,7 +441,11 @@ def _percentiles(items: list[_Merged], quantile: float) -> dict[str, float | Non
 
 
 def _period_json(period: _Period) -> dict[str, Any]:
-    return {"start": period.start.isoformat(), "partial": period.coverage < 1 - 1e-9}
+    return {
+        "start": period.start.isoformat(),
+        "end": period.end.isoformat(),
+        "partial": period.coverage < 1 - 1e-9,
+    }
 
 
 def _hours(start: datetime, end: datetime) -> float:

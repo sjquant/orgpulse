@@ -28,7 +28,8 @@ class FakeGitHub:
             }
         full_name = f"{variables['owner']}/{variables['name']}"
         page = int(variables["after"] or 0)
-        self.calls.append((full_name, page))
+        if "query ReviewActivity" not in query:
+            self.calls.append((full_name, page))
         pages = self.pages[full_name]
         return {
             "repository": {
@@ -66,12 +67,18 @@ def pr_node(
         "commits": {"totalCount": 3},
         "author": {"__typename": author_type, "login": author} if author else None,
         "reviews": {
+            "pageInfo": {"hasNextPage": False, "endCursor": None},
             "nodes": [
                 {"submittedAt": at, "author": {"__typename": kind, "login": login}}
                 for login, kind, at in reviews
-            ]
+            ],
         },
-        "timelineItems": {"nodes": [{"createdAt": ready}] if ready else []},
+        "timelineItems": {
+            "pageInfo": {"hasNextPage": False, "endCursor": None},
+            "nodes": [{"__typename": "ReadyForReviewEvent", "createdAt": ready}]
+            if ready
+            else [],
+        },
     }
 
 

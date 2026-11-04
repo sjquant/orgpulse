@@ -2,9 +2,9 @@
 
 See where pull requests slow down and how your GitHub team's work changes over time.
 
-- Compare review wait, merge time, and change volume across people and groups.
+- Compare PR flow, change volume, and review participation across people and groups.
 - Explore up to three years of trends, with averages, medians, and outlier filtering.
-- Save personal HTML reports that open and stay interactive offline.
+- Save HTML reports for people or groups that stay interactive offline.
 
 ## Try it with your team
 
@@ -36,7 +36,7 @@ uv run orgpulse serve
 Open **http://127.0.0.1:8765**, choose a person or group, and select a metric to
 explore the trend. Use **Sync now** to refresh or download a report to share.
 
-Reports cover merged, human-authored PRs. PR activity is context for a conversation,
+Author metrics cover merged PRs; reviewer metrics also include unmerged PRs. PR activity is context for a conversation,
 not a performance score.
 
 [User guide: configuration, metrics, and exports](docs/guide.md) ·

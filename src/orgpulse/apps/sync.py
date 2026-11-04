@@ -5,11 +5,12 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, time, timedelta, timezone
 
 from orgpulse.common.config import Config
-from orgpulse.common.models import PullRequest
+from orgpulse.common.models import PullRequest, Review
 from orgpulse.libs.github import (
     GraphQLRequest,
     iter_pull_requests,
     iter_repositories,
+    iter_review_activity,
     pull_request_commit_counts,
 )
 from orgpulse.libs.store import Store
@@ -45,8 +46,15 @@ def sync(
             )
 
         missing_counts = store.missing_commit_counts()
+        review_since = {
+            name: (store.reviews_synced_at(name, since=config.since) or floor)
+            - SYNC_OVERLAP
+            for name in updated_since
+        }
 
-        def fetch(full_name: str) -> tuple[list[PullRequest], dict[int, int]]:
+        def fetch(
+            full_name: str,
+        ) -> tuple[list[PullRequest], dict[int, int], list[tuple[int, list[Review]]]]:
             pull_requests = [
                 pull_request
                 for pull_request in iter_pull_requests(
@@ -61,18 +69,29 @@ def sync(
                 if number not in fetched
             ]
             counts = pull_request_commit_counts(request, full_name, missing)
-            return pull_requests, counts
+            reviews = list(
+                iter_review_activity(
+                    request,
+                    full_name,
+                    updated_since=review_since[full_name],
+                    created_since=floor,
+                )
+            )
+            return pull_requests, counts, reviews
 
         executor = ThreadPoolExecutor(max_workers=FETCH_WORKERS)
         try:
             futures = {executor.submit(fetch, name): name for name in updated_since}
             for future in as_completed(futures):
                 full_name = futures[future]
-                pull_requests, counts = future.result()
+                pull_requests, counts, reviews = future.result()
                 store.save(
                     full_name, pull_requests, since=config.since, synced_at=started_at
                 )
                 store.save_commit_counts(full_name, counts)
+                store.save_reviews(
+                    full_name, reviews, since=config.since, synced_at=started_at
+                )
                 saved += len(pull_requests)
                 on_repository(full_name, len(pull_requests))
         finally:

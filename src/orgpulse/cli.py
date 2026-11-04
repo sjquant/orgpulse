@@ -58,7 +58,7 @@ def main() -> int:
         "--team-statistic",
         choices=("mean", "median"),
         default="mean",
-        help="team comparison for merged PR rates and changed lines",
+        help="team comparison for merged PR rates, changed lines, and reviewed PRs",
     )
     export.add_argument(
         "--statistic",

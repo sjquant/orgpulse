@@ -17,7 +17,7 @@ from zipfile import ZIP_DEFLATED, ZipFile
 
 from orgpulse.common.config import Config
 from orgpulse.common.errors import OrgpulseError
-from orgpulse.common.models import PullRequest
+from orgpulse.common.models import PullRequest, Review
 from orgpulse.libs.html_export import inline_github_avatar, render_report_html
 from orgpulse.libs.metrics import (
     DISTRIBUTION_METRICS,
@@ -25,6 +25,7 @@ from orgpulse.libs.metrics import (
     group_report,
     person_report,
 )
+from orgpulse.libs.review_metrics import add_review_metrics
 from orgpulse.libs.store import Store
 
 STATIC_DIR = Path(__file__).parent / "static"
@@ -246,6 +247,9 @@ def _meta(config: Config) -> dict[str, Any]:
             for author, repository, count in store.merged_counts():
                 if config.includes_repository(repository):
                     merged[author] += count
+            for review in store.reviews():
+                if config.includes_repository(review.repository):
+                    merged.setdefault(review.reviewer, 0)
             people = sorted(merged, key=lambda login: (-merged[login], login.lower()))
     return {
         "org": config.org,
@@ -262,6 +266,8 @@ def _report(
     query: dict[str, list[str]],
     *,
     pull_requests: list[PullRequest] | None = None,
+    reviews: list[Review] | None = None,
+    review_available: bool | None = None,
 ) -> dict[str, Any]:
     """Build the group, person, or everyone report named in the query."""
 
@@ -279,7 +285,7 @@ def _report(
     if not isinstance(analysis, dict) or any(
         metric not in DISTRIBUTION_METRICS for metric in analysis
     ):
-        raise _BadRequest("analysis only supports PR-level distribution metrics")
+        raise _BadRequest("analysis only supports distribution metrics")
     for options in analysis.values():
         if not isinstance(options, dict) or set(options) - {
             "statistic",
@@ -312,7 +318,7 @@ def _report(
     if group is not None and group not in config.groups:
         raise _BadRequest(f"unknown group: {group}")
     person = _param(query, "person", "")
-    window = {
+    window: dict[str, Any] = {
         "grain": grain,
         "count": count,
         "until": until,
@@ -322,24 +328,71 @@ def _report(
         "analysis": analysis,
         "team_statistic": team_statistic,
     }
-    if pull_requests is None:
+    if pull_requests is None or reviews is None:
         with Store(config.database) as store:
-            pull_requests = store.pull_requests()
+            pull_requests = (
+                store.pull_requests() if pull_requests is None else pull_requests
+            )
+            reviews = store.reviews() if reviews is None else reviews
+            required = [
+                name
+                for name in store.repository_names()
+                if config.includes_repository(name)
+            ]
+            review_available = bool(required) and all(
+                store.reviews_synced_at(name, since=config.since) for name in required
+            )
     pull_requests = [
         pr for pr in pull_requests if config.includes_repository(pr.repository)
     ]
-    if person:
-        team = config.team_of(person)
+    reviews = [
+        review for review in reviews if config.includes_repository(review.repository)
+    ]
+    team = config.team_of(person) if person else group
+    members = config.members(team)
+
+    def build(members: tuple[str, ...] | None) -> dict[str, Any]:
+        if person:
+            return {
+                "scope": {"kind": "person", "name": person, "team": team},
+                **person_report(pull_requests, login=person, team=members, **window),
+            }
         return {
-            "scope": {"kind": "person", "name": person, "team": team},
-            **person_report(
-                pull_requests, login=person, team=config.members(team), **window
-            ),
+            "scope": {"kind": "group" if group else "everyone", "name": group},
+            **group_report(pull_requests, people=members, **window),
         }
-    return {
-        "scope": {"kind": "group" if group else "everyone", "name": group},
-        **group_report(pull_requests, people=config.members(group), **window),
-    }
+
+    report = build(members)
+    if members is None:
+        first = date.fromisoformat(report["periods"][0]["start"])
+        last = date.fromisoformat(report["periods"][-1]["end"])
+        # With no configured roster, infer people only from activity in this range.
+        names = [
+            pr.author
+            for pr in pull_requests
+            if first <= pr.merged_at.astimezone(config.timezone).date() <= last
+        ]
+        names += [
+            review.reviewer
+            for review in reviews
+            if first <= review.submitted_at.astimezone(config.timezone).date() <= last
+        ]
+        unique: dict[str, str] = {}
+        for name in names:
+            unique.setdefault(name.lower(), name)
+        members = tuple(unique.values())
+        report = build(members)
+    add_review_metrics(
+        report,
+        reviews,
+        people=members,
+        timezone=config.timezone,
+        since=config.since,
+        available=bool(review_available),
+        options=analysis.get("review_response", {}),
+        team_statistic=team_statistic,
+    )
+    return report
 
 
 def export_reports(
@@ -352,8 +405,21 @@ def export_reports(
     frozen_query.setdefault("until", [datetime.now(config.timezone).date().isoformat()])
     with Store(config.database) as store:
         pull_requests = store.pull_requests()
+        reviews = store.reviews()
+        required = [
+            name
+            for name in store.repository_names()
+            if config.includes_repository(name)
+        ]
+        review_available = bool(required) and all(
+            store.reviews_synced_at(name, since=config.since) for name in required
+        )
     _report(
-        config, frozen_query, pull_requests=pull_requests
+        config,
+        frozen_query,
+        pull_requests=pull_requests,
+        reviews=reviews,
+        review_available=review_available,
     )  # Validate before image requests.
     meta = _meta(config)
     person = _param(query, "person", "")
@@ -393,6 +459,8 @@ def export_reports(
                     config,
                     {**report_query, "analysis": [json.dumps(options)]},
                     pull_requests=pull_requests,
+                    reviews=reviews,
+                    review_available=review_available,
                 )
         start = reports["median:0"]["periods"][0]["start"]
         end = frozen_query["until"][0]

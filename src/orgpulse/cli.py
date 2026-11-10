@@ -26,34 +26,39 @@ def main() -> int:
         help="path to orgpulse.toml",
     )
     commands = parser.add_subparsers(dest="command", required=True)
-    commands.add_parser("sync", help="fetch merged pull requests into the database")
+    commands.add_parser("sync", help="sync PR and review activity")
     serve = commands.add_parser("serve", help="serve the dashboard on 127.0.0.1")
     serve.add_argument("--port", type=int, default=8765)
     export = commands.add_parser(
-        "export", help="save standalone personal HTML reports or a group ZIP"
+        "export", help="save an HTML report or personal reports ZIP"
     )
     scope = export.add_mutually_exclusive_group()
     scope.add_argument("--person", help="GitHub login; exports one HTML file")
     scope.add_argument(
         "--group",
-        help="configured group; exports a ZIP (default: all configured people)",
+        help="configured group (default: all configured people)",
     )
     export.add_argument(
         "--since",
         type=date.fromisoformat,
-        help="inclusive merge-date start (default: configured since)",
+        help="inclusive report start by merge/review submission date (default: configured since)",
     )
     export.add_argument(
         "--until",
         type=date.fromisoformat,
-        help="inclusive merge-date end (default: today in configured timezone)",
+        help="inclusive report end by merge/review submission date (default: today in configured timezone)",
+    )
+    export.add_argument(
+        "--format",
+        choices=("html", "zip"),
+        help="one scope HTML or personal reports ZIP (group default: zip)",
     )
     export.add_argument("--period", choices=("week", "month"), default="month")
     export.add_argument(
         "--team-statistic",
         choices=("mean", "median"),
         default="mean",
-        help="team comparison for merged PR rates and changed lines",
+        help="team comparison for merged PR rates, changed lines, and reviewed PRs",
     )
     export.add_argument(
         "--statistic",
@@ -74,7 +79,7 @@ def main() -> int:
         "--output",
         type=Path,
         required=True,
-        help="new .html file for --person, otherwise a new .zip file",
+        help="new .html or .zip file matching --format",
     )
     args = parser.parse_args()
     try:
@@ -97,7 +102,10 @@ def main() -> int:
 
 
 def _export(config: Config, args: argparse.Namespace) -> None:
-    expected_suffix = ".html" if args.person else ".zip"
+    output_format = args.format or ("html" if args.person else "zip")
+    if args.person and output_format != "html":
+        raise ValueError("--person requires --format html")
+    expected_suffix = f".{output_format}"
     if args.output.suffix.lower() != expected_suffix:
         raise ValueError(f"--output must end with {expected_suffix}")
     if args.output.exists():
@@ -107,6 +115,7 @@ def _export(config: Config, args: argparse.Namespace) -> None:
         "until": [(args.until or datetime.now(config.timezone).date()).isoformat()],
         "grain": [args.period],
         "team_statistic": [args.team_statistic],
+        "format": [output_format],
     }
     if args.person:
         query["person"] = [args.person]

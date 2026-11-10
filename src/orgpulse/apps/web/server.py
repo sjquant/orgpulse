@@ -17,14 +17,15 @@ from zipfile import ZIP_DEFLATED, ZipFile
 
 from orgpulse.common.config import Config
 from orgpulse.common.errors import OrgpulseError
-from orgpulse.common.models import PullRequest
-from orgpulse.libs.html_export import inline_github_avatar, render_person_html
+from orgpulse.common.models import PullRequest, Review
+from orgpulse.libs.html_export import inline_github_avatar, render_report_html
 from orgpulse.libs.metrics import (
     DISTRIBUTION_METRICS,
     Grain,
     group_report,
     person_report,
 )
+from orgpulse.libs.review_metrics import add_review_metrics
 from orgpulse.libs.store import Store
 
 STATIC_DIR = Path(__file__).parent / "static"
@@ -246,6 +247,9 @@ def _meta(config: Config) -> dict[str, Any]:
             for author, repository, count in store.merged_counts():
                 if config.includes_repository(repository):
                     merged[author] += count
+            for review in store.reviews():
+                if config.includes_repository(review.repository):
+                    merged.setdefault(review.reviewer, 0)
             people = sorted(merged, key=lambda login: (-merged[login], login.lower()))
     return {
         "org": config.org,
@@ -262,6 +266,8 @@ def _report(
     query: dict[str, list[str]],
     *,
     pull_requests: list[PullRequest] | None = None,
+    reviews: list[Review] | None = None,
+    review_available: bool | None = None,
 ) -> dict[str, Any]:
     """Build the group, person, or everyone report named in the query."""
 
@@ -279,7 +285,7 @@ def _report(
     if not isinstance(analysis, dict) or any(
         metric not in DISTRIBUTION_METRICS for metric in analysis
     ):
-        raise _BadRequest("analysis only supports PR-level distribution metrics")
+        raise _BadRequest("analysis only supports distribution metrics")
     for options in analysis.values():
         if not isinstance(options, dict) or set(options) - {
             "statistic",
@@ -312,7 +318,7 @@ def _report(
     if group is not None and group not in config.groups:
         raise _BadRequest(f"unknown group: {group}")
     person = _param(query, "person", "")
-    window = {
+    window: dict[str, Any] = {
         "grain": grain,
         "count": count,
         "until": until,
@@ -322,24 +328,71 @@ def _report(
         "analysis": analysis,
         "team_statistic": team_statistic,
     }
-    if pull_requests is None:
+    if pull_requests is None or reviews is None:
         with Store(config.database) as store:
-            pull_requests = store.pull_requests()
+            pull_requests = (
+                store.pull_requests() if pull_requests is None else pull_requests
+            )
+            reviews = store.reviews() if reviews is None else reviews
+            required = [
+                name
+                for name in (store.review_repositories() or store.repository_names())
+                if config.includes_repository(name)
+            ]
+            review_available = bool(required) and all(
+                store.reviews_synced_at(name, since=config.since) for name in required
+            )
     pull_requests = [
         pr for pr in pull_requests if config.includes_repository(pr.repository)
     ]
-    if person:
-        team = config.team_of(person)
+    reviews = [
+        review for review in reviews if config.includes_repository(review.repository)
+    ]
+    team = config.team_of(person) if person else group
+    members = config.members(team)
+
+    def build(members: tuple[str, ...] | None) -> dict[str, Any]:
+        if person:
+            return {
+                "scope": {"kind": "person", "name": person, "team": team},
+                **person_report(pull_requests, login=person, team=members, **window),
+            }
         return {
-            "scope": {"kind": "person", "name": person, "team": team},
-            **person_report(
-                pull_requests, login=person, team=config.members(team), **window
-            ),
+            "scope": {"kind": "group" if group else "everyone", "name": group},
+            **group_report(pull_requests, people=members, **window),
         }
-    return {
-        "scope": {"kind": "group" if group else "everyone", "name": group},
-        **group_report(pull_requests, people=config.members(group), **window),
-    }
+
+    report = build(members)
+    if members is None:
+        first = date.fromisoformat(report["periods"][0]["start"])
+        last = date.fromisoformat(report["periods"][-1]["end"])
+        # With no configured roster, infer people only from activity in this range.
+        names = [
+            pr.author
+            for pr in pull_requests
+            if first <= pr.merged_at.astimezone(config.timezone).date() <= last
+        ]
+        names += [
+            review.reviewer
+            for review in reviews
+            if first <= review.submitted_at.astimezone(config.timezone).date() <= last
+        ]
+        unique: dict[str, str] = {}
+        for name in names:
+            unique.setdefault(name.lower(), name)
+        members = tuple(unique.values())
+        report = build(members)
+    add_review_metrics(
+        report,
+        reviews,
+        people=members,
+        timezone=config.timezone,
+        since=config.since,
+        available=bool(review_available),
+        options=analysis.get("review_response", {}),
+        team_statistic=team_statistic,
+    )
+    return report
 
 
 def export_reports(
@@ -347,16 +400,32 @@ def export_reports(
     query: dict[str, list[str]],
     profiles: AvatarLoader,
 ) -> tuple[bytes, str, str]:
-    """Export personal reports from a consistent data snapshot."""
+    """Export a scope report or personal reports from one data snapshot."""
     frozen_query = {key: list(value) for key, value in query.items()}
     frozen_query.setdefault("until", [datetime.now(config.timezone).date().isoformat()])
     with Store(config.database) as store:
         pull_requests = store.pull_requests()
+        reviews = store.reviews()
+        required = [
+            name
+            for name in (store.review_repositories() or store.repository_names())
+            if config.includes_repository(name)
+        ]
+        review_available = bool(required) and all(
+            store.reviews_synced_at(name, since=config.since) for name in required
+        )
     _report(
-        config, frozen_query, pull_requests=pull_requests
+        config,
+        frozen_query,
+        pull_requests=pull_requests,
+        reviews=reviews,
+        review_available=review_available,
     )  # Validate before image requests.
     meta = _meta(config)
     person = _param(query, "person", "")
+    output_format = _param(query, "format", "html" if person else "zip")
+    if output_format not in ("html", "zip") or (person and output_format != "html"):
+        raise _BadRequest("format must be html, or zip for personal reports of a group")
     people = (person,) if person else config.members(_param(query, "group", "") or None)
     if people is None:
         people = tuple(meta["people"])
@@ -364,7 +433,7 @@ def export_reports(
     for login in people:
         unique_people.setdefault(login.lower(), login)
     people = tuple(unique_people.values())
-    if not people or any(
+    if (not people and output_format == "zip") or any(
         not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9-]{0,38}", login) for login in people
     ):
         raise _BadRequest("a valid GitHub person is required for each report")
@@ -374,12 +443,12 @@ def export_reports(
         for name in ("index.html", "app.css", "app.js")
     }
     created_at = datetime.now(config.timezone).isoformat()
-    files = []
-    for login in people:
-        person_query = {**frozen_query, "person": [login]}
-        person_query.pop("group", None)
+
+    def document(
+        report_query: dict[str, list[str]], name: str, members: tuple[str, ...]
+    ) -> tuple[str, bytes]:
         reports = {}
-        # Four shared variants suffice: each metric's statistic/filter is independent.
+        # Each metric can independently select one of four shared variants.
         for statistic in ("mean", "median"):
             for exclude in (False, True):
                 options = {
@@ -388,18 +457,26 @@ def export_reports(
                 }
                 reports[f"{statistic}:{int(exclude)}"] = _report(
                     config,
-                    {**person_query, "analysis": [json.dumps(options)]},
+                    {**report_query, "analysis": [json.dumps(options)]},
                     pull_requests=pull_requests,
+                    reviews=reviews,
+                    review_available=review_available,
                 )
         start = reports["median:0"]["periods"][0]["start"]
         end = frozen_query["until"][0]
-        avatar = inline_github_avatar(avatar_sources.get(login.lower()))
+        avatars = {}
+        for login in members:
+            avatar = inline_github_avatar(avatar_sources.get(login.lower()))
+            if avatar:
+                avatars[login.lower()] = avatar
         snapshot_meta = {
             **meta,
-            "people": [login],
-            "avatars": {login.lower(): avatar} if avatar else {},
+            "people": list(members),
+            "avatars": avatars,
             "snapshot": {
-                "person": login,
+                "person": _param(report_query, "person", "") or None,
+                "name": name,
+                "kind": reports["median:0"]["scope"]["kind"],
                 "from": start,
                 "until": end,
                 "timezone": str(config.timezone),
@@ -409,10 +486,10 @@ def export_reports(
         }
         snapshot = {
             "meta": snapshot_meta,
-            "query": urlencode(person_query, doseq=True),
+            "query": urlencode(report_query, doseq=True),
             "reports": reports,
         }
-        html = render_person_html(
+        html = render_report_html(
             snapshot,
             template=assets["index.html"],
             styles=assets["app.css"],
@@ -420,11 +497,18 @@ def export_reports(
             icon=(STATIC_DIR / "favicon.svg").read_bytes(),
         )
         org = re.sub(r"[^A-Za-z0-9-]", "_", config.org)
-        filename = f"orgpulse-{org}-{login}-{start}_to_{end}.html"
-        files.append((filename, html.encode()))
-    if person:
-        filename, body = files[0]
+        safe_name = re.sub(r"[^A-Za-z0-9_-]", "_", name)
+        return f"orgpulse-{org}-{safe_name}-{start}_to_{end}.html", html.encode()
+
+    if output_format == "html":
+        name = person or _param(query, "group", "") or "everyone"
+        filename, body = document(frozen_query, name, people)
         return body, filename, "text/html; charset=utf-8"
+    files = []
+    for login in people:
+        person_query = {**frozen_query, "person": [login], "format": ["html"]}
+        person_query.pop("group", None)
+        files.append(document(person_query, login, (login,)))
     archive = BytesIO()
     with ZipFile(archive, "w", compression=ZIP_DEFLATED) as bundle:
         for filename, body in files:

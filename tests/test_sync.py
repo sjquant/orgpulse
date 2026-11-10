@@ -1,5 +1,7 @@
 from datetime import date, datetime, timedelta, timezone
 
+import pytest
+
 from orgpulse.apps.sync import sync
 from orgpulse.libs.store import Store
 from tests.factories import make_config, utc
@@ -30,11 +32,7 @@ class FakeGitHub:
         page = int(variables["after"] or 0)
         if "query ReviewActivity" not in query:
             self.calls.append((full_name, page))
-        pages = (
-            self.pages.get(full_name, [[]])
-            if "query ReviewActivity" in query
-            else self.pages[full_name]
-        )
+        pages = self.pages[full_name]
         return {
             "repository": {
                 "pullRequests": {
@@ -109,6 +107,7 @@ def test_sync_stores_human_pull_requests_with_review_timing(tmp_path):
             ("acme/old", "2025-06-01T00:00:00Z"),
         ],
         pages={
+            "acme/old": [[]],
             "acme/api": [
                 [
                     pr_node(
@@ -199,7 +198,8 @@ def test_moving_since_earlier_refetches_full_history(tmp_path):
     assert sorted(_stored(config)) == [1, 7]
 
 
-def test_incremental_sync_backfills_only_missing_commit_counts(tmp_path):
+@pytest.mark.parametrize("pushed_at", ["2026-06-21T00:00:00Z", "2020-06-21T00:00:00Z"])
+def test_incremental_sync_backfills_only_missing_commit_counts(tmp_path, pushed_at):
     from tests.factories import merged_pr
 
     config = make_config(tmp_path)
@@ -207,11 +207,25 @@ def test_incremental_sync_backfills_only_missing_commit_counts(tmp_path):
     with Store(config.database) as store:
         store.save(
             "acme/api",
-            [merged_pr("alice", "2026-06-02T12:00:00", number=1)],
-            since=config.since,
+            [merged_pr("alice", "2020-06-02T12:00:00", number=1)],
+            since=date(2020, 1, 1),
             synced_at=watermark,
         )
-    github = FakeGitHub([("acme/api", _recent())], {"acme/api": [[pr_node(1)]]})
+    github = FakeGitHub(
+        [("acme/api", pushed_at)],
+        {
+            "acme/api": [
+                [
+                    pr_node(
+                        1,
+                        created="2020-06-01T00:00:00Z",
+                        updated="2020-06-02T00:00:00Z",
+                        merged="2020-06-02T00:00:00Z",
+                    )
+                ]
+            ]
+        },
+    )
     count_calls = []
 
     def request(query, variables):

@@ -5,7 +5,7 @@ from urllib.parse import parse_qs
 from zoneinfo import ZoneInfo
 
 from orgpulse.apps.sync import sync
-from orgpulse.apps.web.server import _report, export_reports
+from orgpulse.apps.web.server import _meta, _report, export_reports
 from orgpulse.common.models import Review
 from orgpulse.libs.github import iter_review_activity
 from orgpulse.libs.store import Store
@@ -114,7 +114,7 @@ def test_review_metrics_use_submission_dates_distinct_pairs_and_known_response_s
 ):
     config = make_config(
         tmp_path,
-        groups={"team": ("bob", "charlie", "inactive")},
+        groups={"team": ("bob", "charlie", "inactive", "inactive-two")},
         timezone=ZoneInfo("Asia/Seoul"),
     )
     reviews = [
@@ -198,6 +198,7 @@ def test_review_metrics_use_submission_dates_distinct_pairs_and_known_response_s
         ("bob", 2),
         ("charlie", 1),
         ("inactive", 0),
+        ("inactive-two", 0),
     ]
     person = _report(config, {**query, "person": ["bob"]})
     stats = person["summary"]["current"]
@@ -208,7 +209,12 @@ def test_review_metrics_use_submission_dates_distinct_pairs_and_known_response_s
         "excluded": 0,
         "missing": 1,
     }
-    assert person["summary"]["compare"]["reviewed_prs"] == 1
+    assert person["summary"]["compare"]["reviewed_prs"] == 0.75
+    middle = _report(config, {**query, "person": ["bob"], "team_statistic": ["median"]})
+    assert middle["summary"]["compare"]["reviewed_prs"] == 0.5
+    assert (
+        middle["summary"]["compare"]["team_benchmarks"]["mean"]["reviewed_prs"] == 0.75
+    )
     assert len(person["review_recent"]) == 2
     assert person["summary"]["current"]["merged"] == 0
     body, _, mime = export_reports(
@@ -343,6 +349,9 @@ def test_reviews_from_repositories_without_recent_pushes_are_collected(tmp_path)
         assert store.review_repositories() == ["acme/inactive"]
         assert len(store.reviews()) == 1
         assert store.pull_requests() == []
+        store.save_reviews(
+            "acme/inactive", [], since=config.since, synced_at=utc("2026-07-01")
+        )
         store.plan_reviews(["acme/inactive", "acme/pending"])
     query = {
         "group": ["team"],
@@ -350,6 +359,7 @@ def test_reviews_from_repositories_without_recent_pushes_are_collected(tmp_path)
         "count": ["1"],
         "until": ["2026-06-30"],
     }
+    assert _meta(config)["synced_at"] == "2026-07-01T00:00:00+00:00"
     assert _report(config, query)["summary"]["current"]["reviewed_prs"] is None
     with Store(config.database) as store:
         store.save_reviews(

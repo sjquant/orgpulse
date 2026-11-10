@@ -47,7 +47,8 @@ of up to 1,096 days. Changing the view does not collect more history.
 
 A person is compared with the first configured group listing them. With several
 groups, Everyone combines their members; with one group, that group opens by
-default. Without groups, people with merged PRs are listed.
+default. Without groups, the sidebar lists people found in collected PR and
+review activity.
 
 Use **Sync now** to refresh data while continuing to read reports. Progress and
 errors appear beside the button, and results refresh when it finishes. Keep the
@@ -70,8 +71,9 @@ In a personal view, changed-line totals are compared with the **team's per-perso
 average** by default. On a merged-PR, changed-line, or reviewed-PR chart, open **Team comparison**
 to choose mean or median across members. This choice applies to all three metrics;
 your own rate and total remain unchanged. Configured members with no PRs in the
-range count as zero. Without configured groups, only people with merged PRs in
-the range are known. Group views retain actual totals. PR counts in an unfinished week/month are projected to a
+range count as zero. Without configured groups, people who merged or reviewed
+PRs in the range are known. Group views retain actual totals. PR counts in an
+unfinished week/month are projected to a
 full period at the current pace and drawn dashed. Other unfinished-period values
 are observed statistics, not forecasts.
 
@@ -106,7 +108,7 @@ On a person's page, click **Download HTML report**. On a group page, choose
 **Group HTML report** to save its trends and member summary in one file, or
 **Personal reports ZIP** for one HTML file per member. The Everyone view saves
 the same report for the configured members; without groups it includes people
-with merged PRs in the range.
+who merged or reviewed PRs in the range.
 
 Reports keep the chosen dates, timezone, data-sync time, and initial analysis
 settings. Open them in a browser without orgpulse or Internet access; switching
@@ -150,14 +152,13 @@ without a qualifying review are excluded from those statistics, not counted as
 zero. The next sync fills missing commit counts in an existing database. First
 review currently checks the first 30 reviews and first ready-for-review event per
 PR for the author-side first-review metric; reviewer activity reads all pages.
-The next sync backfills existing review history independently of the author-data
-watermark. Until this completes for all included repositories,
-reviewer metrics remain unavailable rather than zero. Changing group membership also changes historical comparisons; the report
-does not reconstruct past team rosters or know join/leave dates. A first or last
-PR is not treated as a participation boundary. Periods before collected history
-remain unavailable rather than zero. Team comparisons can therefore understate
-activity for people who joined during the selected range; choose a shared period
-when comparing them.
+The next sync backfills review history. Until it completes for all included
+repositories, reviewer metrics remain unavailable rather than zero.
+
+Changing group membership also changes historical comparisons. Reports do not
+reconstruct past team rosters or know join/leave dates, and do not infer them
+from the first or last PR. For people who joined during the range, choose a
+shared participation period to keep comparisons meaningful.
 
 ## Development
 

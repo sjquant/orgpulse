@@ -549,7 +549,7 @@ function renderKpis() {
         h("span", { class: "kpi__label" }, metricLabel(metric, true)),
         h("span", { class: "kpi__value" }, format(metric, value), unit(metric) ? h("small", {}, unit(metric)) : null),
         metric === "total_lines" && current ? h("span", { class: "kpi__note" }, `+${fmtNumber(current.added_lines, 0)} / −${fmtNumber(current.deleted_lines, 0)}`) : null,
-        metric === "reviewed_prs" ? h("span", { class: "kpi__note" }, `${t.metric.review_response} ${fmtHours(current?.review_response ?? null)}`) : null,
+        metric === "reviewed_prs" && ["reviewed_prs", "review_response"].includes(state.metric) ? h("span", { class: "kpi__note" }, `${t.metric.review_response} ${fmtHours(current?.review_response ?? null)}`) : null,
         DISTRIBUTION_METRICS.includes(metric) ? h("span", { class: "kpi__note" }, t[analysisOptions(metric).statistic], analysisOptions(metric).exclude_outliers ? ` · ${t.excludeOutliers}` : "") : null,
         person ? h("span", { class: "kpi__note" }, TEAM_METRICS.includes(metric) ? `${teamLabel(metric)} ${withUnit(metric, other)}` : t.teamValue(withUnit(metric, other))) : delta(metric, value, other),
       );

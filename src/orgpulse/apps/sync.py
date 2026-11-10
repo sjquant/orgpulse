@@ -27,7 +27,7 @@ def sync(
     *,
     on_repository: Callable[[str, int], None] = lambda full_name, count: None,
 ) -> int:
-    """Fetch merged pull requests changed since the last sync; return how many were saved."""
+    """Sync PR flow and reviewer activity; return merged PRs saved."""
 
     started_at = datetime.now(timezone.utc)
     floor = datetime.combine(config.since, time.min, config.timezone)
@@ -62,7 +62,7 @@ def sync(
                     for pull_request in iter_pull_requests(
                         request,
                         full_name,
-                        updated_since=updated_since.get(full_name, started_at),
+                        updated_since=updated_since[full_name],
                     )
                     if pull_request.created_at >= floor
                 ]
@@ -99,7 +99,7 @@ def sync(
                         since=config.since,
                         synced_at=started_at,
                     )
-                    store.save_commit_counts(full_name, counts)
+                store.save_commit_counts(full_name, counts)
                 store.save_reviews(
                     full_name, reviews, since=config.since, synced_at=started_at
                 )

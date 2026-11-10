@@ -92,7 +92,8 @@ class Store:
 
     def last_synced_at(self) -> datetime | None:
         row = self._connection.execute(
-            "SELECT MAX(synced_at) FROM repositories"
+            "SELECT MAX(synced_at) FROM (SELECT synced_at FROM repositories "
+            "UNION ALL SELECT synced_at FROM review_sync)"
         ).fetchone()
         return datetime.fromisoformat(row[0]) if row[0] else None
 

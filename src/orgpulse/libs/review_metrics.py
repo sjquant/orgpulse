@@ -11,7 +11,7 @@ def add_review_metrics(
     report: dict[str, Any],
     reviews: list[Review],
     *,
-    people: tuple[str, ...] | None,
+    people: tuple[str, ...],
     timezone: tzinfo,
     since: date,
     available: bool,
@@ -21,11 +21,7 @@ def add_review_metrics(
     """Count distinct reviewer/PR pairs by review date and describe requested response waits."""
     person = report["scope"]["kind"] == "person"
     login = report["scope"]["name"].lower() if person else None
-    roster = (
-        {name.lower() for name in people}
-        if people is not None
-        else {review.reviewer.lower() for review in reviews}
-    )
+    roster = {name.lower() for name in people}
     scoped = [review for review in reviews if review.reviewer.lower() in roster]
     own = (
         [review for review in reviews if review.reviewer.lower() == login]
@@ -74,23 +70,18 @@ def add_review_metrics(
                 if q1 - 1.5 * (q3 - q1) <= value <= q3 + 1.5 * (q3 - q1)
             ]
         aggregate = mean if options.get("statistic") == "mean" else median
+        benchmarks = {}
         count = len(keys)
         if team:
-            per_person = [sum(key[0] == name for key in keys) for name in roster]
-            count = (
-                round(
-                    (
-                        mean(per_person)
-                        if team_statistic == "mean"
-                        else median(per_person)
-                    ),
-                    2,
-                )
-                if per_person
-                else None
-            )
+            counts = [sum(key[0] == name for key in keys) for name in roster]
+            benchmarks = {
+                name: round(aggregate(counts), 2) if counts and ready else None
+                for name, aggregate in (("mean", mean), ("median", median))
+            }
+            count = benchmarks[team_statistic]
         return {
             "reviewed_prs": count if ready else None,
+            "benchmarks": benchmarks,
             "review_response": round(aggregate(waits), 2) if waits and ready else None,
             "sample": {
                 "total": known,
@@ -114,24 +105,8 @@ def add_review_metrics(
         target.update({key: values[key] for key in ("reviewed_prs", "review_response")})
         target["analysis_samples"]["review_response"] = values["sample"]
         if team and "team_benchmarks" in target:
-            selected = [
-                review
-                for review in records
-                if max(first, since)
-                <= review.submitted_at.astimezone(timezone).date()
-                <= last
-            ]
-            keys = {
-                (review.reviewer.lower(), review.repository, review.number)
-                for review in selected
-            }
-            counts = [sum(key[0] == login for key in keys) for login in roster]
-            for name, aggregate in (("mean", mean), ("median", median)):
-                target["team_benchmarks"][name]["reviewed_prs"] = (
-                    round(aggregate(counts), 2)
-                    if counts and available and last >= since
-                    else None
-                )
+            for name, count in values["benchmarks"].items():
+                target["team_benchmarks"][name]["reviewed_prs"] = count
 
     def recent(records: list[Review]) -> list[dict[str, Any]]:
         rows = {}
